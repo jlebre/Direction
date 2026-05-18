@@ -16,14 +16,10 @@ export default async function CampoHub({ params }: { params: Promise<{ id: strin
   const [
     { data: campo },
     { data: animados },
-    { data: medicacoes },
-    { data: restricoes },
     { data: despesas },
   ] = await Promise.all([
     supabase.from('campos').select('*').eq('id', id).single(),
     supabase.from('animados').select('id').eq('campo_id', id),
-    supabase.from('farmacia_medicacoes').select('id').eq('animado_id', id).limit(1),
-    supabase.from('restricoes_alimentares').select('id').limit(1),
     supabase.from('despesas').select('id, valor, tipo').eq('campo_id', id),
   ])
 
@@ -38,13 +34,7 @@ export default async function CampoHub({ params }: { params: Promise<{ id: strin
   const saldoDisponivel = c.saldo_inicial - totalDespesas
 
   const numAnimados = animados?.length ?? 0
-
-  // Contar medicações e restrições via animados do campo
-  const { data: animadosIds } = await supabase
-    .from('animados')
-    .select('id')
-    .eq('campo_id', id)
-  const ids = (animadosIds ?? []).map((a: { id: string }) => a.id)
+  const ids = (animados ?? []).map((a: { id: string }) => a.id)
 
   let numMedicacoes = 0
   let numRestricoes = 0

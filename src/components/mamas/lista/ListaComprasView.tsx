@@ -1,7 +1,8 @@
 'use client'
 
 import { useState, useEffect, useMemo } from 'react'
-import { ShoppingCart, Check, Plus, Trash2, Package, Refrigerator, Truck, X } from 'lucide-react'
+import { ShoppingCart, Check, Plus, Trash2, Package, Refrigerator, Truck, X, ExternalLink } from 'lucide-react'
+import Link from 'next/link'
 import { createClient } from '@/lib/supabase/client'
 import { toast } from 'sonner'
 import { Button } from '@/components/ui/button'
@@ -282,9 +283,18 @@ export function ListaComprasView({ campo, listas, campoId }: ListaComprasViewPro
           {listaDespensa?.items?.filter((i) => i.comprado).length ?? 0} /{' '}
           {listaDespensa?.items?.length ?? 0} itens comprados
         </p>
-        <Button variant="outline" size="sm" onClick={gerarLista} disabled={gerandoLista}>
-          Atualizar lista
-        </Button>
+        <div className="flex items-center gap-2">
+          <Link
+            href={`/campo/${campoId}/mamas/lista/adjunto`}
+            className="flex items-center gap-1.5 text-xs font-medium text-[#B85042] border border-[#B85042]/30 rounded-lg px-2.5 py-1.5 hover:bg-[#B85042]/5 transition-colors"
+          >
+            <ExternalLink className="h-3.5 w-3.5" />
+            Vista adjunto
+          </Link>
+          <Button variant="outline" size="sm" onClick={gerarLista} disabled={gerandoLista}>
+            Atualizar lista
+          </Button>
+        </div>
       </div>
 
       <Tabs defaultValue="despensa" className="w-full">

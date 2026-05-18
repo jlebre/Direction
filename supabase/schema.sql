@@ -4,33 +4,45 @@
 -- ============================================================
 
 -- ── Enums ────────────────────────────────────────────────────────────────────
-create type if not exists seccao_tipo as enum (
-  'mosquitos', 'aranhicos', 'melgas', 'tremelgas', 'camaleoes'
-);
+do $$ begin
+  create type seccao_tipo as enum (
+    'mosquitos', 'aranhicos', 'melgas', 'tremelgas', 'camaleoes'
+  );
+exception when duplicate_object then null; end $$;
 
-create type if not exists refeicao_tipo as enum (
-  'pequeno_almoco', 'almoco', 'lanche', 'jantar', 'ceia', 'extra'
-);
+do $$ begin
+  create type refeicao_tipo as enum (
+    'pequeno_almoco', 'almoco', 'lanche', 'jantar', 'ceia', 'extra'
+  );
+exception when duplicate_object then null; end $$;
 
-create type if not exists armazenamento_tipo as enum (
-  'despensa', 'casa_apoio', 'fresco_diario'
-);
+do $$ begin
+  create type armazenamento_tipo as enum (
+    'despensa', 'casa_apoio', 'fresco_diario'
+  );
+exception when duplicate_object then null; end $$;
 
-create type if not exists restricao_tipo as enum (
-  'alergia', 'intolerancia', 'dieta', 'outro'
-);
+do $$ begin
+  create type restricao_tipo as enum (
+    'alergia', 'intolerancia', 'dieta', 'outro'
+  );
+exception when duplicate_object then null; end $$;
 
-create type if not exists categoria_receita as enum (
-  'sopa', 'carne', 'frango', 'bacalhau', 'atum',
-  'massa', 'arroz_pure', 'salada', 'fruta', 'doce',
-  'molho', 'pequeno_almoco', 'lanche', 'outro'
-);
+do $$ begin
+  create type categoria_receita as enum (
+    'sopa', 'carne', 'frango', 'bacalhau', 'atum',
+    'massa', 'arroz_pure', 'salada', 'fruta', 'doce',
+    'molho', 'pequeno_almoco', 'lanche', 'outro'
+  );
+exception when duplicate_object then null; end $$;
 
-create type if not exists zona_supermercado as enum (
-  'mercearia', 'enlatados', 'massas_arroz', 'bebidas_leite',
-  'congelados', 'limpeza', 'padaria', 'talho', 'peixaria',
-  'frutas_legumes', 'lacticinios', 'charcutaria', 'temperos', 'outro'
-);
+do $$ begin
+  create type zona_supermercado as enum (
+    'mercearia', 'enlatados', 'massas_arroz', 'bebidas_leite',
+    'congelados', 'limpeza', 'padaria', 'talho', 'peixaria',
+    'frutas_legumes', 'lacticinios', 'charcutaria', 'temperos', 'outro'
+  );
+exception when duplicate_object then null; end $$;
 
 -- ── Tabela partilhada: campos ─────────────────────────────────────────────────
 create table if not exists campos (
@@ -273,7 +285,10 @@ do $$ declare t text; begin
     'ingredientes','receitas','receita_ingredientes','ementa',
     'lista_compras','lista_compras_items','campo_produtos','campo_precos','campo_dicas'
   ]) loop
-    execute format('create policy if not exists "public_all" on %I for all using (true) with check (true)', t);
+    begin
+      execute format('create policy "public_all" on %I for all using (true) with check (true)', t);
+    exception when duplicate_object then null;
+    end;
   end loop;
 end $$;
 
@@ -282,11 +297,17 @@ insert into storage.buckets (id, name, public)
 values ('faturas', 'faturas', true)
 on conflict (id) do nothing;
 
-create policy if not exists "faturas_public_read"
-  on storage.objects for select using (bucket_id = 'faturas');
+do $$ begin
+  create policy "faturas_public_read"
+    on storage.objects for select using (bucket_id = 'faturas');
+exception when duplicate_object then null; end $$;
 
-create policy if not exists "faturas_public_insert"
-  on storage.objects for insert with check (bucket_id = 'faturas');
+do $$ begin
+  create policy "faturas_public_insert"
+    on storage.objects for insert with check (bucket_id = 'faturas');
+exception when duplicate_object then null; end $$;
 
-create policy if not exists "faturas_public_delete"
-  on storage.objects for delete using (bucket_id = 'faturas');
+do $$ begin
+  create policy "faturas_public_delete"
+    on storage.objects for delete using (bucket_id = 'faturas');
+exception when duplicate_object then null; end $$;
