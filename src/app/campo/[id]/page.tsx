@@ -5,6 +5,8 @@ import {
   ChevronLeft, Settings, UtensilsCrossed, Receipt,
   Users, Pill, ShoppingCart, CalendarDays, AlertTriangle,
 } from 'lucide-react'
+import { ESCALAO_COR } from '@/types/shared'
+import { CampoTracker } from '@/components/CampoTracker'
 import type { Campo } from '@/types/shared'
 
 export const dynamic = 'force-dynamic'
@@ -66,8 +68,11 @@ export default async function CampoHub({ params }: { params: Promise<{ id: strin
     },
   ]
 
+  const cor = ESCALAO_COR[c.escalao]
+
   return (
     <div className="min-h-screen">
+      <CampoTracker campoId={id} campoNome={c.nome} />
       {/* Header */}
       <div className="sticky top-0 z-10 bg-white border-b border-[#E7E8D1] px-4 h-14 flex items-center gap-3">
         <Link href="/" className="text-[#2D5016] hover:opacity-70 transition-opacity">
@@ -84,8 +89,18 @@ export default async function CampoHub({ params }: { params: Promise<{ id: strin
 
       <div className="max-w-2xl mx-auto p-4 space-y-5 pb-8">
         {/* Info card */}
-        <div className="bg-[#2D5016] text-white rounded-2xl p-4 space-y-2">
-          <p className="font-bold text-lg">{c.nome}</p>
+        <div
+          className="text-white rounded-2xl p-4 space-y-2"
+          style={{ backgroundColor: cor?.bg ?? '#2D5016' }}
+        >
+          <div className="flex items-center gap-2">
+            <p className="font-bold text-lg flex-1">{c.nome}</p>
+            {c.escalao && (
+              <span className="text-xs font-semibold bg-white/20 rounded-full px-2 py-0.5 shrink-0">
+                {c.escalao}
+              </span>
+            )}
+          </div>
           <div className="grid grid-cols-2 gap-x-4 gap-y-1 text-sm text-white/80">
             {c.datas && (
               <div className="flex items-center gap-1.5">

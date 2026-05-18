@@ -165,6 +165,7 @@ export interface CampoPreco {
   fornecedor: string
   notas?: string
   created_at: string
+  campo?: { nome: string }
 }
 
 // ── Labels & Cores ────────────────────────────────────────────────────────────

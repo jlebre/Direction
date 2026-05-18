@@ -48,6 +48,14 @@ export const ESCALAO_EMOJI: Record<string, string> = {
   Camaleão: '🦎',
 }
 
+export const ESCALAO_COR: Record<string, { bg: string; text: string; light: string; border: string }> = {
+  Mosquito:  { bg: '#D97706', text: '#78350F', light: '#FFFBEB', border: '#FCD34D' },
+  Aranhiço:  { bg: '#EA580C', text: '#7C2D12', light: '#FFF7ED', border: '#FDBA74' },
+  Melga:     { bg: '#16A34A', text: '#052E16', light: '#F0FDF4', border: '#86EFAC' },
+  Tremelga:  { bg: '#2563EB', text: '#1E3A8A', light: '#EFF6FF', border: '#93C5FD' },
+  Camaleão:  { bg: '#DC2626', text: '#7F1D1D', light: '#FEF2F2', border: '#FCA5A5' },
+}
+
 export function getDiaLabel(dia: number): string {
   if (dia === -2) return 'Pré-campo 1'
   if (dia === -1) return 'Pré-campo 2'

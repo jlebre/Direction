@@ -2,6 +2,8 @@ import { createClient } from '@/lib/supabase/server'
 import Link from 'next/link'
 import { CalendarDays, MapPin, Clock, CheckCircle } from 'lucide-react'
 import { PERIODOS } from '@/lib/campos-seed'
+import { ContinueBanner } from '@/components/ContinueBanner'
+import { ESCALAO_COR } from '@/types/shared'
 import type { Campo } from '@/types/shared'
 
 export const dynamic = 'force-dynamic'
@@ -21,11 +23,12 @@ export default async function LandingPage() {
 
   return (
     <main className="min-h-screen">
-      <div className="bg-[#2D5016] text-white px-4 py-8 text-center">
+      <div className="bg-[#2D5016] text-white px-4 pt-8 pb-4 text-center">
         <div className="text-5xl mb-3">⛺</div>
         <h1 className="text-3xl font-bold tracking-tight">App Direção</h1>
         <p className="text-white/80 mt-1 text-sm">Escolhe o teu campo para começar.</p>
-        <p className="text-white/50 text-xs mt-1">CAMTIL · Verão 2026</p>
+        <p className="text-white/50 text-xs mt-3 mb-4">CAMTIL · Verão 2026</p>
+        <ContinueBanner />
       </div>
 
       <div className="max-w-2xl mx-auto p-4 space-y-8 pb-12">
@@ -54,19 +57,31 @@ export default async function LandingPage() {
                 </h2>
                 <div className="space-y-3">
                   {camposDoPeriodo.map((campo) => {
+                    const cor = ESCALAO_COR[campo.escalao]
                     const destino = campo.setup_completo
                       ? `/campo/${campo.id}`
                       : `/campo/${campo.id}/setup`
                     return (
                       <Link key={campo.id} href={destino} className="block">
-                        <div className="bg-white rounded-2xl border border-[#E7E8D1] p-4 hover:shadow-md hover:border-[#2D5016]/30 transition-all active:scale-[0.99]">
+                        <div
+                          className="bg-white rounded-2xl border-l-4 border border-[#E7E8D1] p-4 hover:shadow-md transition-all active:scale-[0.99]"
+                          style={cor ? { borderLeftColor: cor.bg } : undefined}
+                        >
                           <div className="flex items-start justify-between gap-3">
                             <div className="flex-1 min-w-0">
                               <div className="flex items-center gap-2 flex-wrap">
                                 <h3 className="font-bold text-[#36454F] text-lg leading-tight">
                                   {campo.nome}
                                 </h3>
-                                {campo.escalao && (
+                                {campo.escalao && cor && (
+                                  <span
+                                    className="text-xs rounded-full px-2 py-0.5 shrink-0 font-semibold border"
+                                    style={{ backgroundColor: cor.light, color: cor.text, borderColor: cor.border }}
+                                  >
+                                    {campo.escalao}
+                                  </span>
+                                )}
+                                {campo.escalao && !cor && (
                                   <span className="text-xs bg-gray-100 text-gray-600 rounded-full px-2 py-0.5 shrink-0">
                                     {campo.escalao}
                                   </span>
@@ -75,7 +90,7 @@ export default async function LandingPage() {
                               <div className="mt-2 space-y-1">
                                 {campo.datas && (
                                   <div className="flex items-center gap-1.5 text-sm text-gray-600">
-                                    <CalendarDays className="h-3.5 w-3.5 text-[#2D5016] shrink-0" />
+                                    <CalendarDays className="h-3.5 w-3.5 shrink-0" style={cor ? { color: cor.bg } : undefined} />
                                     <span>{campo.datas}</span>
                                   </div>
                                 )}
@@ -87,7 +102,7 @@ export default async function LandingPage() {
                                 )}
                                 {campo.local && (
                                   <div className="flex items-center gap-1.5 text-sm text-gray-600">
-                                    <MapPin className="h-3.5 w-3.5 text-[#2D5016] shrink-0" />
+                                    <MapPin className="h-3.5 w-3.5 shrink-0" style={cor ? { color: cor.bg } : undefined} />
                                     <span>{campo.local}</span>
                                   </div>
                                 )}
@@ -109,7 +124,13 @@ export default async function LandingPage() {
                             </div>
                             <div className="shrink-0">
                               {campo.setup_completo ? (
-                                <div className="flex items-center gap-1 text-[#2D5016] bg-[#2D5016]/10 rounded-full px-2 py-1">
+                                <div
+                                  className="flex items-center gap-1 rounded-full px-2 py-1"
+                                  style={cor
+                                    ? { backgroundColor: cor.light, color: cor.text }
+                                    : { backgroundColor: '#2D5016/10', color: '#2D5016' }
+                                  }
+                                >
                                   <CheckCircle className="h-3.5 w-3.5 shrink-0" />
                                   <span className="text-xs font-semibold whitespace-nowrap">Configurado</span>
                                 </div>

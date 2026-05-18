@@ -57,13 +57,13 @@ export function PrecosView({ campoId, precosIniciais, precosReferencia = [] }: P
           fornecedor: form.fornecedor.trim(),
           notas: form.notas.trim() || null,
         })
-        .select()
+        .select('*, campo:campos(nome)')
         .single()
       if (error) throw error
       setPrecos((prev) => [...prev, data as CampoPreco])
       setForm({ item: '', categoria: '', preco: '', unidade: '', fornecedor: '', notas: '' })
       setModalAberto(false)
-      toast.success('Preço adicionado')
+      toast.success('Preço adicionado e partilhado com todos os campos')
     } catch (e: unknown) {
       toast.error(e instanceof Error ? e.message : 'Erro ao adicionar')
     } finally {
@@ -91,33 +91,43 @@ export function PrecosView({ campoId, precosIniciais, precosReferencia = [] }: P
 
   return (
     <div className="p-4 space-y-4">
-      <Tabs defaultValue="meus">
+      <Tabs defaultValue="todos">
         <TabsList className="w-full">
-          <TabsTrigger value="meus" className="flex-1">Os meus preços</TabsTrigger>
+          <TabsTrigger value="todos" className="flex-1">Todos os campos</TabsTrigger>
           <TabsTrigger value="referencia" className="flex-1">
             <BookOpen className="h-3.5 w-3.5 mr-1" />
             Referência
           </TabsTrigger>
         </TabsList>
 
-        <TabsContent value="meus" className="space-y-4 mt-4">
+        <TabsContent value="todos" className="space-y-4 mt-4">
           <div className="flex items-center justify-between">
-            <p className="text-sm text-gray-500">{precos.length} referência{precos.length !== 1 ? 's' : ''}</p>
+            <p className="text-sm text-gray-500">{precos.length} referência{precos.length !== 1 ? 's' : ''} partilhadas</p>
             <Button size="sm" onClick={() => setModalAberto(true)} className="gap-1 bg-[#2D5016] hover:bg-[#2D5016]/90">
               <Plus className="h-4 w-4" /> Adicionar preço
             </Button>
           </div>
 
+          <p className="text-xs text-gray-400 -mt-1">
+            Os preços adicionados aqui são visíveis por todos os campos.
+          </p>
+
           {precos.length === 0 ? (
             <div className="text-center py-16 text-gray-400">
               <DollarSign className="h-12 w-12 mx-auto mb-3" />
               <p>Sem preços registados</p>
-              <p className="text-sm mt-1">Adiciona referências de preços para facilitar as compras.</p>
+              <p className="text-sm mt-1">Sê o primeiro a adicionar referências de preços!</p>
             </div>
           ) : (
             <div className="space-y-4">
               {grupos.map((grupo) => (
-                <PrecoGrupo key={grupo.cat} cat={grupo.cat} items={grupo.items} onRemover={remover} />
+                <PrecoGrupo
+                  key={grupo.cat}
+                  cat={grupo.cat}
+                  items={grupo.items}
+                  campoId={campoId}
+                  onRemover={remover}
+                />
               ))}
             </div>
           )}
@@ -136,7 +146,7 @@ export function PrecosView({ campoId, precosIniciais, precosReferencia = [] }: P
           ) : (
             <div className="space-y-4">
               {gruposRef.map((grupo) => (
-                <PrecoGrupo key={grupo.cat} cat={grupo.cat} items={grupo.items} readonly />
+                <PrecoGrupo key={grupo.cat} cat={grupo.cat} items={grupo.items} campoId={campoId} readonly />
               ))}
             </div>
           )}
@@ -203,7 +213,7 @@ export function PrecosView({ campoId, precosIniciais, precosReferencia = [] }: P
               </div>
             </div>
             <div className="space-y-1">
-              <Label>Fornecedor</Label>
+              <Label>Fornecedor / Loja</Label>
               <Input
                 placeholder="Pingo Doce, Talho local..."
                 value={form.fornecedor}
@@ -234,11 +244,13 @@ export function PrecosView({ campoId, precosIniciais, precosReferencia = [] }: P
 function PrecoGrupo({
   cat,
   items,
+  campoId,
   onRemover,
   readonly = false,
 }: {
   cat: string
   items: CampoPreco[]
+  campoId: string
   onRemover?: (id: string) => void
   readonly?: boolean
 }) {
@@ -259,6 +271,9 @@ function PrecoGrupo({
               {preco.notas && (
                 <p className="text-xs text-gray-400 italic truncate">{preco.notas}</p>
               )}
+              {preco.campo?.nome && (
+                <p className="text-[10px] text-gray-300 truncate mt-0.5">{preco.campo.nome}</p>
+              )}
             </div>
             <div className="text-right shrink-0">
               {preco.preco != null && (
@@ -268,13 +283,16 @@ function PrecoGrupo({
                 <p className="text-xs text-gray-400">/{preco.unidade}</p>
               )}
             </div>
-            {!readonly && onRemover && (
+            {!readonly && onRemover && preco.campo_id === campoId && (
               <button
                 onClick={() => onRemover(preco.id)}
                 className="text-gray-300 hover:text-[#F96167] transition-colors shrink-0"
               >
                 <Trash2 className="h-4 w-4" />
               </button>
+            )}
+            {!readonly && onRemover && preco.campo_id !== campoId && (
+              <div className="w-4 shrink-0" />
             )}
           </div>
         ))}

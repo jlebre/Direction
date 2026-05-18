@@ -12,7 +12,7 @@ export default async function PrecosPage({ params }: { params: Promise<{ id: str
 
   const [{ data: campo }, { data: precos }] = await Promise.all([
     supabase.from('campos').select('id, nome').eq('id', id).single(),
-    supabase.from('campo_precos').select('*').eq('campo_id', id).order('categoria').order('item'),
+    supabase.from('campo_precos').select('*, campo:campos(nome)').order('categoria').order('item'),
   ])
 
   if (!campo) notFound()
