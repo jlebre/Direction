@@ -1,7 +1,8 @@
 'use client'
 
 import { useState } from 'react'
-import { Plus, Trash2, Phone, Pill, Package, Clock } from 'lucide-react'
+import { Plus, Trash2, Phone, Pill, Package, Clock, BookOpen } from 'lucide-react'
+import Link from 'next/link'
 import { createClient } from '@/lib/supabase/client'
 import { toast } from 'sonner'
 import { Button } from '@/components/ui/button'
@@ -132,6 +133,21 @@ export function FarmaciaView({ campoId, animados, medicacoesIniciais, inventario
 
   return (
     <div className="p-4">
+      {/* Livrinho da Farmácia */}
+      <Link
+        href={`/campo/${campoId}/mamas/farmacia/guia`}
+        className="flex items-center justify-between bg-[#2D5016] text-white rounded-xl px-4 py-3 mb-4 active:opacity-80"
+      >
+        <div className="flex items-center gap-2">
+          <BookOpen className="h-5 w-5" />
+          <div>
+            <p className="font-bold text-sm">Livrinho da Farmácia</p>
+            <p className="text-xs opacity-80">Medicamentos, situações e urgências</p>
+          </div>
+        </div>
+        <span className="text-white opacity-70 text-lg">→</span>
+      </Link>
+
       <Tabs defaultValue="medicacoes">
         <TabsList className="w-full grid grid-cols-3">
           <TabsTrigger value="medicacoes" className="gap-1 text-xs sm:text-sm">
