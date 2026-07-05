@@ -5,6 +5,7 @@ import { PERIODOS } from '@/lib/campos-seed'
 import { ContinueBanner } from '@/components/ContinueBanner'
 import { ESCALAO_COR } from '@/types/shared'
 import type { Campo } from '@/types/shared'
+import Image from 'next/image'
 
 export const dynamic = 'force-dynamic'
 
@@ -24,8 +25,17 @@ export default async function LandingPage() {
   return (
     <main className="min-h-screen">
       <div className="bg-[#2D5016] text-white px-4 pt-8 pb-4 text-center">
-        <div className="text-5xl mb-3">⛺</div>
-        <h1 className="text-3xl font-bold tracking-tight">App Direção</h1>
+        <div className="mb-4 flex justify-center">
+          <Image
+            src="/logo.png"
+            alt="DIREÇÃO CAMTIL"
+            width={120}
+            height={120}
+            priority
+            className="h-24 w-auto"
+          />
+        </div>
+        <h1 className="text-3xl font-bold tracking-tight">Direção CAMTIL</h1>
         <p className="text-white/80 mt-1 text-sm">Escolhe o teu campo para começar.</p>
         <p className="text-white/50 text-xs mt-3 mb-4">CAMTIL · Verão 2026</p>
         <ContinueBanner />
