@@ -25,7 +25,7 @@ export default function DespesaItem({ despesa, campoId }: Props) {
           <span className="text-xs font-bold text-gray-500">#{despesa.numero_recibo}</span>
         </div>
         <div className="flex-1 min-w-0">
-          <p className="text-sm font-medium text-gray-900 truncate">{despesa.descricao}</p>
+          <p className="text-sm font-medium text-gray-900 truncate">{despesa.descricao ?? <span className="text-gray-400 italic">Sem descrição</span>}</p>
           <div className="flex items-center gap-2 mt-0.5">
             <span className="text-xs text-gray-400">{formatDate(despesa.data)}</span>
             <span
@@ -35,6 +35,9 @@ export default function DespesaItem({ despesa, campoId }: Props) {
               {despesa.codigo}
             </span>
             {despesa.foto_path && <span className="text-xs text-gray-400">📷</span>}
+            {!despesa.nif_confirmado && despesa.tipo === 'despesa' && (
+              <span className="text-xs font-medium text-amber-600 bg-amber-50 px-1.5 py-0.5 rounded">sem NIF</span>
+            )}
           </div>
         </div>
         <div className="flex-shrink-0 text-right">

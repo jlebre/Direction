@@ -39,7 +39,7 @@ export default async function DespesaDetailPage({
           <span className="text-red-200 text-sm">Recibo #{d.numero_recibo}</span>
         </div>
         <div className="max-w-lg mx-auto mt-3">
-          <h1 className="text-2xl font-bold">{d.descricao}</h1>
+          <h1 className="text-2xl font-bold">{d.descricao ?? <span className="italic font-normal opacity-70">Sem descrição</span>}</h1>
           <p className="text-3xl font-bold mt-2" style={{ color: d.tipo === 'receita' ? '#86efac' : 'white' }}>
             {d.tipo === 'receita' ? '+' : '−'}€{Number(d.valor).toFixed(2)}
           </p>
@@ -58,7 +58,7 @@ export default async function DespesaDetailPage({
           {[
             ['Data', new Date(d.data + 'T00:00:00').toLocaleDateString('pt-PT', { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric' })],
             ['Nº Recibo', `#${d.numero_recibo}`],
-            ['Descrição', d.descricao],
+            ['Descrição', d.descricao ?? '—'],
             ['Categoria', d.codigo_descricao],
             ['Tipo', d.tipo === 'receita' ? 'Receita' : 'Despesa'],
           ].map(([label, value]) => (
@@ -86,6 +86,12 @@ export default async function DespesaDetailPage({
           </div>
         </div>
 
+        <Link
+          href={`/campo/${id}/adjuntos/despesa/${despesaId}/editar`}
+          className="block w-full py-3.5 bg-[#B85042] text-white font-semibold rounded-xl text-center text-base active:opacity-90"
+        >
+          Editar Despesa
+        </Link>
         <DespesaActions despesa={d} campo={c} />
       </div>
     </main>

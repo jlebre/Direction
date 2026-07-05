@@ -5,7 +5,9 @@ import type { Campo } from '@/types/shared'
 import type { Despesa } from '@/types/adjuntos'
 import DespesaItem from '@/components/adjuntos/DespesaItem'
 import BudgetBar from '@/components/adjuntos/BudgetBar'
+import BolsaNIF from '@/components/adjuntos/BolsaNIF'
 import ExportButton from './ExportButton'
+import type { LiquidacaoNif } from '@/types/adjuntos'
 
 export const dynamic = 'force-dynamic'
 
@@ -13,9 +15,10 @@ export default async function AdjuntosDashboard({ params }: { params: Promise<{ 
   const { id } = await params
   const supabase = createClient()
 
-  const [{ data: campo }, { data: despesas }] = await Promise.all([
+  const [{ data: campo }, { data: despesas }, { data: liquidacoes }] = await Promise.all([
     supabase.from('campos').select('*').eq('id', id).single(),
     supabase.from('despesas').select('*').eq('campo_id', id).order('numero_recibo', { ascending: false }),
+    supabase.from('liquidacoes_nif').select('*').eq('campo_id', id).order('created_at', { ascending: false }),
   ])
 
   if (!campo) notFound()
@@ -33,6 +36,9 @@ export default async function AdjuntosDashboard({ params }: { params: Promise<{ 
   for (const d of ds.filter((d) => d.tipo === 'despesa')) {
     porCodigo[d.codigo] = (porCodigo[d.codigo] ?? 0) + Number(d.valor)
   }
+
+  const faturasSemNIF = ds.filter((d) => d.tipo === 'despesa' && !d.nif_confirmado)
+  const lqs = (liquidacoes ?? []) as LiquidacaoNif[]
 
   return (
     <main className="min-h-screen pb-28">
@@ -91,12 +97,25 @@ export default async function AdjuntosDashboard({ params }: { params: Promise<{ 
           <BudgetBar escalao={c.escalao} porCodigo={porCodigo} />
         </section>
 
+        {/* Bolsa NIF */}
+        {(faturasSemNIF.length > 0 || lqs.length > 0) && (
+          <section>
+            <h2 className="text-xs font-bold text-gray-500 uppercase tracking-wider mb-3">
+              Bolsa NIF
+            </h2>
+            <BolsaNIF campo={c} faturasSemNIF={faturasSemNIF} liquidacoes={lqs} />
+          </section>
+        )}
+
         {/* Lista de despesas */}
         <section>
           <div className="flex items-center justify-between mb-3">
             <h2 className="text-xs font-bold text-gray-500 uppercase tracking-wider">
               Despesas ({ds.length})
             </h2>
+            <Link href={`/campo/${id}/adjuntos/faturas`} className="text-xs text-[#B85042] font-medium">
+              Consultar →
+            </Link>
           </div>
 
           {ds.length === 0 ? (
@@ -110,6 +129,13 @@ export default async function AdjuntosDashboard({ params }: { params: Promise<{ 
             </div>
           )}
         </section>
+
+        {/* Link admin storage */}
+        <div className="text-center pb-2">
+          <Link href={`/campo/${id}/adjuntos/storage`} className="text-xs text-gray-300">
+            área técnica · storage
+          </Link>
+        </div>
       </div>
 
       {/* FAB */}

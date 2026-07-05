@@ -1,56 +1,108 @@
 import * as XLSX from 'xlsx'
 import type { Campo } from '@/types/shared'
-import type { Despesa } from '@/types/adjuntos'
+import type { Despesa, LiquidacaoNif } from '@/types/adjuntos'
 import { CODE_CATEGORIES } from './codes'
 import { VALORES_REF_VERAO } from './valores-referencia'
 
-function formatDate(dateStr: string): string {
+function formatDatePT(dateStr: string): string {
   const d = new Date(dateStr + 'T00:00:00')
-  const dd = String(d.getDate()).padStart(2, '0')
-  const mm = String(d.getMonth() + 1).padStart(2, '0')
-  const yyyy = d.getFullYear()
-  return `${dd}/${mm}/${yyyy}`
+  return `${String(d.getDate()).padStart(2, '0')}/${String(d.getMonth() + 1).padStart(2, '0')}/${d.getFullYear()}`
 }
 
-export function generateExcel(campo: Campo, despesas: Despesa[]): void {
+function getFilenameFromPath(path: string | null): string {
+  if (!path) return ''
+  return path.split('/').pop() ?? ''
+}
+
+// Aplica número format a células numéricas numa coluna
+function applyNumFmt(
+  ws: XLSX.WorkSheet,
+  col: number,
+  rowStart: number,
+  rowEnd: number,
+  fmt: string
+) {
+  for (let row = rowStart; row <= rowEnd; row++) {
+    const addr = XLSX.utils.encode_cell({ r: row, c: col })
+    if (ws[addr] && ws[addr].t === 'n') {
+      ws[addr].z = fmt
+    }
+  }
+}
+
+export function generateExcelBuffer(
+  campo: Campo,
+  despesas: Despesa[],
+  liquidacoes: LiquidacaoNif[] = []
+): ArrayBuffer {
   const wb = XLSX.utils.book_new()
   const sorted = [...despesas].sort((a, b) => a.numero_recibo - b.numero_recibo)
-  const totalDespesas = sorted.filter((d) => d.tipo === 'despesa').reduce((s, d) => s + Number(d.valor), 0)
-  const totalReceitas = sorted.filter((d) => d.tipo === 'receita').reduce((s, d) => s + Number(d.valor), 0)
-  const disponivel = campo.saldo_inicial + totalReceitas - totalDespesas
 
-  // ── Sheet 1: Relatório & Contas ──────────────────────────────────────────
-  const rows: (string | number | null)[][] = []
-  rows.push(['Disponível', 'Total Receita', 'Gasto'])
-  rows.push([disponivel, campo.saldo_inicial + totalReceitas, totalDespesas])
-  rows.push([])
-  rows.push(['Data', 'Nº Recibo', 'Receitas', 'Despesas', 'Descrição', 'Código', 'Descrição Cód.'])
-  rows.push([null, null, campo.saldo_inicial, null, 'Orçamento de Campo', null, null])
+  const despesasList = sorted.filter((d) => d.tipo === 'despesa')
+  const receitasList = sorted.filter((d) => d.tipo === 'receita')
+
+  const totalDespesas = despesasList.reduce((s, d) => s + Number(d.valor), 0)
+  const totalReceitas = receitasList.reduce((s, d) => s + Number(d.valor), 0)
+  const totalComNIF = despesasList.filter((d) => d.nif_confirmado).reduce((s, d) => s + Number(d.valor), 0)
+  const totalSemNIF = despesasList.filter((d) => !d.nif_confirmado).reduce((s, d) => s + Number(d.valor), 0)
+  const totalLiquidado = liquidacoes.reduce((s, l) => s + Number(l.valor), 0)
+  const emAberto = Math.max(0, totalSemNIF - totalLiquidado)
+  const saldoDisponivel = campo.saldo_inicial + totalReceitas - totalDespesas
+
+  // ── Sheet 1: Faturas ──────────────────────────────────────────────────────
+  const rows: (string | number | null)[][] = [
+    ['Recibo', 'Data', 'Descrição', 'Código', 'Categoria', 'Valor (€)', 'NIF', 'Tem Foto', 'Ficheiro Imagem'],
+  ]
 
   for (const d of sorted) {
+    if (d.tipo === 'receita') continue
     rows.push([
-      formatDate(d.data),
       d.numero_recibo,
-      d.tipo === 'receita' ? Number(d.valor) : null,
-      d.tipo === 'despesa' ? Number(d.valor) : null,
-      d.descricao,
+      formatDatePT(d.data),
+      d.descricao ?? '',
       d.codigo,
       d.codigo_descricao,
+      Number(d.valor),
+      d.nif_confirmado ? 'Sim' : 'Não',
+      d.foto_path ? 'Sim' : 'Não',
+      getFilenameFromPath(d.foto_path),
     ])
   }
 
-  const ws1 = XLSX.utils.aoa_to_sheet(rows)
-  ws1['!cols'] = [{ wch: 12 }, { wch: 10 }, { wch: 12 }, { wch: 12 }, { wch: 40 }, { wch: 8 }, { wch: 35 }]
-  XLSX.utils.book_append_sheet(wb, ws1, 'Relatório & Contas')
+  // Linha em branco + totalizadores
+  rows.push([])
+  rows.push(['', '', '', '', 'Total Despesas', totalDespesas, '', '', ''])
+  rows.push(['', '', '', '', 'Total com NIF', totalComNIF, '', '', ''])
+  rows.push(['', '', '', '', 'Total sem NIF', totalSemNIF, '', '', ''])
+  rows.push(['', '', '', '', 'Orçamento Inicial', campo.saldo_inicial, '', '', ''])
+  rows.push(['', '', '', '', 'Receitas Extra', totalReceitas, '', '', ''])
+  rows.push(['', '', '', '', 'Saldo Disponível', saldoDisponivel, '', '', ''])
 
-  // ── Sheet 2: Dados Iniciais ───────────────────────────────────────────────
-  const allCodes = CODE_CATEGORIES.flatMap((cat) => cat.codes)
+  const ws1 = XLSX.utils.aoa_to_sheet(rows)
+  ws1['!cols'] = [
+    { wch: 8 },
+    { wch: 11 },
+    { wch: 38 },
+    { wch: 8 },
+    { wch: 35 },
+    { wch: 13 },
+    { wch: 6 },
+    { wch: 9 },
+    { wch: 20 },
+  ]
+  applyNumFmt(ws1, 5, 1, rows.length - 1, '#,##0.00')
+  XLSX.utils.book_append_sheet(wb, ws1, 'Faturas')
+
+  // ── Sheet 2: Orçamento ────────────────────────────────────────────────────
   const porCodigo: Record<string, number> = {}
-  for (const d of sorted.filter((d) => d.tipo === 'despesa')) {
+  for (const d of despesasList) {
     porCodigo[d.codigo] = (porCodigo[d.codigo] ?? 0) + Number(d.valor)
   }
 
-  const info: (string | number | null)[][] = [
+  const allCodes = CODE_CATEGORIES.flatMap((cat) => cat.codes)
+  const refTable = VALORES_REF_VERAO[campo.escalao] ?? {}
+
+  const orcRows: (string | number | null)[][] = [
     ['Campo', campo.nome],
     ['Escalão', campo.escalao],
     ['Datas', campo.datas],
@@ -59,24 +111,84 @@ export function generateExcel(campo: Campo, despesas: Despesa[]): void {
     ['Diretor/a', campo.diretor],
     ['Adjunto/a', campo.adjunto],
     ['Mamã', campo.mama],
-    ['Saldo Inicial', campo.saldo_inicial],
-    ['Total Despesas', totalDespesas],
-    ['Total Receitas Extras', totalReceitas],
-    ['Disponível', disponivel],
     [],
     ['Código', 'Descrição', 'Gasto (€)', 'Referência (€)', 'Diferença (€)'],
   ]
-
-  const refTable = VALORES_REF_VERAO[campo.escalao] ?? {}
   for (const c of allCodes) {
     const gasto = porCodigo[c.code] ?? 0
     const ref = refTable[c.code] ?? 0
-    info.push([c.code, c.full, gasto, ref, gasto - ref])
+    orcRows.push([c.code, c.full, gasto, ref, gasto - ref])
   }
 
-  const ws2 = XLSX.utils.aoa_to_sheet(info)
+  const ws2 = XLSX.utils.aoa_to_sheet(orcRows)
   ws2['!cols'] = [{ wch: 10 }, { wch: 45 }, { wch: 14 }, { wch: 16 }, { wch: 16 }]
-  XLSX.utils.book_append_sheet(wb, ws2, 'Dados Iniciais')
+  const orcDataStart = 10 // linha após o cabeçalho da tabela de códigos
+  applyNumFmt(ws2, 2, orcDataStart, orcRows.length - 1, '#,##0.00')
+  applyNumFmt(ws2, 3, orcDataStart, orcRows.length - 1, '#,##0.00')
+  applyNumFmt(ws2, 4, orcDataStart, orcRows.length - 1, '#,##0.00')
+  XLSX.utils.book_append_sheet(wb, ws2, 'Orçamento')
 
-  XLSX.writeFile(wb, `CAMTIL_${campo.nome.replace(/\s/g, '_')}_Contas.xlsx`)
+  // ── Sheet 3: Resumo ───────────────────────────────────────────────────────
+  const now = new Date()
+  const dataExport = formatDatePT(now.toISOString().split('T')[0])
+
+  const resumoRows: (string | number | null)[][] = [
+    ['RELATÓRIO FINANCEIRO — CAMTIL 2026'],
+    [],
+    ['Campo', campo.nome],
+    ['Escalão', campo.escalao],
+    ['Datas', campo.datas],
+    ['Local', campo.local ?? ''],
+    ['Diretor/a', campo.diretor],
+    ['Adjunto/a', campo.adjunto],
+    ['Mamã', campo.mama],
+    ['Exportado em', dataExport],
+    [],
+    ['FINANCEIRO'],
+    ['Orçamento inicial', campo.saldo_inicial],
+    ['Receitas extra', totalReceitas],
+    ['Total despesas', totalDespesas],
+    ['Saldo disponível', saldoDisponivel],
+    [],
+    ['FATURAS'],
+    ['Total registadas', despesasList.length],
+    ['Com NIF', despesasList.filter((d) => d.nif_confirmado).length],
+    ['Sem NIF', despesasList.filter((d) => !d.nif_confirmado).length],
+    ['Com imagem', despesasList.filter((d) => d.foto_path).length],
+    ['Sem imagem', despesasList.filter((d) => !d.foto_path).length],
+    [],
+    ['BOLSA NIF'],
+    ['Total sem NIF (€)', totalSemNIF],
+    ['Liquidado (€)', totalLiquidado],
+    ['Por liquidar (€)', emAberto],
+  ]
+
+  const ws3 = XLSX.utils.aoa_to_sheet(resumoRows)
+  ws3['!cols'] = [{ wch: 22 }, { wch: 28 }]
+  // Formatar só as células monetárias do resumo (linhas 12-15 e 25-27, índice 0)
+  for (const row of [12, 13, 14, 15, 25, 26, 27]) {
+    const addr = XLSX.utils.encode_cell({ r: row, c: 1 })
+    if (ws3[addr] && ws3[addr].t === 'n') ws3[addr].z = '#,##0.00'
+  }
+  XLSX.utils.book_append_sheet(wb, ws3, 'Resumo')
+
+  const u8 = XLSX.write(wb, { type: 'array', bookType: 'xlsx' }) as Uint8Array
+  return u8.buffer.slice(u8.byteOffset, u8.byteOffset + u8.byteLength) as ArrayBuffer
+}
+
+export function generateExcel(
+  campo: Campo,
+  despesas: Despesa[],
+  liquidacoes: LiquidacaoNif[] = []
+): void {
+  const buffer = generateExcelBuffer(campo, despesas, liquidacoes)
+  const blob = new Blob([buffer], {
+    type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+  })
+  const url = URL.createObjectURL(blob)
+  const a = document.createElement('a')
+  a.href = url
+  a.download = `CAMTIL_${campo.nome.replace(/\s/g, '_')}_Contas.xlsx`
+  a.click()
+  URL.revokeObjectURL(url)
 }

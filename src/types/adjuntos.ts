@@ -4,12 +4,21 @@ export interface Despesa {
   numero_recibo: number
   data: string
   valor: number
-  descricao: string
+  descricao: string | null
   codigo: string
   codigo_descricao: string
   tipo: 'receita' | 'despesa'
   nif_confirmado: boolean
   foto_path: string | null
+  created_at: string
+}
+
+export interface LiquidacaoNif {
+  id: string
+  campo_id: string
+  valor: number
+  data: string
+  observacao: string | null
   created_at: string
 }
 

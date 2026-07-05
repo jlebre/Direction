@@ -52,14 +52,13 @@ export default function NovaDespesaClient({ campo }: { campo: Campo }) {
 
   function canGoNext(): boolean {
     if (step === 1) return true
-    if (step === 2) return !!form.valor && parseFloat(form.valor) > 0 && !!form.descricao.trim()
+    if (step === 2) return !!form.valor && parseFloat(form.valor) > 0
     if (step === 3) return !!form.codigo
-    if (step === 4) return form.nifConfirmado
+    if (step === 4) return true
     return false
   }
 
   async function handleSubmit() {
-    if (!form.nifConfirmado) return
     setSubmitting(true)
     try {
       const { data: lastDespesa } = await supabase
@@ -80,9 +79,9 @@ export default function NovaDespesaClient({ campo }: { campo: Campo }) {
 
       const { error: insertError } = await supabase.from('despesas').insert({
         campo_id: campo.id, numero_recibo: numeroRecibo, data: form.data,
-        valor: parseFloat(form.valor), descricao: form.descricao.trim(),
+        valor: parseFloat(form.valor), descricao: form.descricao.trim() || null,
         codigo: form.codigo!, codigo_descricao: form.codigoDescricao!,
-        tipo: 'despesa', nif_confirmado: true, foto_path: fotoPath,
+        tipo: 'despesa', nif_confirmado: form.nifConfirmado, foto_path: fotoPath,
       })
       if (insertError) throw insertError
 
@@ -163,7 +162,7 @@ export default function NovaDespesaClient({ campo }: { campo: Campo }) {
                 </div>
               </div>
               <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">Descrição *</label>
+                <label className="block text-sm font-medium text-gray-700 mb-1">Descrição</label>
                 <textarea
                   value={form.descricao}
                   onChange={(e) => setForm((f) => ({ ...f, descricao: e.target.value.slice(0, 100) }))}
@@ -225,7 +224,7 @@ export default function NovaDespesaClient({ campo }: { campo: Campo }) {
                 ))}
               </div>
 
-              <div className={`rounded-xl border-2 p-4 transition-colors ${form.nifConfirmado ? 'border-[#B85042] bg-red-50' : 'border-orange-300 bg-orange-50'}`}>
+              <div className={`rounded-xl border-2 p-4 transition-colors ${form.nifConfirmado ? 'border-green-300 bg-green-50' : 'border-amber-200 bg-amber-50'}`}>
                 <label className="flex items-start gap-3 cursor-pointer">
                   <input
                     type="checkbox" checked={form.nifConfirmado}
@@ -236,14 +235,14 @@ export default function NovaDespesaClient({ campo }: { campo: Campo }) {
                     <p className="font-semibold text-sm text-gray-800">A fatura tem o NIF do CAMTIL</p>
                     <p className="text-sm font-mono font-bold text-[#B85042] mt-0.5">501 979 891</p>
                     {!form.nifConfirmado && (
-                      <p className="text-xs text-orange-700 mt-1">⚠️ Todas as faturas devem ter este NIF.</p>
+                      <p className="text-xs text-amber-700 mt-1">Sem NIF — o valor entrará na bolsa por liquidar.</p>
                     )}
                   </div>
                 </label>
               </div>
             </div>
             <button
-              type="button" disabled={!form.nifConfirmado || submitting} onClick={handleSubmit}
+              type="button" disabled={submitting} onClick={handleSubmit}
               className="w-full mt-6 py-4 bg-[#B85042] text-white font-bold text-base rounded-xl disabled:opacity-40 active:opacity-90"
             >
               {submitting ? 'A registar...' : 'Registar Despesa'}
