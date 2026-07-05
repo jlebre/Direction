@@ -2,7 +2,7 @@
 
 import { useState } from 'react'
 import { useRouter } from 'next/navigation'
-import { Save, Lock, MapPin, Users, Euro, ChevronLeft } from 'lucide-react'
+import { Save, Lock, MapPin, Users, Euro, ChevronLeft, AlertTriangle } from 'lucide-react'
 import { createClient } from '@/lib/supabase/client'
 import { toast } from 'sonner'
 import { Button } from '@/components/ui/button'
@@ -10,6 +10,12 @@ import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import type { Campo } from '@/types/shared'
 import Link from 'next/link'
+
+interface DryRunResult {
+  countDespesas: number
+  countComFoto: number
+  fotoPaths: string[]
+}
 
 export default function SetupForm({ campo }: { campo: Campo }) {
   const router = useRouter()
@@ -33,8 +39,77 @@ export default function SetupForm({ campo }: { campo: Campo }) {
   })
   const [saving, setSaving] = useState(false)
 
+  // Danger Zone state
+  const [dangerOpen, setDangerOpen] = useState(false)
+  const [dangerConfirm, setDangerConfirm] = useState('')
+  const [dangerPin, setDangerPin] = useState('')
+  const [dryRun, setDryRun] = useState<DryRunResult | null>(null)
+  const [dryRunLoading, setDryRunLoading] = useState(false)
+  const [deleting, setDeleting] = useState(false)
+
+  const CONFIRMACAO_TEXTO = 'LIMPAR FATURAS'
+  const dangerReady =
+    dangerConfirm === CONFIRMACAO_TEXTO &&
+    (!campo.pin || dangerPin === campo.pin) &&
+    dryRun !== null
+
   function upd(key: string, value: unknown) {
     setForm((f) => ({ ...f, [key]: value }))
+  }
+
+  async function runDryRun() {
+    setDryRunLoading(true)
+    setDryRun(null)
+    try {
+      const { data: despesasData } = await supabase
+        .from('despesas')
+        .select('id, foto_path')
+        .eq('campo_id', campo.id)
+
+      const all = despesasData ?? []
+      const comFoto = all.filter((d: { foto_path: string | null }) => d.foto_path)
+      setDryRun({
+        countDespesas: all.length,
+        countComFoto: comFoto.length,
+        fotoPaths: comFoto.map((d: { foto_path: string }) => d.foto_path),
+      })
+    } catch {
+      toast.error('Erro ao calcular preview. Tenta de novo.')
+    } finally {
+      setDryRunLoading(false)
+    }
+  }
+
+  async function handleLimparFaturas() {
+    if (!dangerReady || !dryRun) return
+    setDeleting(true)
+    try {
+      // 1. Apagar despesas (CASCADE elimina regularizacoes_nif associadas automaticamente)
+      const { error: despesasError } = await supabase
+        .from('despesas')
+        .delete()
+        .eq('campo_id', campo.id)
+      if (despesasError) throw despesasError
+
+      // 2. Apagar liquidacoes_nif (sem CASCADE — precisa de delete explícito)
+      await supabase.from('liquidacoes_nif').delete().eq('campo_id', campo.id)
+
+      // 3. Apagar imagens do storage (falha silenciosa por ficheiro)
+      if (dryRun.fotoPaths.length > 0) {
+        await supabase.storage.from('faturas').remove(dryRun.fotoPaths)
+      }
+
+      toast.success(`${dryRun.countDespesas} faturas eliminadas com sucesso.`)
+      setDangerOpen(false)
+      setDangerConfirm('')
+      setDangerPin('')
+      setDryRun(null)
+      router.refresh()
+    } catch (e: unknown) {
+      toast.error(e instanceof Error ? e.message : 'Erro ao eliminar faturas')
+    } finally {
+      setDeleting(false)
+    }
   }
 
   async function guardar() {
@@ -249,6 +324,100 @@ export default function SetupForm({ campo }: { campo: Campo }) {
               voltar sem guardar
             </Link>
           </p>
+        )}
+
+        {/* ─── DANGER ZONE ─────────────────────────────────────────── */}
+        {campo.setup_completo && (
+          <div className="rounded-2xl border-2 border-red-200 overflow-hidden">
+            <button
+              type="button"
+              onClick={() => { setDangerOpen((v) => !v); setDryRun(null); setDangerConfirm(''); setDangerPin('') }}
+              className="w-full flex items-center justify-between px-4 py-3 bg-red-50 text-left"
+            >
+              <div className="flex items-center gap-2">
+                <AlertTriangle className="h-4 w-4 text-red-600" />
+                <span className="text-sm font-bold text-red-700">Danger Zone</span>
+              </div>
+              <span className="text-xs text-red-400">{dangerOpen ? '▲' : '▼'}</span>
+            </button>
+
+            {dangerOpen && (
+              <div className="p-4 space-y-4 bg-white">
+                <p className="text-xs text-gray-500 leading-relaxed">
+                  Esta área permite <strong>eliminar todas as faturas</strong> deste campo.
+                  Os dados da configuração do campo e da área das mamãs não são afectados.
+                  Esta acção <strong className="text-red-600">não pode ser desfeita</strong>.
+                </p>
+
+                {/* Preview / dry-run */}
+                <div>
+                  <Button
+                    type="button"
+                    variant="outline"
+                    size="sm"
+                    onClick={runDryRun}
+                    disabled={dryRunLoading}
+                    className="w-full border-gray-300 text-gray-600 text-xs"
+                  >
+                    {dryRunLoading ? 'A calcular...' : '🔍 Preview — ver o que será eliminado'}
+                  </Button>
+
+                  {dryRun !== null && (
+                    <div className="mt-3 bg-red-50 border border-red-200 rounded-xl p-3 space-y-1 text-xs">
+                      <p className="font-bold text-red-700 mb-2">O que vai ser eliminado:</p>
+                      <p className="text-red-600">🧾 {dryRun.countDespesas} fatura(s) / registo(s) de despesa</p>
+                      <p className="text-red-600">📷 {dryRun.countComFoto} imagem(ns) no storage</p>
+                      <p className="text-red-600">📋 Regularizações e liquidações NIF associadas</p>
+                      {dryRun.countDespesas === 0 && (
+                        <p className="text-green-600 mt-2 font-medium">✓ Não há faturas para este campo.</p>
+                      )}
+                    </div>
+                  )}
+                </div>
+
+                {/* Confirmação */}
+                <div className="space-y-3">
+                  {campo.pin && (
+                    <div className="space-y-1">
+                      <Label className="text-xs text-red-700">PIN do campo</Label>
+                      <Input
+                        type="password"
+                        inputMode="numeric"
+                        maxLength={4}
+                        placeholder="• • • •"
+                        value={dangerPin}
+                        onChange={(e) => setDangerPin(e.target.value.replace(/\D/g, ''))}
+                        className="max-w-32 border-red-300"
+                      />
+                    </div>
+                  )}
+
+                  <div className="space-y-1">
+                    <Label className="text-xs text-red-700">
+                      Escreve <span className="font-mono font-bold">LIMPAR FATURAS</span> para confirmar
+                    </Label>
+                    <Input
+                      type="text"
+                      value={dangerConfirm}
+                      onChange={(e) => setDangerConfirm(e.target.value)}
+                      placeholder="LIMPAR FATURAS"
+                      className="border-red-300 font-mono"
+                    />
+                  </div>
+                </div>
+
+                <Button
+                  type="button"
+                  onClick={handleLimparFaturas}
+                  disabled={!dangerReady || deleting}
+                  className="w-full bg-red-600 hover:bg-red-700 text-white disabled:opacity-40"
+                >
+                  <AlertTriangle className="h-4 w-4 mr-2" />
+                  {deleting ? 'A eliminar...' : 'Eliminar todas as faturas'}
+                </Button>
+              </div>
+            )}
+          </div>
         )}
       </div>
     </div>

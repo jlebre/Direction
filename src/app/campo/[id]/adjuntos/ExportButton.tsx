@@ -5,7 +5,7 @@ import { supabase } from '@/lib/supabase/client'
 import { generateExcel } from '@/lib/adjuntos/export-excel'
 import { generateZip } from '@/lib/adjuntos/export-zip'
 import type { Campo } from '@/types/shared'
-import type { Despesa, LiquidacaoNif } from '@/types/adjuntos'
+import type { Despesa, RegularizacaoNif } from '@/types/adjuntos'
 
 export default function ExportButton({ campo }: { campo: Campo }) {
   const [loading, setLoading] = useState<'excel' | 'zip' | null>(null)
@@ -23,21 +23,20 @@ export default function ExportButton({ campo }: { campo: Campo }) {
   }, [])
 
   async function fetchData() {
-    const [{ data: despesas }, { data: liquidacoes }] = await Promise.all([
+    const [{ data: despesas }, { data: regularizacoes }] = await Promise.all([
       supabase
         .from('despesas')
         .select('*')
         .eq('campo_id', campo.id)
         .order('numero_recibo', { ascending: true }),
       supabase
-        .from('liquidacoes_nif')
+        .from('regularizacoes_nif')
         .select('*')
-        .eq('campo_id', campo.id)
-        .order('created_at', { ascending: false }),
+        .eq('campo_id', campo.id),
     ])
     return {
       despesas: (despesas ?? []) as Despesa[],
-      liquidacoes: (liquidacoes ?? []) as LiquidacaoNif[],
+      regularizacoes: (regularizacoes ?? []) as RegularizacaoNif[],
     }
   }
 
@@ -45,8 +44,8 @@ export default function ExportButton({ campo }: { campo: Campo }) {
     setOpen(false)
     setLoading('excel')
     try {
-      const { despesas, liquidacoes } = await fetchData()
-      generateExcel(campo, despesas, liquidacoes)
+      const { despesas, regularizacoes } = await fetchData()
+      generateExcel(campo, despesas, regularizacoes)
     } finally {
       setLoading(null)
     }
@@ -56,8 +55,8 @@ export default function ExportButton({ campo }: { campo: Campo }) {
     setOpen(false)
     setLoading('zip')
     try {
-      const { despesas, liquidacoes } = await fetchData()
-      await generateZip(campo, despesas, liquidacoes)
+      const { despesas, regularizacoes } = await fetchData()
+      await generateZip(campo, despesas, regularizacoes)
     } finally {
       setLoading(null)
     }
@@ -65,7 +64,7 @@ export default function ExportButton({ campo }: { campo: Campo }) {
 
   const label =
     loading === 'excel' ? 'A gerar...' :
-    loading === 'zip' ? 'A comprimir...' :
+    loading === 'zip'   ? 'A comprimir...' :
     '⬇ Exportar'
 
   return (

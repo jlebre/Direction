@@ -35,7 +35,10 @@ export default function DespesaItem({ despesa, campoId }: Props) {
               {despesa.codigo}
             </span>
             {despesa.foto_path && <span className="text-xs text-gray-400">📷</span>}
-            {!despesa.nif_confirmado && despesa.tipo === 'despesa' && (
+            {despesa.is_regularizacao_nif && (
+              <span className="text-xs font-medium text-blue-600 bg-blue-50 px-1.5 py-0.5 rounded">reg. NIF</span>
+            )}
+            {!despesa.nif_confirmado && despesa.tipo === 'despesa' && !despesa.is_regularizacao_nif && (
               <span className="text-xs font-medium text-amber-600 bg-amber-50 px-1.5 py-0.5 rounded">sem NIF</span>
             )}
           </div>

@@ -2,12 +2,11 @@ import { createClient } from '@/lib/supabase/server'
 import { notFound, redirect } from 'next/navigation'
 import Link from 'next/link'
 import type { Campo } from '@/types/shared'
-import type { Despesa } from '@/types/adjuntos'
+import type { Despesa, RegularizacaoNif } from '@/types/adjuntos'
 import DespesaItem from '@/components/adjuntos/DespesaItem'
 import BudgetBar from '@/components/adjuntos/BudgetBar'
 import BolsaNIF from '@/components/adjuntos/BolsaNIF'
 import ExportButton from './ExportButton'
-import type { LiquidacaoNif } from '@/types/adjuntos'
 
 export const dynamic = 'force-dynamic'
 
@@ -15,10 +14,10 @@ export default async function AdjuntosDashboard({ params }: { params: Promise<{ 
   const { id } = await params
   const supabase = createClient()
 
-  const [{ data: campo }, { data: despesas }, { data: liquidacoes }] = await Promise.all([
+  const [{ data: campo }, { data: despesas }, { data: regularizacoes }] = await Promise.all([
     supabase.from('campos').select('*').eq('id', id).single(),
     supabase.from('despesas').select('*').eq('campo_id', id).order('numero_recibo', { ascending: false }),
-    supabase.from('liquidacoes_nif').select('*').eq('campo_id', id).order('created_at', { ascending: false }),
+    supabase.from('regularizacoes_nif').select('*').eq('campo_id', id),
   ])
 
   if (!campo) notFound()
@@ -26,19 +25,25 @@ export default async function AdjuntosDashboard({ params }: { params: Promise<{ 
 
   const c = campo as Campo
   const ds = (despesas ?? []) as Despesa[]
+  const regs = (regularizacoes ?? []) as RegularizacaoNif[]
 
-  const totalDespesas = ds.filter((d) => d.tipo === 'despesa').reduce((s, d) => s + Number(d.valor), 0)
-  const totalReceitas = ds.filter((d) => d.tipo === 'receita').reduce((s, d) => s + Number(d.valor), 0)
+  // Faturas de regularização não contam para o saldo (são documentos NIF, não novos custos)
+  const dsFinanceiras = ds.filter((d) => !d.is_regularizacao_nif)
+
+  const totalDespesas = dsFinanceiras.filter((d) => d.tipo === 'despesa').reduce((s, d) => s + Number(d.valor), 0)
+  const totalReceitas = dsFinanceiras.filter((d) => d.tipo === 'receita').reduce((s, d) => s + Number(d.valor), 0)
   const saldoDisponivel = c.saldo_inicial + totalReceitas - totalDespesas
   const pctGasto = c.saldo_inicial > 0 ? Math.min((totalDespesas / c.saldo_inicial) * 100, 100) : 0
 
   const porCodigo: Record<string, number> = {}
-  for (const d of ds.filter((d) => d.tipo === 'despesa')) {
+  for (const d of dsFinanceiras.filter((d) => d.tipo === 'despesa')) {
     porCodigo[d.codigo] = (porCodigo[d.codigo] ?? 0) + Number(d.valor)
   }
 
-  const faturasSemNIF = ds.filter((d) => d.tipo === 'despesa' && !d.nif_confirmado)
-  const lqs = (liquidacoes ?? []) as LiquidacaoNif[]
+  // Faturas sem NIF: despesas originais (não regularizações) sem nif_confirmado
+  const faturasSemNIF = ds.filter(
+    (d) => d.tipo === 'despesa' && !d.nif_confirmado && !d.is_regularizacao_nif
+  )
 
   return (
     <main className="min-h-screen pb-28">
@@ -98,12 +103,12 @@ export default async function AdjuntosDashboard({ params }: { params: Promise<{ 
         </section>
 
         {/* Bolsa NIF */}
-        {(faturasSemNIF.length > 0 || lqs.length > 0) && (
+        {faturasSemNIF.length > 0 && (
           <section>
             <h2 className="text-xs font-bold text-gray-500 uppercase tracking-wider mb-3">
               Bolsa NIF
             </h2>
-            <BolsaNIF campo={c} faturasSemNIF={faturasSemNIF} liquidacoes={lqs} />
+            <BolsaNIF campo={c} faturasSemNIF={faturasSemNIF} regularizacoes={regs} />
           </section>
         )}
 

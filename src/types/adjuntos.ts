@@ -10,9 +10,21 @@ export interface Despesa {
   tipo: 'receita' | 'despesa'
   nif_confirmado: boolean
   foto_path: string | null
+  is_regularizacao_nif: boolean
   created_at: string
 }
 
+/** Ligação entre fatura original (sem NIF) e fatura de regularização (com NIF) */
+export interface RegularizacaoNif {
+  id: string
+  campo_id: string
+  despesa_regularizacao_id: string
+  despesa_original_id: string
+  valor: number
+  created_at: string
+}
+
+/** @deprecated Substituído por RegularizacaoNif — tabela liquidacoes_nif mantida por compatibilidade */
 export interface LiquidacaoNif {
   id: string
   campo_id: string

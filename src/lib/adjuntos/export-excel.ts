@@ -1,6 +1,6 @@
 import * as XLSX from 'xlsx'
 import type { Campo } from '@/types/shared'
-import type { Despesa, LiquidacaoNif } from '@/types/adjuntos'
+import type { Despesa, RegularizacaoNif } from '@/types/adjuntos'
 import { CODE_CATEGORIES } from './codes'
 import { VALORES_REF_VERAO } from './valores-referencia'
 
@@ -33,25 +33,31 @@ function applyNumFmt(
 export function generateExcelBuffer(
   campo: Campo,
   despesas: Despesa[],
-  liquidacoes: LiquidacaoNif[] = []
+  regularizacoes: RegularizacaoNif[] = []
 ): ArrayBuffer {
   const wb = XLSX.utils.book_new()
   const sorted = [...despesas].sort((a, b) => a.numero_recibo - b.numero_recibo)
 
-  const despesasList = sorted.filter((d) => d.tipo === 'despesa')
-  const receitasList = sorted.filter((d) => d.tipo === 'receita')
+  // Faturas de regularização NIF não contam para saldo (mesmo dinheiro formalizado)
+  const despesasFinanceiras = sorted.filter((d) => !d.is_regularizacao_nif)
+  const despesasList = despesasFinanceiras.filter((d) => d.tipo === 'despesa')
+  const receitasList = despesasFinanceiras.filter((d) => d.tipo === 'receita')
 
   const totalDespesas = despesasList.reduce((s, d) => s + Number(d.valor), 0)
   const totalReceitas = receitasList.reduce((s, d) => s + Number(d.valor), 0)
+
+  // Bolsa NIF: faturas sem NIF originais + estado de regularização
+  const faturasSemNIF = despesasList.filter((d) => !d.nif_confirmado)
+  const totalSemNIF = faturasSemNIF.reduce((s, d) => s + Number(d.valor), 0)
+  const totalRegularizado = regularizacoes.reduce((s, r) => s + Number(r.valor), 0)
+  const emAberto = Math.max(0, totalSemNIF - totalRegularizado)
+
   const totalComNIF = despesasList.filter((d) => d.nif_confirmado).reduce((s, d) => s + Number(d.valor), 0)
-  const totalSemNIF = despesasList.filter((d) => !d.nif_confirmado).reduce((s, d) => s + Number(d.valor), 0)
-  const totalLiquidado = liquidacoes.reduce((s, l) => s + Number(l.valor), 0)
-  const emAberto = Math.max(0, totalSemNIF - totalLiquidado)
   const saldoDisponivel = campo.saldo_inicial + totalReceitas - totalDespesas
 
   // ── Sheet 1: Faturas ──────────────────────────────────────────────────────
   const rows: (string | number | null)[][] = [
-    ['Recibo', 'Data', 'Descrição', 'Código', 'Categoria', 'Valor (€)', 'NIF', 'Tem Foto', 'Ficheiro Imagem'],
+    ['Recibo', 'Data', 'Descrição', 'Código', 'Categoria', 'Valor (€)', 'NIF', 'Reg. NIF', 'Tem Foto', 'Ficheiro Imagem'],
   ]
 
   for (const d of sorted) {
@@ -64,6 +70,7 @@ export function generateExcelBuffer(
       d.codigo_descricao,
       Number(d.valor),
       d.nif_confirmado ? 'Sim' : 'Não',
+      d.is_regularizacao_nif ? 'Fatura reg.' : '',
       d.foto_path ? 'Sim' : 'Não',
       getFilenameFromPath(d.foto_path),
     ])
@@ -71,12 +78,13 @@ export function generateExcelBuffer(
 
   // Linha em branco + totalizadores
   rows.push([])
-  rows.push(['', '', '', '', 'Total Despesas', totalDespesas, '', '', ''])
-  rows.push(['', '', '', '', 'Total com NIF', totalComNIF, '', '', ''])
-  rows.push(['', '', '', '', 'Total sem NIF', totalSemNIF, '', '', ''])
-  rows.push(['', '', '', '', 'Orçamento Inicial', campo.saldo_inicial, '', '', ''])
-  rows.push(['', '', '', '', 'Receitas Extra', totalReceitas, '', '', ''])
-  rows.push(['', '', '', '', 'Saldo Disponível', saldoDisponivel, '', '', ''])
+  rows.push(['', '', '', '', 'Total Despesas', totalDespesas, '', '', '', ''])
+  rows.push(['', '', '', '', 'Total com NIF', totalComNIF, '', '', '', ''])
+  rows.push(['', '', '', '', 'Total sem NIF', totalSemNIF, '', '', '', ''])
+  rows.push(['', '', '', '', 'Bolsa NIF em aberto', emAberto, '', '', '', ''])
+  rows.push(['', '', '', '', 'Orçamento Inicial', campo.saldo_inicial, '', '', '', ''])
+  rows.push(['', '', '', '', 'Receitas Extra', totalReceitas, '', '', '', ''])
+  rows.push(['', '', '', '', 'Saldo Disponível', saldoDisponivel, '', '', '', ''])
 
   const ws1 = XLSX.utils.aoa_to_sheet(rows)
   ws1['!cols'] = [
@@ -87,6 +95,7 @@ export function generateExcelBuffer(
     { wch: 35 },
     { wch: 13 },
     { wch: 6 },
+    { wch: 11 },
     { wch: 9 },
     { wch: 20 },
   ]
@@ -95,7 +104,7 @@ export function generateExcelBuffer(
 
   // ── Sheet 2: Orçamento ────────────────────────────────────────────────────
   const porCodigo: Record<string, number> = {}
-  for (const d of despesasList) {
+  for (const d of despesasList.filter((d) => !d.is_regularizacao_nif)) {
     porCodigo[d.codigo] = (porCodigo[d.codigo] ?? 0) + Number(d.valor)
   }
 
@@ -159,8 +168,8 @@ export function generateExcelBuffer(
     [],
     ['BOLSA NIF'],
     ['Total sem NIF (€)', totalSemNIF],
-    ['Liquidado (€)', totalLiquidado],
-    ['Por liquidar (€)', emAberto],
+    ['Regularizado (€)', totalRegularizado],
+    ['Por regularizar (€)', emAberto],
   ]
 
   const ws3 = XLSX.utils.aoa_to_sheet(resumoRows)
@@ -179,9 +188,9 @@ export function generateExcelBuffer(
 export function generateExcel(
   campo: Campo,
   despesas: Despesa[],
-  liquidacoes: LiquidacaoNif[] = []
+  regularizacoes: RegularizacaoNif[] = []
 ): void {
-  const buffer = generateExcelBuffer(campo, despesas, liquidacoes)
+  const buffer = generateExcelBuffer(campo, despesas, regularizacoes)
   const blob = new Blob([buffer], {
     type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
   })

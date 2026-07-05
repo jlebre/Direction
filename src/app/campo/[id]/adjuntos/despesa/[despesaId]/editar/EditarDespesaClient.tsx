@@ -26,7 +26,8 @@ interface Props {
 
 export default function EditarDespesaClient({ campo, despesa, existingPhotoUrl }: Props) {
   const router = useRouter()
-  const fileInputRef = useRef<HTMLInputElement>(null)
+  const cameraInputRef = useRef<HTMLInputElement>(null)
+  const galleryInputRef = useRef<HTMLInputElement>(null)
 
   const [showPin, setShowPin] = useState(!!campo.pin)
   const [pinError, setPinError] = useState(false)
@@ -171,39 +172,64 @@ export default function EditarDespesaClient({ campo, despesa, existingPhotoUrl }
                 {/* eslint-disable-next-line @next/next/no-img-element */}
                 <img src={currentPhotoUrl} alt="Fatura" className="w-full h-full object-cover" />
               </div>
-              <div className="flex gap-2">
+              <div className="grid grid-cols-3 gap-2">
                 <button
                   type="button"
-                  onClick={() => fileInputRef.current?.click()}
-                  className="flex-1 py-2.5 text-sm font-medium border border-gray-200 rounded-xl text-gray-700 bg-white active:bg-gray-50"
+                  onClick={() => cameraInputRef.current?.click()}
+                  className="py-2.5 text-xs font-medium border border-gray-200 rounded-xl text-gray-700 bg-white active:bg-gray-50"
                 >
-                  Trocar foto
+                  📷 Câmara
+                </button>
+                <button
+                  type="button"
+                  onClick={() => galleryInputRef.current?.click()}
+                  className="py-2.5 text-xs font-medium border border-gray-200 rounded-xl text-gray-700 bg-white active:bg-gray-50"
+                >
+                  🖼 Galeria
                 </button>
                 <button
                   type="button"
                   onClick={removePhoto}
-                  className="flex-1 py-2.5 text-sm font-medium border border-red-200 rounded-xl text-red-500 bg-white active:bg-red-50"
+                  className="py-2.5 text-xs font-medium border border-red-200 rounded-xl text-red-500 bg-white active:bg-red-50"
                 >
-                  Remover foto
+                  Remover
                 </button>
               </div>
             </div>
           ) : (
-            <button
-              type="button"
-              onClick={() => fileInputRef.current?.click()}
-              className="w-full flex flex-col items-center justify-center gap-2 py-8 bg-white border-2 border-dashed border-gray-200 rounded-2xl text-gray-500 active:bg-gray-50"
-            >
-              <span className="text-3xl">📷</span>
-              <p className="text-sm font-medium">Adicionar foto</p>
-              <p className="text-xs text-gray-400">Opcional</p>
-            </button>
+            <div className="grid grid-cols-2 gap-3">
+              <button
+                type="button"
+                onClick={() => cameraInputRef.current?.click()}
+                className="flex flex-col items-center justify-center gap-2 py-8 bg-white border-2 border-dashed border-gray-200 rounded-2xl text-gray-500 active:bg-gray-50"
+              >
+                <span className="text-3xl">📷</span>
+                <p className="text-sm font-medium">Câmara</p>
+              </button>
+              <button
+                type="button"
+                onClick={() => galleryInputRef.current?.click()}
+                className="flex flex-col items-center justify-center gap-2 py-8 bg-white border-2 border-dashed border-gray-200 rounded-2xl text-gray-500 active:bg-gray-50"
+              >
+                <span className="text-3xl">🖼</span>
+                <p className="text-sm font-medium">Galeria</p>
+              </button>
+            </div>
           )}
+          {/* Câmara: capture=environment abre câmara directamente */}
           <input
-            ref={fileInputRef}
+            ref={cameraInputRef}
             type="file"
             accept="image/*"
             capture="environment"
+            className="hidden"
+            onChange={handleFileChange}
+          />
+          {/* Galeria: sem capture — mostra selector de ficheiros completo */}
+          <input
+            ref={galleryInputRef}
+            type="file"
+            accept="image/*"
             className="hidden"
             onChange={handleFileChange}
           />
