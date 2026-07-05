@@ -16,24 +16,12 @@ export default async function CampoHub({ params }: { params: Promise<{ id: strin
   const { id } = await params
   const supabase = createClient()
 
-  const [{ data: campo }, { data: despesas }] = await Promise.all([
-    supabase.from('campos').select('*').eq('id', id).single(),
-    supabase.from('despesas').select('id, valor, tipo, is_regularizacao_nif').eq('campo_id', id),
-  ])
+  const { data: campo } = await supabase.from('campos').select('*').eq('id', id).single()
 
   if (!campo) redirect('/')
   if (!campo.setup_completo) redirect(`/campo/${id}/setup`)
 
   const c = campo as Campo
-
-  const totalDespesas = (despesas ?? [])
-    .filter((d: { tipo: string; is_regularizacao_nif?: boolean }) => d.tipo === 'despesa' && !d.is_regularizacao_nif)
-    .reduce((s: number, d: { valor: number }) => s + Number(d.valor), 0)
-  const totalReceitas = (despesas ?? [])
-    .filter((d: { tipo: string }) => d.tipo === 'receita')
-    .reduce((s: number, d: { valor: number }) => s + Number(d.valor), 0)
-  const saldoDisponivel = c.saldo_inicial + totalReceitas - totalDespesas
-
   const cor = ESCALAO_COR[c.escalao]
 
   const ferramentasCampo = [
@@ -126,10 +114,7 @@ export default async function CampoHub({ params }: { params: Promise<{ id: strin
             <Link href={`/campo/${id}/adjuntos`} className="block">
               <div className="bg-[#B85042] text-white rounded-xl px-4 py-4 flex items-center gap-3 active:scale-[0.97] transition-transform">
                 <Receipt className="h-5 w-5 shrink-0" />
-                <div>
-                  <p className="font-bold text-base leading-tight">Adjunto</p>
-                  <p className="text-xs text-white/70">€{saldoDisponivel.toFixed(0)}</p>
-                </div>
+                <span className="font-bold text-base">Adjunto</span>
               </div>
             </Link>
           </div>

@@ -3,7 +3,7 @@
 import { useState } from 'react'
 import Link from 'next/link'
 import { toast } from 'sonner'
-import { Plus, AlertTriangle, ShoppingCart, Info, Copy, ChevronLeft, ChevronRight, Calendar, LayoutGrid, ExternalLink, Download } from 'lucide-react'
+import { Plus, AlertTriangle, ShoppingCart, Info, Copy, ChevronLeft, ChevronRight, Calendar, LayoutGrid, ExternalLink } from 'lucide-react'
 import { createClient } from '@/lib/supabase/client'
 import { Button } from '@/components/ui/button'
 import { Badge } from '@/components/ui/badge'
@@ -21,7 +21,6 @@ import {
   TIPO_PRATO_LABELS,
 } from '@/types/mamas'
 import { cn as cnUtil } from '@/lib/utils'
-import { exportPlanoRefeicoes } from '@/lib/mamas/export-plano-refeicoes'
 
 const REFEICOES: RefeicaoTipo[] = ['pequeno_almoco', 'almoco', 'lanche', 'jantar', 'ceia']
 
@@ -220,10 +219,6 @@ export function EmentaCalendario({ campo, ementaInicial, receitas, restricoes }:
     }
   }
 
-  function handleExport() {
-    exportPlanoRefeicoes(campo, ementa, diasList)
-  }
-
   const existingPratos = slotSelecionado
     ? getSlots(slotSelecionado.dia, slotSelecionado.refeicao)
     : []
@@ -312,11 +307,6 @@ export function EmentaCalendario({ campo, ementaInicial, receitas, restricoes }:
           </button>
         </div>
 
-        <Button size="sm" variant="outline" onClick={handleExport} className="gap-1" title="Exportar Excel">
-          <Download className="h-4 w-4" />
-          <span className="hidden sm:inline">Exportar</span>
-        </Button>
-
         <Link href={`/campo/${campo.id}/mamas/lista`}>
           <Button variant="outline" size="sm" className="gap-1">
             <ShoppingCart className="h-4 w-4" />
@@ -328,20 +318,6 @@ export function EmentaCalendario({ campo, ementaInicial, receitas, restricoes }:
           <span className="hidden sm:inline">Gerar lista</span>
         </Button>
       </div>
-
-      {/* Clone banner — mostra quando plano está vazio */}
-      {ementa.length === 0 && (
-        <div className="mx-4 mt-4 bg-[#2D5016]/5 border border-[#2D5016]/20 rounded-xl p-4 flex items-center gap-3">
-          <Copy className="h-5 w-5 text-[#2D5016] shrink-0" />
-          <div className="flex-1">
-            <p className="text-sm font-semibold text-[#2D5016]">Plano ainda vazio</p>
-            <p className="text-xs text-gray-500 mt-0.5">Começa do zero ou copia o plano de outro campo.</p>
-          </div>
-          <Button size="sm" variant="outline" onClick={abrirCloneModal} className="border-[#2D5016] text-[#2D5016] hover:bg-[#2D5016]/10 shrink-0">
-            Copiar plano
-          </Button>
-        </div>
-      )}
 
       {/* ── VISTA DIA ── */}
       {vista === 'dia' && (
@@ -428,6 +404,20 @@ export function EmentaCalendario({ campo, ementaInicial, receitas, restricoes }:
                 {renderSlotCard(diaAtual, refeicao)}
               </div>
             ))}
+
+            {/* Ação secundária — copiar plano, só quando vazio */}
+            {ementa.length === 0 && (
+              <div className="pt-4 border-t border-[#E7E8D1] text-center">
+                <p className="text-xs text-gray-400 mb-2">Já tens um plano noutro campo?</p>
+                <button
+                  onClick={abrirCloneModal}
+                  className="inline-flex items-center gap-1.5 text-sm text-[#2D5016] font-medium hover:underline"
+                >
+                  <Copy className="h-3.5 w-3.5" />
+                  Copiar plano existente
+                </button>
+              </div>
+            )}
           </div>
         </div>
       )}

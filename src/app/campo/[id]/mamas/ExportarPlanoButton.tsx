@@ -1,7 +1,6 @@
 'use client'
 
 import { useState } from 'react'
-import { Download } from 'lucide-react'
 import { createClient } from '@/lib/supabase/client'
 import { toast } from 'sonner'
 import { exportPlanoRefeicoes } from '@/lib/mamas/export-plano-refeicoes'
@@ -36,12 +35,12 @@ export function ExportarPlanoButton({ campo, diasList }: Props) {
 
   return (
     <button
+      type="button"
       onClick={handleExport}
       disabled={loading}
-      className="flex items-center gap-1.5 bg-white/20 hover:bg-white/30 text-white text-sm font-semibold rounded-xl px-3 py-2 transition-colors disabled:opacity-60"
+      className="flex items-center gap-1.5 text-green-200 text-sm font-medium px-3 py-1.5 rounded-lg bg-white/10 hover:bg-white/20 active:bg-white/30 disabled:opacity-60 transition-colors"
     >
-      <Download className="h-4 w-4" />
-      {loading ? 'A exportar...' : 'Exportar Plano'}
+      {loading ? 'A exportar...' : '⬇ Exportar'}
     </button>
   )
 }
