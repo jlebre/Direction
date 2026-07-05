@@ -3,7 +3,7 @@ import { redirect } from 'next/navigation'
 import Link from 'next/link'
 import {
   ChevronLeft, Settings, UtensilsCrossed, Receipt,
-  Pill, ShoppingCart, DollarSign, Users,
+  Pill, ShoppingCart, DollarSign, AlertTriangle,
   CalendarDays, MapPin,
 } from 'lucide-react'
 import { ESCALAO_COR } from '@/types/shared'
@@ -36,28 +36,11 @@ export default async function CampoHub({ params }: { params: Promise<{ id: strin
 
   const cor = ESCALAO_COR[c.escalao]
 
-  const modulosPrincipais = [
-    {
-      href: `/campo/${id}/mamas`,
-      label: 'Módulo Mamãs',
-      sublabel: 'Ementa, animados, receitas, restrições',
-      icon: UtensilsCrossed,
-      bg: '#2D5016',
-    },
-    {
-      href: `/campo/${id}/adjuntos`,
-      label: 'Módulo Adjuntos',
-      sublabel: `Faturas · €${saldoDisponivel.toFixed(0)} disponível`,
-      icon: Receipt,
-      bg: '#B85042',
-    },
-  ]
-
   const ferramentasCampo = [
-    { href: `/campo/${id}/mamas/animados`, label: 'Animados',        icon: Users,        cor: '#4B7BEC' },
-    { href: `/campo/${id}/mamas/farmacia`, label: 'Farmácia',        icon: Pill,         cor: '#36454F' },
-    { href: `/campo/${id}/mamas/lista`,    label: 'Lista de Compras', icon: ShoppingCart, cor: '#F5A623' },
-    { href: `/campo/${id}/mamas/precos`,   label: 'Preços',          icon: DollarSign,   cor: '#2D5016' },
+    { href: `/campo/${id}/mamas/farmacia`,  label: 'Farmácia',              icon: Pill,          cor: '#36454F' },
+    { href: `/campo/${id}/mamas/lista`,     label: 'Lista de Compras',      icon: ShoppingCart,  cor: '#F5A623' },
+    { href: `/campo/${id}/mamas/precos`,    label: 'Preços',                icon: DollarSign,    cor: '#2D5016' },
+    { href: `/campo/${id}/mamas/restricoes`, label: 'Restrições Alimentares', icon: AlertTriangle, cor: '#D97706' },
   ]
 
   return (
@@ -73,7 +56,7 @@ export default async function CampoHub({ params }: { params: Promise<{ id: strin
         <Link
           href={`/campo/${id}/setup`}
           className="p-2 rounded-lg hover:bg-[#E7E8D1] transition-colors"
-          title="Setup adjuntos"
+          title="Definições"
         >
           <Settings className="h-4 w-4 text-[#36454F]" />
         </Link>
@@ -85,21 +68,19 @@ export default async function CampoHub({ params }: { params: Promise<{ id: strin
           className="text-white rounded-2xl p-5 space-y-4"
           style={{ backgroundColor: cor?.bg ?? '#2D5016' }}
         >
-          <div className="flex items-start justify-between gap-3">
-            <div>
-              <h2 className="font-bold text-xl leading-tight">{c.nome}</h2>
-              <div className="flex items-center gap-2 mt-1 flex-wrap">
-                {c.escalao && (
-                  <span className="text-xs font-semibold bg-white/20 rounded-full px-2 py-0.5">
-                    {c.escalao}
-                  </span>
-                )}
-                {c.ano && c.periodo && (
-                  <span className="text-xs text-white/70">
-                    Período {c.periodo} · {c.ano}
-                  </span>
-                )}
-              </div>
+          <div>
+            <h2 className="font-bold text-xl leading-tight">{c.nome}</h2>
+            <div className="flex items-center gap-2 mt-1 flex-wrap">
+              {c.escalao && (
+                <span className="text-xs font-semibold bg-white/20 rounded-full px-2 py-0.5">
+                  {c.escalao}
+                </span>
+              )}
+              {c.ano && c.periodo && (
+                <span className="text-xs text-white/70">
+                  Período {c.periodo} · {c.ano}
+                </span>
+              )}
             </div>
           </div>
 
@@ -132,30 +113,25 @@ export default async function CampoHub({ params }: { params: Promise<{ id: strin
           </div>
         </div>
 
-        {/* Módulos principais */}
+        {/* Módulos — compactos */}
         <div>
           <h2 className="text-xs font-bold text-gray-400 uppercase tracking-widest mb-3">Módulos</h2>
-          <div className="space-y-3">
-            {modulosPrincipais.map((m) => {
-              const Icon = m.icon
-              return (
-                <Link key={m.href} href={m.href} className="block">
-                  <div
-                    className="rounded-2xl p-5 text-white flex items-center gap-4 active:scale-[0.98] transition-transform"
-                    style={{ backgroundColor: m.bg }}
-                  >
-                    <div className="w-12 h-12 rounded-xl bg-white/20 flex items-center justify-center shrink-0">
-                      <Icon className="h-6 w-6 text-white" />
-                    </div>
-                    <div>
-                      <p className="font-bold text-lg leading-tight">{m.label}</p>
-                      <p className="text-sm text-white/80 mt-0.5">{m.sublabel}</p>
-                    </div>
-                    <div className="ml-auto text-white/60">›</div>
-                  </div>
-                </Link>
-              )
-            })}
+          <div className="grid grid-cols-2 gap-3">
+            <Link href={`/campo/${id}/mamas`} className="block">
+              <div className="bg-[#2D5016] text-white rounded-xl px-4 py-4 flex items-center gap-3 active:scale-[0.97] transition-transform">
+                <UtensilsCrossed className="h-5 w-5 shrink-0" />
+                <span className="font-bold text-base">Mamã</span>
+              </div>
+            </Link>
+            <Link href={`/campo/${id}/adjuntos`} className="block">
+              <div className="bg-[#B85042] text-white rounded-xl px-4 py-4 flex items-center gap-3 active:scale-[0.97] transition-transform">
+                <Receipt className="h-5 w-5 shrink-0" />
+                <div>
+                  <p className="font-bold text-base leading-tight">Adjunto</p>
+                  <p className="text-xs text-white/70">€{saldoDisponivel.toFixed(0)}</p>
+                </div>
+              </div>
+            </Link>
           </div>
         </div>
 

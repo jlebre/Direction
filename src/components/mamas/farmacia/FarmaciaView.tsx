@@ -1,7 +1,7 @@
 'use client'
 
 import { useState } from 'react'
-import { Plus, Trash2, Phone, Pill, Package, Clock, BookOpen } from 'lucide-react'
+import { Plus, Trash2, Phone, Pill, Clock, BookOpen } from 'lucide-react'
 import Link from 'next/link'
 import { createClient } from '@/lib/supabase/client'
 import { toast } from 'sonner'
@@ -12,7 +12,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@
 import { Tabs, TabsList, TabsTrigger, TabsContent } from '@/components/ui/tabs'
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from '@/components/ui/dialog'
 import { Badge } from '@/components/ui/badge'
-import type { Animado, FarmaciaMedicacao, FarmaciaInventario, ContactoEmergencia } from '@/types/mamas'
+import type { Animado, FarmaciaMedicacao, ContactoEmergencia } from '@/types/mamas'
 import { cn } from '@/lib/utils'
 
 const CONTACTOS_PADRAO = [
@@ -25,19 +25,15 @@ interface FarmaciaViewProps {
   campoId: string
   animados: Animado[]
   medicacoesIniciais: FarmaciaMedicacao[]
-  inventarioInicial: FarmaciaInventario[]
   contactosIniciais: ContactoEmergencia[]
 }
 
-export function FarmaciaView({ campoId, animados, medicacoesIniciais, inventarioInicial, contactosIniciais }: FarmaciaViewProps) {
+export function FarmaciaView({ campoId, animados, medicacoesIniciais, contactosIniciais }: FarmaciaViewProps) {
   const [medicacoes, setMedicacoes] = useState<FarmaciaMedicacao[]>(medicacoesIniciais)
-  const [inventario, setInventario] = useState<FarmaciaInventario[]>(inventarioInicial)
   const [contactos, setContactos] = useState<ContactoEmergencia[]>(contactosIniciais)
   const [modalMed, setModalMed] = useState(false)
-  const [modalInv, setModalInv] = useState(false)
   const [modalContact, setModalContact] = useState(false)
   const [formMed, setFormMed] = useState({ animado_id: '', medicamento: '', horarios: '', notas: '' })
-  const [formInv, setFormInv] = useState({ item: '', quantidade_inicial: 1, notas: '' })
   const [formContact, setFormContact] = useState({ animado_id: '', tipo: '', nome: '', telefone: '', notas: '' })
   const [saving, setSaving] = useState(false)
   const supabase = createClient()
@@ -77,31 +73,6 @@ export function FarmaciaView({ campoId, animados, medicacoesIniciais, inventario
     await supabase.from('farmacia_medicacoes').delete().eq('id', id)
     setMedicacoes((prev) => prev.filter((m) => m.id !== id))
     toast.success('Removido')
-  }
-
-  async function adicionarInventario() {
-    setSaving(true)
-    try {
-      const { data, error } = await supabase
-        .from('farmacia_inventario')
-        .insert({ campo_id: campoId, ...formInv, quantidade_gasta: 0 })
-        .select()
-        .single()
-      if (error) throw error
-      setInventario((prev) => [...prev, data as FarmaciaInventario])
-      setFormInv({ item: '', quantidade_inicial: 1, notas: '' })
-      setModalInv(false)
-      toast.success('Item adicionado')
-    } catch (e: unknown) {
-      toast.error(e instanceof Error ? e.message : 'Erro')
-    } finally {
-      setSaving(false)
-    }
-  }
-
-  async function atualizarGasto(id: string, gasto: number) {
-    await supabase.from('farmacia_inventario').update({ quantidade_gasta: Math.max(0, gasto) }).eq('id', id)
-    setInventario((prev) => prev.map((i) => (i.id === id ? { ...i, quantidade_gasta: Math.max(0, gasto) } : i)))
   }
 
   async function adicionarContacto() {
@@ -149,14 +120,10 @@ export function FarmaciaView({ campoId, animados, medicacoesIniciais, inventario
       </Link>
 
       <Tabs defaultValue="medicacoes">
-        <TabsList className="w-full grid grid-cols-3">
+        <TabsList className="w-full grid grid-cols-2">
           <TabsTrigger value="medicacoes" className="gap-1 text-xs sm:text-sm">
             <Pill className="h-3.5 w-3.5" />
             Medicações
-          </TabsTrigger>
-          <TabsTrigger value="inventario" className="gap-1 text-xs sm:text-sm">
-            <Package className="h-3.5 w-3.5" />
-            Inventário
           </TabsTrigger>
           <TabsTrigger value="contactos" className="gap-1 text-xs sm:text-sm">
             <Phone className="h-3.5 w-3.5" />
@@ -199,52 +166,6 @@ export function FarmaciaView({ campoId, animados, medicacoesIniciais, inventario
                     </div>
                   )}
                   {med.notas && <p className="text-sm text-gray-500 mt-1 italic">{med.notas}</p>}
-                </div>
-              ))}
-            </div>
-          )}
-        </TabsContent>
-
-        {/* Inventário */}
-        <TabsContent value="inventario" className="space-y-4 mt-4">
-          <div className="flex justify-between items-center">
-            <p className="text-sm text-gray-500">{inventario.length} item{inventario.length !== 1 ? 's' : ''}</p>
-            <Button size="sm" onClick={() => setModalInv(true)} className="gap-1">
-              <Plus className="h-4 w-4" /> Adicionar
-            </Button>
-          </div>
-          {inventario.length === 0 ? (
-            <div className="text-center py-12 text-gray-400">
-              <Package className="h-10 w-10 mx-auto mb-2" />
-              <p>Caixa de farmácia vazia</p>
-            </div>
-          ) : (
-            <div className="bg-white rounded-xl border border-[#E7E8D1] overflow-hidden">
-              {inventario.map((item, i) => (
-                <div
-                  key={item.id}
-                  className={cn('flex items-center gap-3 px-4 py-3', i > 0 && 'border-t border-[#E7E8D1]')}
-                >
-                  <div className="flex-1">
-                    <p className="font-medium text-sm text-[#36454F]">{item.item}</p>
-                    {item.notas && <p className="text-xs text-gray-400">{item.notas}</p>}
-                  </div>
-                  <div className="flex items-center gap-2 text-sm">
-                    <span className="text-gray-400 text-xs">Inicial: {item.quantidade_inicial}</span>
-                    <span className="text-gray-400">·</span>
-                    <span className="text-xs text-gray-400">Gasto:</span>
-                    <input
-                      type="number"
-                      min={0}
-                      max={item.quantidade_inicial}
-                      value={item.quantidade_gasta}
-                      onChange={(e) => atualizarGasto(item.id, parseInt(e.target.value))}
-                      className="w-14 text-center border border-gray-200 rounded-md py-1 text-sm text-[#36454F] focus:outline-none focus:ring-1 focus:ring-[#B85042]"
-                    />
-                    <span className="text-xs font-semibold text-[#B85042]">
-                      Resto: {item.quantidade_inicial - item.quantidade_gasta}
-                    </span>
-                  </div>
                 </div>
               ))}
             </div>
@@ -342,33 +263,6 @@ export function FarmaciaView({ campoId, animados, medicacoesIniciais, inventario
           <DialogFooter>
             <Button variant="outline" onClick={() => setModalMed(false)}>Cancelar</Button>
             <Button onClick={adicionarMedicacao} disabled={saving || !formMed.animado_id || !formMed.medicamento}>
-              {saving ? 'A guardar...' : 'Guardar'}
-            </Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
-
-      {/* Modal Inventário */}
-      <Dialog open={modalInv} onOpenChange={setModalInv}>
-        <DialogContent>
-          <DialogHeader><DialogTitle>Adicionar item à caixa</DialogTitle></DialogHeader>
-          <div className="space-y-3">
-            <div className="space-y-1">
-              <Label>Item</Label>
-              <Input placeholder="Compressas, Betadine, Paracetamol..." value={formInv.item} onChange={(e) => setFormInv((f) => ({ ...f, item: e.target.value }))} />
-            </div>
-            <div className="space-y-1">
-              <Label>Quantidade inicial</Label>
-              <Input type="number" min={1} value={formInv.quantidade_inicial} onChange={(e) => setFormInv((f) => ({ ...f, quantidade_inicial: parseInt(e.target.value) || 1 }))} />
-            </div>
-            <div className="space-y-1">
-              <Label>Notas</Label>
-              <Input placeholder="Prazo de validade, etc." value={formInv.notas} onChange={(e) => setFormInv((f) => ({ ...f, notas: e.target.value }))} />
-            </div>
-          </div>
-          <DialogFooter>
-            <Button variant="outline" onClick={() => setModalInv(false)}>Cancelar</Button>
-            <Button onClick={adicionarInventario} disabled={saving || !formInv.item}>
               {saving ? 'A guardar...' : 'Guardar'}
             </Button>
           </DialogFooter>

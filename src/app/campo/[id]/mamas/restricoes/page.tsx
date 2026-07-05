@@ -24,7 +24,7 @@ export default async function RestricoesFarmaciaPage({ params }: { params: Promi
 
   return (
     <>
-      <Header title="Restrições Alimentares" backHref={`/campo/${id}/mamas`} />
+      <Header title="Restrições Alimentares" backHref={`/campo/${id}`} />
       <RestricoesList
         animados={(animados ?? []) as Animado[]}
         restricoesIniciais={(restricoes ?? []) as RestricaoAlimentar[]}

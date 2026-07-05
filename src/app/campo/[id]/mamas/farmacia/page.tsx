@@ -2,7 +2,7 @@ import { createClient } from '@/lib/supabase/server'
 import { notFound } from 'next/navigation'
 import { FarmaciaView } from '@/components/mamas/farmacia/FarmaciaView'
 import { Header } from '@/components/mamas/Header'
-import type { Animado, FarmaciaMedicacao, FarmaciaInventario, ContactoEmergencia } from '@/types/mamas'
+import type { Animado, FarmaciaMedicacao, ContactoEmergencia } from '@/types/mamas'
 
 export const dynamic = 'force-dynamic'
 
@@ -10,7 +10,7 @@ export default async function FarmaciaPage({ params }: { params: Promise<{ id: s
   const { id } = await params
   const supabase = createClient()
 
-  const [{ data: campo }, { data: animados }, { data: medicacoes }, { data: inventario }, { data: contactos }] = await Promise.all([
+  const [{ data: campo }, { data: animados }, { data: medicacoes }, { data: contactos }] = await Promise.all([
     supabase.from('campos').select('id, nome').eq('id', id).single(),
     supabase.from('animados').select('id, nome').eq('campo_id', id).order('nome'),
     supabase
@@ -18,7 +18,6 @@ export default async function FarmaciaPage({ params }: { params: Promise<{ id: s
       .select('*, animado:animados!inner(id, nome)')
       .eq('animados.campo_id', id)
       .order('animado_id'),
-    supabase.from('farmacia_inventario').select('*').eq('campo_id', id).order('item'),
     supabase
       .from('contactos_emergencia')
       .select('*, animado:animados!inner(id, nome)')
@@ -35,7 +34,6 @@ export default async function FarmaciaPage({ params }: { params: Promise<{ id: s
         campoId={id}
         animados={(animados ?? []) as Animado[]}
         medicacoesIniciais={(medicacoes ?? []) as FarmaciaMedicacao[]}
-        inventarioInicial={(inventario ?? []) as FarmaciaInventario[]}
         contactosIniciais={(contactos ?? []) as ContactoEmergencia[]}
       />
     </>
