@@ -56,8 +56,15 @@ export default async function AdjuntosDashboard({ params }: { params: Promise<{ 
             </Link>
             <ExportButton campo={c} />
           </div>
-          <h1 className="text-2xl font-bold">Adjuntos</h1>
-          <p className="text-red-200 text-sm mt-0.5">{c.escalao} · {c.datas}</p>
+          <h1 className="text-2xl font-bold">Olá, {c.adjunto?.split(' ')[0] || 'Adjunto'}</h1>
+          <Link
+            href={`/campo/${id}/adjuntos/faturas`}
+            className="inline-flex items-center gap-2 mt-2 text-red-200 text-sm hover:text-white transition-colors"
+          >
+            <span>Ver todas as faturas</span>
+            <span className="bg-white/20 rounded-full px-2 py-0.5 text-xs font-semibold">{ds.length}</span>
+            <span className="opacity-60">→</span>
+          </Link>
 
           <div className="mt-5">
             <p className="text-red-200 text-sm">Saldo disponível</p>
@@ -82,18 +89,6 @@ export default async function AdjuntosDashboard({ params }: { params: Promise<{ 
       </div>
 
       <div className="max-w-lg mx-auto px-4 py-4 space-y-6">
-        {/* Equipa */}
-        <div className="bg-white rounded-xl border border-gray-100 px-4 py-3">
-          <div className="flex items-center gap-6 text-sm">
-            {[['Diretor/a', c.diretor], ['Adjunto/a', c.adjunto], ['Mamã', c.mama]].map(([role, name]) => (
-              <div key={role} className="min-w-0">
-                <p className="text-xs text-gray-400">{role}</p>
-                <p className="font-medium text-gray-800 truncate">{name || '—'}</p>
-              </div>
-            ))}
-          </div>
-        </div>
-
         {/* Orçamento por categoria */}
         <section>
           <h2 className="text-xs font-bold text-gray-500 uppercase tracking-wider mb-3">
@@ -111,15 +106,6 @@ export default async function AdjuntosDashboard({ params }: { params: Promise<{ 
             <BolsaNIF campo={c} faturasSemNIF={faturasSemNIF} regularizacoes={regs} />
           </section>
         )}
-
-        {/* Ver todas as faturas */}
-        <Link
-          href={`/campo/${id}/adjuntos/faturas`}
-          className="flex items-center justify-between bg-white border border-[#E7E8D1] rounded-xl px-4 py-3 hover:border-[#B85042]/30 transition-colors"
-        >
-          <span className="font-semibold text-sm text-[#36454F]">Ver todas as faturas</span>
-          <span className="text-[#B85042] text-sm font-medium">{ds.length} registos →</span>
-        </Link>
 
         {/* Lista de despesas recentes */}
         <section>

@@ -198,6 +198,8 @@ export function generateExcel(
   const a = document.createElement('a')
   a.href = url
   a.download = `CAMTIL_${campo.nome.replace(/\s/g, '_')}_Contas.xlsx`
+  document.body.appendChild(a)
   a.click()
+  document.body.removeChild(a)
   URL.revokeObjectURL(url)
 }

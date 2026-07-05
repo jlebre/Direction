@@ -48,6 +48,8 @@ export async function generateZip(
   const a = document.createElement('a')
   a.href = url
   a.download = `CAMTIL_${campo.nome.replace(/\s/g, '_')}_Exportacao.zip`
+  document.body.appendChild(a)
   a.click()
+  document.body.removeChild(a)
   URL.revokeObjectURL(url)
 }

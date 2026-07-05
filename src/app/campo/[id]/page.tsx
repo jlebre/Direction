@@ -3,7 +3,7 @@ import { redirect } from 'next/navigation'
 import Link from 'next/link'
 import {
   ChevronLeft, Settings, UtensilsCrossed, Receipt,
-  Pill, ShoppingCart, DollarSign, SlidersHorizontal,
+  Pill, ShoppingCart, DollarSign,
   CalendarDays, MapPin,
 } from 'lucide-react'
 import { ESCALAO_COR } from '@/types/shared'
@@ -57,7 +57,6 @@ export default async function CampoHub({ params }: { params: Promise<{ id: strin
     { href: `/campo/${id}/mamas/farmacia`, label: 'Farmácia', icon: Pill,             cor: '#36454F' },
     { href: `/campo/${id}/mamas/lista`,    label: 'Lista de Compras', icon: ShoppingCart, cor: '#F5A623' },
     { href: `/campo/${id}/mamas/precos`,   label: 'Preços', icon: DollarSign,          cor: '#2D5016' },
-    { href: `/campo/${id}/mamas/definicoes`, label: 'Definições', icon: SlidersHorizontal, cor: '#6B7280' },
   ]
 
   return (

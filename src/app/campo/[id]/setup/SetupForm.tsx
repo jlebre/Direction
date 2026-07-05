@@ -29,12 +29,6 @@ export default function SetupForm({ campo }: { campo: Campo }) {
     num_animados: campo.num_animados ?? 0,
     num_animadores: campo.num_animadores ?? 0,
     saldo_inicial: campo.saldo_inicial ?? 0,
-    orcamento_alimentacao: campo.orcamento_alimentacao ?? '',
-    orcamento_compras_gerais: campo.orcamento_compras_gerais ?? '',
-    orcamento_talho: campo.orcamento_talho ?? '',
-    orcamento_pao: campo.orcamento_pao ?? '',
-    orcamento_frutas_legumes: campo.orcamento_frutas_legumes ?? '',
-    orcamento_diversos: campo.orcamento_diversos ?? '',
     pin: campo.pin ?? '',
   })
   const [saving, setSaving] = useState(false)
@@ -129,12 +123,6 @@ export default function SetupForm({ campo }: { campo: Campo }) {
           num_animados: Number(form.num_animados) || 0,
           num_animadores: Number(form.num_animadores) || 0,
           saldo_inicial: Number(form.saldo_inicial) || 0,
-          orcamento_alimentacao: form.orcamento_alimentacao !== '' ? Number(form.orcamento_alimentacao) : null,
-          orcamento_compras_gerais: form.orcamento_compras_gerais !== '' ? Number(form.orcamento_compras_gerais) : null,
-          orcamento_talho: form.orcamento_talho !== '' ? Number(form.orcamento_talho) : null,
-          orcamento_pao: form.orcamento_pao !== '' ? Number(form.orcamento_pao) : null,
-          orcamento_frutas_legumes: form.orcamento_frutas_legumes !== '' ? Number(form.orcamento_frutas_legumes) : null,
-          orcamento_diversos: form.orcamento_diversos !== '' ? Number(form.orcamento_diversos) : null,
           pin: form.pin.trim() || null,
           setup_completo: true,
         })
@@ -250,39 +238,6 @@ export default function SetupForm({ campo }: { campo: Campo }) {
                 onChange={(e) => upd('saldo_inicial', e.target.value)}
               />
             </div>
-          </div>
-        </div>
-
-        {/* Orçamento Mamãs */}
-        <div className="bg-white rounded-2xl border border-[#E7E8D1] p-4 space-y-4">
-          <h2 className="font-bold text-[#36454F] flex items-center gap-2 text-sm">
-            <Euro className="h-4 w-4" /> Orçamento Mamãs (opcional)
-          </h2>
-          <div className="grid grid-cols-2 gap-3">
-            {[
-              { key: 'orcamento_alimentacao', label: 'Alimentação total' },
-              { key: 'orcamento_compras_gerais', label: 'Despensa' },
-              { key: 'orcamento_talho', label: 'Talho' },
-              { key: 'orcamento_pao', label: 'Padaria' },
-              { key: 'orcamento_frutas_legumes', label: 'Frutas e legumes' },
-              { key: 'orcamento_diversos', label: 'Diversos' },
-            ].map(({ key, label }) => (
-              <div key={key} className="space-y-1">
-                <Label className="text-xs">{label}</Label>
-                <div className="relative">
-                  <span className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400 text-sm">€</span>
-                  <Input
-                    type="number"
-                    min={0}
-                    step={0.01}
-                    className="pl-7"
-                    value={(form as Record<string, unknown>)[key] as string}
-                    onChange={(e) => upd(key, e.target.value)}
-                    placeholder="0,00"
-                  />
-                </div>
-              </div>
-            ))}
           </div>
         </div>
 
