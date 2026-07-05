@@ -8,7 +8,7 @@ import { createClient } from '@/lib/supabase/client'
 import { Button } from '@/components/ui/button'
 import { Badge } from '@/components/ui/badge'
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from '@/components/ui/dialog'
-import { EmentaSlotModal } from './EmentaSlotModal'
+import { EmentaSlotModal, type PratoSave } from './EmentaSlotModal'
 import type { Campo, SeccaoTipo } from '@/types/shared'
 import { getDiaLabel, getNumDias } from '@/types/shared'
 import {
@@ -113,7 +113,7 @@ export function EmentaCalendario({ campo, ementaInicial, receitas, restricoes }:
     setModalAberto(true)
   }
 
-  async function salvarPratos(pratos: { tipo_prato: TipoPrato; receita_id?: string; receita_nome_custom?: string; notas?: string }[]) {
+  async function salvarPratos(pratos: PratoSave[]) {
     if (!slotSelecionado) return
     const { dia, refeicao } = slotSelecionado
     const existentes = getSlots(dia, refeicao)
@@ -134,13 +134,14 @@ export function EmentaCalendario({ campo, ementaInicial, receitas, restricoes }:
               refeicao,
               tipo_prato: p.tipo_prato,
               receita_id: p.receita_id ?? null,
+              receita_versao_id: p.receita_versao_id ?? null,
               receita_nome_custom: p.receita_nome_custom ?? null,
               notas: p.notas ?? null,
               responsavel: null,
               ordem: i,
             }))
           )
-          .select('*, receita:receitas(id, nome, categoria, tags)')
+          .select('*, receita:receitas(id, nome, categoria, tags), versao:receita_versoes(id, nome_versao, is_default)')
         if (error) throw error
         setEmenta((prev) => [
           ...prev.filter((e) => !(e.dia === dia && e.refeicao === refeicao)),
@@ -223,13 +224,18 @@ export function EmentaCalendario({ campo, ementaInicial, receitas, restricoes }:
         >
           <div className="space-y-0.5">
             {slots.map((slot) => (
-              <div key={slot.id} className="flex items-baseline gap-1.5">
+              <div key={slot.id} className="flex items-baseline gap-1.5 min-w-0">
                 <span className={cnUtil('text-[10px] font-bold text-gray-400 uppercase shrink-0', compact && 'text-[9px]')}>
                   {TIPO_PRATO_LABELS[slot.tipo_prato ?? 'prato']}
                 </span>
                 <span className={cnUtil('text-xs font-medium text-[#36454F] truncate', compact && 'text-[11px]')}>
                   {slot.receita?.nome ?? slot.receita_nome_custom ?? '—'}
                 </span>
+                {slot.versao && !slot.versao.is_default && (
+                  <span className={cnUtil('text-[10px] text-[#2D5016] shrink-0 font-medium', compact && 'text-[9px]')}>
+                    ({slot.versao.nome_versao})
+                  </span>
+                )}
               </div>
             ))}
           </div>
@@ -468,6 +474,8 @@ export function EmentaCalendario({ campo, ementaInicial, receitas, restricoes }:
           refeicao={slotSelecionado.refeicao}
           existingPratos={existingPratos}
           receitas={receitas}
+          campoId={campo.id}
+          campoNome={campo.nome}
           onSave={salvarPratos}
           onRemoveAll={() => removerRefeicao(slotSelecionado.dia, slotSelecionado.refeicao)}
           onClose={() => setModalAberto(false)}

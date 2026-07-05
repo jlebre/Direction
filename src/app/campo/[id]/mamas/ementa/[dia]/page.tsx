@@ -25,7 +25,7 @@ export default async function EmentaDiaPage({
     supabase.from('campos').select('*').eq('id', id).single(),
     supabase
       .from('ementa')
-      .select('*, receita:receitas(id, nome, categoria, tags, receita_ingredientes(ingrediente:ingredientes(nome)))')
+      .select('*, receita:receitas(id, nome, categoria, tags, receita_ingredientes(ingrediente:ingredientes(nome))), versao:receita_versoes(id, nome_versao, is_default)')
       .eq('campo_id', id)
       .eq('dia', dia)
       .order('ordem'),
@@ -110,6 +110,9 @@ export default async function EmentaDiaPage({
                       <span className="text-sm font-medium text-[#36454F]">
                         {(slot.receita as { nome?: string } | undefined)?.nome ?? slot.receita_nome_custom ?? '—'}
                       </span>
+                      {slot.versao && !slot.versao.is_default && (
+                        <span className="text-xs text-[#2D5016] font-medium shrink-0">({slot.versao.nome_versao})</span>
+                      )}
                       {slot.notas && (
                         <span className="text-xs text-gray-400 italic truncate">· {slot.notas}</span>
                       )}

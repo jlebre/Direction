@@ -63,6 +63,22 @@ export interface ReceitaIngrediente {
   ingrediente?: Ingrediente
 }
 
+// ── Receita Versões ──────────────────────────────────────────────────────────
+export interface ReceitaVersao {
+  id: string
+  receita_id: string
+  nome_versao: string
+  is_default: boolean
+  campo_id?: string | null
+  criada_por?: string | null
+  notas?: string | null
+  preparacao?: string | null
+  estado: 'rascunho' | 'completa'
+  created_at: string
+  updated_at: string
+  campo?: { nome: string } | null
+}
+
 // ── Ementa ───────────────────────────────────────────────────────────────────
 export type TipoPrato = 'sopa' | 'prato' | 'sobremesa' | 'extra' | 'bebida' | 'outro'
 
@@ -82,11 +98,13 @@ export interface EmentaItem {
   refeicao: RefeicaoTipo
   tipo_prato: TipoPrato
   receita_id?: string
+  receita_versao_id?: string | null
   receita_nome_custom?: string
   responsavel?: string
   notas?: string
   ordem: number
   receita?: Receita
+  versao?: { id: string; nome_versao: string; is_default: boolean } | null
 }
 
 // ── Lista de Compras ──────────────────────────────────────────────────────────
