@@ -34,10 +34,8 @@ ALTER TABLE ementa
 
 -- ── RLS ─────────────────────────────────────────────────────────────────────
 ALTER TABLE receita_versoes ENABLE ROW LEVEL SECURITY;
-DO $$ BEGIN
-  CREATE POLICY "public_all" ON receita_versoes FOR ALL USING (true) WITH CHECK (true);
-EXCEPTION WHEN duplicate_object THEN NULL;
-END $$;
+DROP POLICY IF EXISTS "public_all" ON receita_versoes;
+CREATE POLICY "public_all" ON receita_versoes FOR ALL USING (true) WITH CHECK (true);
 
 -- ── Seed: versão Default para receitas existentes (idempotente) ──────────────
 INSERT INTO receita_versoes (receita_id, nome_versao, is_default, estado)
