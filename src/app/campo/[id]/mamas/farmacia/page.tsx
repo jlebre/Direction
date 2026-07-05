@@ -30,7 +30,7 @@ export default async function FarmaciaPage({ params }: { params: Promise<{ id: s
 
   return (
     <>
-      <Header title="Farmácia" backHref={`/campo/${id}/mamas`} />
+      <Header title="Farmácia" backHref={`/campo/${id}`} />
       <FarmaciaView
         campoId={id}
         animados={(animados ?? []) as Animado[]}

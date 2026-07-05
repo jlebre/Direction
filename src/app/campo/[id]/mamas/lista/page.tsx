@@ -24,7 +24,7 @@ export default async function ListaPage({ params }: { params: Promise<{ id: stri
 
   return (
     <>
-      <Header title="Lista de Compras" backHref={`/campo/${id}/mamas`} />
+      <Header title="Lista de Compras" backHref={`/campo/${id}`} />
       <ListaComprasView
         campo={campo as Campo}
         listas={(listas ?? []) as ListaCompras[]}

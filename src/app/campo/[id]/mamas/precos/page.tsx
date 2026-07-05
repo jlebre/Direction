@@ -19,7 +19,7 @@ export default async function PrecosPage({ params }: { params: Promise<{ id: str
 
   return (
     <>
-      <Header title="Preços" backHref={`/campo/${id}/mamas`} />
+      <Header title="Preços" backHref={`/campo/${id}`} />
       <PrecosView campoId={id} precosIniciais={(precos ?? []) as CampoPreco[]} />
     </>
   )

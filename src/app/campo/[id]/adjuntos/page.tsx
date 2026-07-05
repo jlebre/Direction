@@ -112,15 +112,21 @@ export default async function AdjuntosDashboard({ params }: { params: Promise<{ 
           </section>
         )}
 
-        {/* Lista de despesas */}
+        {/* Ver todas as faturas */}
+        <Link
+          href={`/campo/${id}/adjuntos/faturas`}
+          className="flex items-center justify-between bg-white border border-[#E7E8D1] rounded-xl px-4 py-3 hover:border-[#B85042]/30 transition-colors"
+        >
+          <span className="font-semibold text-sm text-[#36454F]">Ver todas as faturas</span>
+          <span className="text-[#B85042] text-sm font-medium">{ds.length} registos →</span>
+        </Link>
+
+        {/* Lista de despesas recentes */}
         <section>
           <div className="flex items-center justify-between mb-3">
             <h2 className="text-xs font-bold text-gray-500 uppercase tracking-wider">
-              Despesas ({ds.length})
+              Recentes
             </h2>
-            <Link href={`/campo/${id}/adjuntos/faturas`} className="text-xs text-[#B85042] font-medium">
-              Consultar →
-            </Link>
           </div>
 
           {ds.length === 0 ? (

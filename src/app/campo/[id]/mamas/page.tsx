@@ -1,7 +1,7 @@
 import { createClient } from '@/lib/supabase/server'
 import { notFound } from 'next/navigation'
 import Link from 'next/link'
-import { CalendarDays, ShoppingCart, Pill, AlertTriangle, Users, UtensilsCrossed, Lightbulb, BookOpen, Settings } from 'lucide-react'
+import { CalendarDays, AlertTriangle, Users, UtensilsCrossed, BookOpen } from 'lucide-react'
 import type { Campo } from '@/types/shared'
 
 export const dynamic = 'force-dynamic'
@@ -10,26 +10,21 @@ export default async function MamasPage({ params }: { params: Promise<{ id: stri
   const { id } = await params
   const supabase = createClient()
 
-  const [{ data: campo }, { count: animadosCount }, { count: restricoesCount }, { count: medicacoesCount }] = await Promise.all([
+  const [{ data: campo }, { count: animadosCount }, { count: restricoesCount }] = await Promise.all([
     supabase.from('campos').select('*').eq('id', id).single(),
     supabase.from('animados').select('*', { count: 'exact', head: true }).eq('campo_id', id),
     supabase.from('restricoes_alimentares').select('*', { count: 'exact', head: true }).eq('animados.campo_id', id),
-    supabase.from('farmacia_medicacoes').select('*', { count: 'exact', head: true }).eq('animados.campo_id', id),
   ])
 
   if (!campo) notFound()
   const c = campo as Campo
 
   const modulos = [
-    { href: 'ementa', label: 'Ementa', icon: CalendarDays, desc: 'Planear refeições dia a dia', color: 'text-green-700 bg-green-50 border-green-200' },
-    { href: 'animados', label: 'Animados', icon: Users, desc: `${animadosCount ?? 0} animados registados`, color: 'text-blue-700 bg-blue-50 border-blue-200' },
-    { href: 'lista', label: 'Lista de Compras', icon: ShoppingCart, desc: 'Gerir compras do campo', color: 'text-orange-700 bg-orange-50 border-orange-200' },
-    { href: 'receitas', label: 'Receitas', icon: UtensilsCrossed, desc: 'Livrinho da Mamã', color: 'text-[#B85042] bg-red-50 border-red-200' },
-    { href: 'farmacia', label: 'Farmácia', icon: Pill, desc: `${medicacoesCount ?? 0} medicações`, color: 'text-purple-700 bg-purple-50 border-purple-200' },
-    { href: 'restricoes', label: 'Restrições', icon: AlertTriangle, desc: `${restricoesCount ?? 0} restrições alimentares`, color: 'text-yellow-700 bg-yellow-50 border-yellow-200' },
-    { href: 'dicas', label: 'Dicas', icon: Lightbulb, desc: 'Truques e sugestões', color: 'text-teal-700 bg-teal-50 border-teal-200' },
-    { href: 'conselhos', label: 'Conselhos', icon: BookOpen, desc: 'Guia das mamãs CAMTIL', color: 'text-emerald-700 bg-emerald-50 border-emerald-200' },
-    { href: 'definicoes', label: 'Definições', icon: Settings, desc: 'Datas, secção, orçamento', color: 'text-gray-700 bg-gray-50 border-gray-200' },
+    { href: 'ementa',    label: 'Ementa',      icon: CalendarDays,   desc: 'Planear refeições dia a dia',              color: 'text-green-700 bg-green-50 border-green-200' },
+    { href: 'animados',  label: 'Animados',    icon: Users,          desc: `${animadosCount ?? 0} animados registados`, color: 'text-blue-700 bg-blue-50 border-blue-200' },
+    { href: 'receitas',  label: 'Receitas',    icon: UtensilsCrossed, desc: 'Livrinho da Mamã',                        color: 'text-[#B85042] bg-red-50 border-red-200' },
+    { href: 'restricoes', label: 'Restrições', icon: AlertTriangle,  desc: `${restricoesCount ?? 0} restrições`,       color: 'text-yellow-700 bg-yellow-50 border-yellow-200' },
+    { href: 'conselhos', label: 'Conselhos',   icon: BookOpen,       desc: 'Guia das mamãs CAMTIL',                   color: 'text-emerald-700 bg-emerald-50 border-emerald-200' },
   ]
 
   return (

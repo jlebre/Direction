@@ -3,7 +3,8 @@ import { redirect } from 'next/navigation'
 import Link from 'next/link'
 import {
   ChevronLeft, Settings, UtensilsCrossed, Receipt,
-  Users, Pill, ShoppingCart, CalendarDays, AlertTriangle,
+  Pill, ShoppingCart, DollarSign, SlidersHorizontal,
+  CalendarDays, MapPin,
 } from 'lucide-react'
 import { ESCALAO_COR } from '@/types/shared'
 import { CampoTracker } from '@/components/CampoTracker'
@@ -15,14 +16,9 @@ export default async function CampoHub({ params }: { params: Promise<{ id: strin
   const { id } = await params
   const supabase = createClient()
 
-  const [
-    { data: campo },
-    { data: animados },
-    { data: despesas },
-  ] = await Promise.all([
+  const [{ data: campo }, { data: despesas }] = await Promise.all([
     supabase.from('campos').select('*').eq('id', id).single(),
-    supabase.from('animados').select('id').eq('campo_id', id),
-    supabase.from('despesas').select('id, valor, tipo').eq('campo_id', id),
+    supabase.from('despesas').select('id, valor, tipo, is_regularizacao_nif').eq('campo_id', id),
   ])
 
   if (!campo) redirect('/')
@@ -31,49 +27,44 @@ export default async function CampoHub({ params }: { params: Promise<{ id: strin
   const c = campo as Campo
 
   const totalDespesas = (despesas ?? [])
-    .filter((d: { tipo: string }) => d.tipo === 'despesa')
+    .filter((d: { tipo: string; is_regularizacao_nif?: boolean }) => d.tipo === 'despesa' && !d.is_regularizacao_nif)
     .reduce((s: number, d: { valor: number }) => s + Number(d.valor), 0)
-  const saldoDisponivel = c.saldo_inicial - totalDespesas
+  const totalReceitas = (despesas ?? [])
+    .filter((d: { tipo: string }) => d.tipo === 'receita')
+    .reduce((s: number, d: { valor: number }) => s + Number(d.valor), 0)
+  const saldoDisponivel = c.saldo_inicial + totalReceitas - totalDespesas
 
-  const numAnimados = animados?.length ?? 0
-  const ids = (animados ?? []).map((a: { id: string }) => a.id)
+  const cor = ESCALAO_COR[c.escalao]
 
-  let numMedicacoes = 0
-  let numRestricoes = 0
-  if (ids.length > 0) {
-    const [{ count: mc }, { count: rc }] = await Promise.all([
-      supabase.from('farmacia_medicacoes').select('id', { count: 'exact', head: true }).in('animado_id', ids).eq('ativo', true),
-      supabase.from('restricoes_alimentares').select('id', { count: 'exact', head: true }).in('animado_id', ids),
-    ])
-    numMedicacoes = mc ?? 0
-    numRestricoes = rc ?? 0
-  }
-
-  const modulos = [
+  const modulosPrincipais = [
     {
       href: `/campo/${id}/mamas`,
       label: 'Módulo Mamãs',
-      sublabel: 'Ementa, receitas, compras, farmácia',
+      sublabel: 'Ementa, animados, receitas, restrições',
       icon: UtensilsCrossed,
-      cor: '#2D5016',
       bg: '#2D5016',
     },
     {
       href: `/campo/${id}/adjuntos`,
       label: 'Módulo Adjuntos',
-      sublabel: `Despesas · €${saldoDisponivel.toFixed(0)} disponível`,
+      sublabel: `Faturas · €${saldoDisponivel.toFixed(0)} disponível`,
       icon: Receipt,
-      cor: '#B85042',
       bg: '#B85042',
     },
   ]
 
-  const cor = ESCALAO_COR[c.escalao]
+  const ferramentasCampo = [
+    { href: `/campo/${id}/mamas/farmacia`, label: 'Farmácia', icon: Pill,             cor: '#36454F' },
+    { href: `/campo/${id}/mamas/lista`,    label: 'Lista de Compras', icon: ShoppingCart, cor: '#F5A623' },
+    { href: `/campo/${id}/mamas/precos`,   label: 'Preços', icon: DollarSign,          cor: '#2D5016' },
+    { href: `/campo/${id}/mamas/definicoes`, label: 'Definições', icon: SlidersHorizontal, cor: '#6B7280' },
+  ]
 
   return (
     <div className="min-h-screen">
       <CampoTracker campoId={id} campoNome={c.nome} />
-      {/* Header */}
+
+      {/* Sticky header */}
       <div className="sticky top-0 z-10 bg-white border-b border-[#E7E8D1] px-4 h-14 flex items-center gap-3">
         <Link href="/" className="text-[#2D5016] hover:opacity-70 transition-opacity">
           <ChevronLeft className="h-5 w-5" />
@@ -82,76 +73,70 @@ export default async function CampoHub({ params }: { params: Promise<{ id: strin
         <Link
           href={`/campo/${id}/setup`}
           className="p-2 rounded-lg hover:bg-[#E7E8D1] transition-colors"
+          title="Setup adjuntos"
         >
           <Settings className="h-4 w-4 text-[#36454F]" />
         </Link>
       </div>
 
       <div className="max-w-2xl mx-auto p-4 space-y-5 pb-8">
-        {/* Info card */}
+        {/* Banner do campo */}
         <div
-          className="text-white rounded-2xl p-4 space-y-2"
+          className="text-white rounded-2xl p-5 space-y-4"
           style={{ backgroundColor: cor?.bg ?? '#2D5016' }}
         >
-          <div className="flex items-center gap-2">
-            <p className="font-bold text-lg flex-1">{c.nome}</p>
-            {c.escalao && (
-              <span className="text-xs font-semibold bg-white/20 rounded-full px-2 py-0.5 shrink-0">
-                {c.escalao}
-              </span>
-            )}
+          <div className="flex items-start justify-between gap-3">
+            <div>
+              <h2 className="font-bold text-xl leading-tight">{c.nome}</h2>
+              <div className="flex items-center gap-2 mt-1 flex-wrap">
+                {c.escalao && (
+                  <span className="text-xs font-semibold bg-white/20 rounded-full px-2 py-0.5">
+                    {c.escalao}
+                  </span>
+                )}
+                {c.ano && c.periodo && (
+                  <span className="text-xs text-white/70">
+                    Período {c.periodo} · {c.ano}
+                  </span>
+                )}
+              </div>
+            </div>
           </div>
+
           <div className="grid grid-cols-2 gap-x-4 gap-y-1 text-sm text-white/80">
             {c.datas && (
-              <div className="flex items-center gap-1.5">
+              <div className="flex items-center gap-1.5 col-span-2 sm:col-span-1">
                 <CalendarDays className="h-3.5 w-3.5 shrink-0" />
-                <span className="truncate">{c.datas}</span>
+                <span>{c.datas}</span>
               </div>
             )}
             {c.local && (
-              <div className="flex items-center gap-1.5">
-                <span className="truncate">📍 {c.local}</span>
+              <div className="flex items-center gap-1.5 col-span-2 sm:col-span-1">
+                <MapPin className="h-3.5 w-3.5 shrink-0" />
+                <span>{c.local}</span>
               </div>
             )}
-            {c.mama && (
-              <span className="truncate">Mamã: {c.mama}</span>
-            )}
-            {c.diretor && (
-              <span className="truncate">Dir.: {c.diretor}</span>
-            )}
           </div>
-        </div>
 
-        {/* Quick stats */}
-        <div className="grid grid-cols-3 gap-3">
-          <Link href={`/campo/${id}/mamas/animados`} className="bg-white rounded-xl border border-[#E7E8D1] p-3 text-center hover:border-[#2D5016]/30 transition-colors">
-            <p className="text-xl font-bold text-[#2D5016]">{numAnimados}</p>
-            <div className="flex items-center justify-center gap-1 mt-0.5">
-              <Users className="h-3 w-3 text-gray-400" />
-              <p className="text-[10px] text-gray-500 leading-tight">animados</p>
-            </div>
-          </Link>
-          <Link href={`/campo/${id}/mamas/farmacia`} className="bg-white rounded-xl border border-[#E7E8D1] p-3 text-center hover:border-[#36454F]/30 transition-colors">
-            <p className="text-xl font-bold text-[#36454F]">{numMedicacoes}</p>
-            <div className="flex items-center justify-center gap-1 mt-0.5">
-              <Pill className="h-3 w-3 text-gray-400" />
-              <p className="text-[10px] text-gray-500 leading-tight">medicações</p>
-            </div>
-          </Link>
-          <Link href={`/campo/${id}/mamas/animados`} className="bg-white rounded-xl border border-[#E7E8D1] p-3 text-center hover:border-red-300 transition-colors">
-            <p className="text-xl font-bold text-red-500">{numRestricoes}</p>
-            <div className="flex items-center justify-center gap-1 mt-0.5">
-              <AlertTriangle className="h-3 w-3 text-gray-400" />
-              <p className="text-[10px] text-gray-500 leading-tight">restrições</p>
-            </div>
-          </Link>
+          <div className="border-t border-white/20 pt-3 grid grid-cols-3 gap-2">
+            {[
+              { label: 'Diretor/a', value: c.diretor },
+              { label: 'Adjunto/a', value: c.adjunto },
+              { label: 'Mamã', value: c.mama },
+            ].map(({ label, value }) => (
+              <div key={label}>
+                <p className="text-[10px] text-white/50 uppercase tracking-wide">{label}</p>
+                <p className="text-sm font-semibold text-white truncate">{value || 'por definir'}</p>
+              </div>
+            ))}
+          </div>
         </div>
 
         {/* Módulos principais */}
         <div>
           <h2 className="text-xs font-bold text-gray-400 uppercase tracking-widest mb-3">Módulos</h2>
           <div className="space-y-3">
-            {modulos.map((m) => {
+            {modulosPrincipais.map((m) => {
               const Icon = m.icon
               return (
                 <Link key={m.href} href={m.href} className="block">
@@ -174,16 +159,11 @@ export default async function CampoHub({ params }: { params: Promise<{ id: strin
           </div>
         </div>
 
-        {/* Acesso rápido animados */}
+        {/* Ferramentas do campo */}
         <div>
-          <h2 className="text-xs font-bold text-gray-400 uppercase tracking-widest mb-3">Acesso rápido</h2>
+          <h2 className="text-xs font-bold text-gray-400 uppercase tracking-widest mb-3">Campo</h2>
           <div className="grid grid-cols-2 gap-3">
-            {[
-              { href: `/campo/${id}/mamas/animados`, label: 'Animados', icon: Users, cor: '#2D5016' },
-              { href: `/campo/${id}/mamas/lista`, label: 'Lista de Compras', icon: ShoppingCart, cor: '#B85042' },
-              { href: `/campo/${id}/mamas/farmacia`, label: 'Farmácia', icon: Pill, cor: '#36454F' },
-              { href: `/campo/${id}/mamas/ementa`, label: 'Ementa', icon: CalendarDays, cor: '#F5A623' },
-            ].map((item) => {
+            {ferramentasCampo.map((item) => {
               const Icon = item.icon
               return (
                 <Link key={item.href} href={item.href} className="block">

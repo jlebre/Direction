@@ -14,7 +14,7 @@ export default async function DefinicoesPage({ params }: { params: Promise<{ id:
 
   return (
     <>
-      <Header title="Definições do Campo" backHref={`/campo/${id}/mamas`} />
+      <Header title="Definições do Campo" backHref={`/campo/${id}`} />
       <DefinicoesForm campo={campo as Campo} />
     </>
   )

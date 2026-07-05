@@ -5,14 +5,9 @@ import Link from 'next/link'
 import { usePathname } from 'next/navigation'
 import {
   CalendarDays,
-  ShoppingCart,
   UtensilsCrossed,
-  Pill,
   Users,
-  DollarSign,
-  Settings,
   LayoutDashboard,
-  Lightbulb,
   BookOpen,
   MoreHorizontal,
   X,
@@ -21,33 +16,23 @@ import {
 import { cn } from '@/lib/utils'
 
 const navItems = [
-  { href: 'ementa', label: 'Ementa', icon: CalendarDays },
-  { href: 'animados', label: 'Animados', icon: Users },
-  { href: 'lista', label: 'Compras', icon: ShoppingCart },
-  { href: 'dicas', label: 'Dicas', icon: Lightbulb },
-  { href: 'conselhos', label: 'Conselhos', icon: BookOpen },
-  { href: 'receitas', label: 'Receitas', icon: UtensilsCrossed },
-  { href: 'farmacia', label: 'Farmácia', icon: Pill },
+  { href: 'ementa',    label: 'Ementa',      icon: CalendarDays },
+  { href: 'animados',  label: 'Animados',    icon: Users },
+  { href: 'receitas',  label: 'Receitas',    icon: UtensilsCrossed },
   { href: 'restricoes', label: 'Restrições', icon: AlertTriangle },
-  { href: 'precos', label: 'Preços', icon: DollarSign },
-  { href: 'definicoes', label: 'Definições', icon: Settings },
+  { href: 'conselhos', label: 'Conselhos',   icon: BookOpen },
 ]
 
 const bottomNavMain = [
   { href: '', label: 'Hub', icon: LayoutDashboard },
   { href: 'ementa', label: 'Ementa', icon: CalendarDays },
   { href: 'animados', label: 'Animados', icon: Users },
-  { href: 'lista', label: 'Compras', icon: ShoppingCart },
+  { href: 'restricoes', label: 'Restrições', icon: AlertTriangle },
 ]
 
 const maisItems = [
-  { href: 'dicas', label: 'Dicas', icon: Lightbulb },
+  { href: 'receitas',  label: 'Receitas',  icon: UtensilsCrossed },
   { href: 'conselhos', label: 'Conselhos', icon: BookOpen },
-  { href: 'receitas', label: 'Receitas', icon: UtensilsCrossed },
-  { href: 'farmacia', label: 'Farmácia', icon: Pill },
-  { href: 'restricoes', label: 'Restrições', icon: AlertTriangle },
-  { href: 'precos', label: 'Preços', icon: DollarSign },
-  { href: 'definicoes', label: 'Setup', icon: Settings },
 ]
 
 export function CampoNav({ campoId, campoNome }: { campoId: string; campoNome: string }) {
