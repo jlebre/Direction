@@ -3,7 +3,7 @@
 import { useState } from 'react'
 import Link from 'next/link'
 import { toast } from 'sonner'
-import { Plus, AlertTriangle, ShoppingCart, Info, Copy, ChevronLeft, ChevronRight, Calendar, LayoutGrid, ExternalLink } from 'lucide-react'
+import { Plus, AlertTriangle, ShoppingCart, Info, Copy, ChevronLeft, ChevronRight, Calendar, LayoutGrid, ExternalLink, Download } from 'lucide-react'
 import { createClient } from '@/lib/supabase/client'
 import { Button } from '@/components/ui/button'
 import { Badge } from '@/components/ui/badge'
@@ -15,10 +15,13 @@ import {
   type EmentaItem,
   type RestricaoAlimentar,
   type RefeicaoTipo,
+  type TipoPrato,
   REFEICAO_LABELS,
   CATEGORIA_CORES,
+  TIPO_PRATO_LABELS,
 } from '@/types/mamas'
 import { cn as cnUtil } from '@/lib/utils'
+import { exportPlanoRefeicoes } from '@/lib/mamas/export-plano-refeicoes'
 
 const REFEICOES: RefeicaoTipo[] = ['pequeno_almoco', 'almoco', 'lanche', 'jantar', 'ceia']
 
@@ -50,7 +53,6 @@ export function EmentaCalendario({ campo, ementaInicial, receitas, restricoes }:
   }
   for (let i = 1; i <= numDias; i++) diasList.push(i)
 
-  // Find today's dia number based on campo.data_inicio
   const [diaAtual, setDiaAtual] = useState<number>(() => {
     if (!campo.data_inicio) return diasList[0]
     const inicio = new Date(campo.data_inicio)
@@ -74,32 +76,36 @@ export function EmentaCalendario({ campo, ementaInicial, receitas, restricoes }:
   const diaHoje = getDiaHoje()
   const diaIndex = diasList.indexOf(diaAtual)
 
+  // Devolver todos os pratos de uma (dia, refeicao)
+  function getSlots(dia: number, refeicao: RefeicaoTipo): EmentaItem[] {
+    return ementa.filter((e) => e.dia === dia && e.refeicao === refeicao)
+      .sort((a, b) => a.ordem - b.ordem)
+  }
+
   function getDayState(dia: number): 'vazio' | 'parcial' | 'completo' {
-    const almoco = getSlot(dia, 'almoco')
-    const jantar = getSlot(dia, 'jantar')
-    const total = REFEICOES.filter((r) => getSlot(dia, r)).length
-    if (total === 0) return 'vazio'
-    if (almoco && jantar) return 'completo'
+    const temAlmoco = getSlots(dia, 'almoco').length > 0
+    const temJantar = getSlots(dia, 'jantar').length > 0
+    const temAlgum = REFEICOES.some((r) => getSlots(dia, r).length > 0)
+    if (!temAlgum) return 'vazio'
+    if (temAlmoco && temJantar) return 'completo'
     return 'parcial'
   }
 
-  function getSlot(dia: number, refeicao: RefeicaoTipo): EmentaItem | undefined {
-    return ementa.find((e) => e.dia === dia && e.refeicao === refeicao)
-  }
-
   function getAlertasSlot(dia: number, refeicao: RefeicaoTipo): string[] {
-    const slot = getSlot(dia, refeicao)
-    if (!slot?.receita) return []
+    const slots = getSlots(dia, refeicao)
     const alertas: string[] = []
-    restricoes.forEach((r) => {
-      const ingredientesProibidos = r.ingredientes_proibidos ?? []
-      if (ingredientesProibidos.length === 0) return
-      const receitaIngredientes = (slot.receita as unknown as { receita_ingredientes?: { ingrediente?: { nome: string } }[] })?.receita_ingredientes ?? []
-      const match = receitaIngredientes.some((ri) => {
-        const nomeIng = ri.ingrediente?.nome?.toLowerCase() ?? ''
-        return ingredientesProibidos.some((p) => nomeIng.includes(p.toLowerCase()))
+    slots.forEach((slot) => {
+      if (!slot.receita) return
+      restricoes.forEach((r) => {
+        const proibidos = r.ingredientes_proibidos ?? []
+        if (proibidos.length === 0) return
+        const receitaIngredientes = (slot.receita as unknown as { receita_ingredientes?: { ingrediente?: { nome: string } }[] })?.receita_ingredientes ?? []
+        const match = receitaIngredientes.some((ri) => {
+          const nomeIng = ri.ingrediente?.nome?.toLowerCase() ?? ''
+          return proibidos.some((p) => nomeIng.includes(p.toLowerCase()))
+        })
+        if (match) alertas.push(`${r.animado?.nome ?? 'Animado'} — ${r.descricao}`)
       })
-      if (match) alertas.push(`${r.animado?.nome ?? 'Animado'} — ${r.descricao}`)
     })
     return alertas
   }
@@ -109,57 +115,62 @@ export function EmentaCalendario({ campo, ementaInicial, receitas, restricoes }:
     setModalAberto(true)
   }
 
-  async function salvarSlot(dados: {
-    receita_id?: string
-    receita_nome_custom?: string
-    responsavel?: string
-    notas?: string
-  }) {
+  async function salvarPratos(pratos: { tipo_prato: TipoPrato; receita_id?: string; receita_nome_custom?: string; notas?: string }[]) {
     if (!slotSelecionado) return
     const { dia, refeicao } = slotSelecionado
-    const existente = getSlot(dia, refeicao)
+    const existentes = getSlots(dia, refeicao)
 
     try {
-      if (existente) {
-        const { data, error } = await supabase
-          .from('ementa')
-          .update(dados)
-          .eq('id', existente.id)
-          .select('*, receita:receitas(id, nome, categoria, tags)')
-          .single()
+      if (existentes.length > 0) {
+        const { error } = await supabase.from('ementa').delete().in('id', existentes.map((e) => e.id))
         if (error) throw error
-        setEmenta((prev) => prev.map((e) => (e.id === existente.id ? (data as EmentaItem) : e)))
-      } else {
-        const { data, error } = await supabase
-          .from('ementa')
-          .insert({ campo_id: campo.id, dia, refeicao, ordem: 0, ...dados })
-          .select('*, receita:receitas(id, nome, categoria, tags)')
-          .single()
-        if (error) throw error
-        setEmenta((prev) => [...prev, data as EmentaItem])
       }
-      toast.success('Ementa guardada')
+
+      if (pratos.length > 0) {
+        const { data, error } = await supabase
+          .from('ementa')
+          .insert(
+            pratos.map((p, i) => ({
+              campo_id: campo.id,
+              dia,
+              refeicao,
+              tipo_prato: p.tipo_prato,
+              receita_id: p.receita_id ?? null,
+              receita_nome_custom: p.receita_nome_custom ?? null,
+              notas: p.notas ?? null,
+              responsavel: null,
+              ordem: i,
+            }))
+          )
+          .select('*, receita:receitas(id, nome, categoria, tags)')
+        if (error) throw error
+        setEmenta((prev) => [
+          ...prev.filter((e) => !(e.dia === dia && e.refeicao === refeicao)),
+          ...(data as EmentaItem[]),
+        ])
+      } else {
+        setEmenta((prev) => prev.filter((e) => !(e.dia === dia && e.refeicao === refeicao)))
+      }
+
+      toast.success('Refeição guardada')
       setModalAberto(false)
     } catch (e: unknown) {
       toast.error(e instanceof Error ? e.message : 'Erro ao guardar')
     }
   }
 
-  async function removerSlot(dia: number, refeicao: RefeicaoTipo) {
-    const existente = getSlot(dia, refeicao)
-    if (!existente) return
-    const { error } = await supabase.from('ementa').delete().eq('id', existente.id)
+  async function removerRefeicao(dia: number, refeicao: RefeicaoTipo) {
+    const existentes = getSlots(dia, refeicao)
+    if (existentes.length === 0) return
+    const { error } = await supabase.from('ementa').delete().in('id', existentes.map((e) => e.id))
     if (error) { toast.error('Erro ao remover'); return }
-    setEmenta((prev) => prev.filter((e) => e.id !== existente.id))
-    toast.success('Removido')
+    setEmenta((prev) => prev.filter((e) => !(e.dia === dia && e.refeicao === refeicao)))
+    toast.success('Refeição removida')
+    setModalAberto(false)
   }
 
   async function abrirCloneModal() {
-    const { data } = await supabase
-      .from('campos')
-      .select('id, nome')
-      .neq('id', campo.id)
-      .order('nome')
+    const { data } = await supabase.from('campos').select('id, nome').neq('id', campo.id).order('nome')
     setCamposDisponiveis((data ?? []).filter((c) => c.id !== campo.id))
     setCampoFonte('')
     setCloneModalAberto(true)
@@ -171,11 +182,11 @@ export function EmentaCalendario({ campo, ementaInicial, receitas, restricoes }:
     try {
       const { data: fonte, error: fetchErr } = await supabase
         .from('ementa')
-        .select('dia, refeicao, receita_id, receita_nome_custom, responsavel, notas, ordem')
+        .select('dia, refeicao, tipo_prato, receita_id, receita_nome_custom, responsavel, notas, ordem')
         .eq('campo_id', campoFonte)
       if (fetchErr) throw fetchErr
       if (!fonte || fonte.length === 0) {
-        toast.error('O campo selecionado não tem ementa')
+        toast.error('O campo selecionado não tem plano de refeições')
         return
       }
       const novosItems = fonte.map((item) => ({ ...item, campo_id: campo.id }))
@@ -186,9 +197,9 @@ export function EmentaCalendario({ campo, ementaInicial, receitas, restricoes }:
       if (insertErr) throw insertErr
       setEmenta((prev) => [...prev, ...(inseridos as EmentaItem[])])
       setCloneModalAberto(false)
-      toast.success(`Ementa copiada com ${inseridos?.length ?? 0} refeições!`)
+      toast.success(`Plano copiado com ${inseridos?.length ?? 0} entradas!`)
     } catch (e: unknown) {
-      toast.error(e instanceof Error ? e.message : 'Erro ao clonar ementa')
+      toast.error(e instanceof Error ? e.message : 'Erro ao copiar')
     } finally {
       setClonando(false)
     }
@@ -209,7 +220,63 @@ export function EmentaCalendario({ campo, ementaInicial, receitas, restricoes }:
     }
   }
 
-  const slotAtual = slotSelecionado ? getSlot(slotSelecionado.dia, slotSelecionado.refeicao) : undefined
+  function handleExport() {
+    exportPlanoRefeicoes(campo, ementa, diasList)
+  }
+
+  const existingPratos = slotSelecionado
+    ? getSlots(slotSelecionado.dia, slotSelecionado.refeicao)
+    : []
+
+  // ── Slot card: mostra lista de pratos ─────────────────────────────────────
+  function renderSlotCard(dia: number, refeicao: RefeicaoTipo, compact = false) {
+    const slots = getSlots(dia, refeicao)
+    const alertas = getAlertasSlot(dia, refeicao)
+
+    if (slots.length > 0) {
+      return (
+        <button
+          onClick={() => abrirSlot(dia, refeicao)}
+          className={cnUtil(
+            'w-full text-left rounded-xl border p-3 min-h-[56px] transition-all active:scale-[0.98] hover:shadow-md bg-white border-[#E7E8D1]',
+            compact && 'p-2 rounded-lg min-h-[64px]'
+          )}
+        >
+          <div className="space-y-0.5">
+            {slots.map((slot) => (
+              <div key={slot.id} className="flex items-baseline gap-1.5">
+                <span className={cnUtil('text-[10px] font-bold text-gray-400 uppercase shrink-0', compact && 'text-[9px]')}>
+                  {TIPO_PRATO_LABELS[slot.tipo_prato ?? 'prato']}
+                </span>
+                <span className={cnUtil('text-xs font-medium text-[#36454F] truncate', compact && 'text-[11px]')}>
+                  {slot.receita?.nome ?? slot.receita_nome_custom ?? '—'}
+                </span>
+              </div>
+            ))}
+          </div>
+          {alertas.length > 0 && (
+            <div className="mt-1.5 flex items-center gap-1 text-[#F96167]">
+              <AlertTriangle className="h-3 w-3 shrink-0" />
+              <span className="text-[10px] truncate">{alertas[0]}{alertas.length > 1 ? ` +${alertas.length - 1}` : ''}</span>
+            </div>
+          )}
+        </button>
+      )
+    }
+
+    return (
+      <button
+        onClick={() => abrirSlot(dia, refeicao)}
+        className={cnUtil(
+          'w-full rounded-xl border-2 border-dashed border-[#E7E8D1] min-h-[56px] flex items-center justify-center gap-2 text-gray-400 hover:border-[#B85042] hover:text-[#B85042] hover:bg-[#B85042]/5 transition-colors active:scale-[0.98]',
+          compact && 'min-h-[64px] rounded-lg opacity-0 group-hover:opacity-100'
+        )}
+      >
+        <Plus className="h-4 w-4" />
+        {!compact && <span className="text-sm">Adicionar {REFEICAO_LABELS[refeicao].toLowerCase()}</span>}
+      </button>
+    )
+  }
 
   return (
     <div className="flex flex-col h-full">
@@ -218,9 +285,7 @@ export function EmentaCalendario({ campo, ementaInicial, receitas, restricoes }:
         <div className="flex-1 text-sm text-gray-500 hidden sm:flex items-center gap-2 flex-wrap">
           <span className="font-semibold text-[#36454F]">{campo.seccao}</span>
           <span>·</span>
-          <span>{(campo.num_animados ?? 0) + (campo.num_animadores ?? 0)} pessoas</span>
-          <span>·</span>
-          <span className="font-semibold text-[#B85042]">{ementa.length} refeições planeadas</span>
+          <span className="font-semibold text-[#B85042]">{ementa.length} pratos planeados</span>
         </div>
 
         {/* View toggle */}
@@ -247,28 +312,33 @@ export function EmentaCalendario({ campo, ementaInicial, receitas, restricoes }:
           </button>
         </div>
 
+        <Button size="sm" variant="outline" onClick={handleExport} className="gap-1" title="Exportar Excel">
+          <Download className="h-4 w-4" />
+          <span className="hidden sm:inline">Exportar</span>
+        </Button>
+
         <Link href={`/campo/${campo.id}/mamas/lista`}>
           <Button variant="outline" size="sm" className="gap-1">
             <ShoppingCart className="h-4 w-4" />
             <span className="hidden sm:inline">Ver lista</span>
           </Button>
         </Link>
-        <Button size="sm" onClick={gerarListaCompras} disabled={gerandoLista} className="gap-1">
+        <Button size="sm" onClick={gerarListaCompras} disabled={gerandoLista} className="gap-1 bg-[#2D5016] hover:bg-[#2D5016]/90">
           <ShoppingCart className="h-4 w-4" />
           <span className="hidden sm:inline">Gerar lista</span>
         </Button>
       </div>
 
-      {/* Clone banner — mostra quando ementa está vazia */}
+      {/* Clone banner — mostra quando plano está vazio */}
       {ementa.length === 0 && (
         <div className="mx-4 mt-4 bg-[#2D5016]/5 border border-[#2D5016]/20 rounded-xl p-4 flex items-center gap-3">
           <Copy className="h-5 w-5 text-[#2D5016] shrink-0" />
           <div className="flex-1">
-            <p className="text-sm font-semibold text-[#2D5016]">Ementa ainda vazia</p>
-            <p className="text-xs text-gray-500 mt-0.5">Começa do zero ou copia a ementa de outro campo.</p>
+            <p className="text-sm font-semibold text-[#2D5016]">Plano ainda vazio</p>
+            <p className="text-xs text-gray-500 mt-0.5">Começa do zero ou copia o plano de outro campo.</p>
           </div>
           <Button size="sm" variant="outline" onClick={abrirCloneModal} className="border-[#2D5016] text-[#2D5016] hover:bg-[#2D5016]/10 shrink-0">
-            Copiar ementa
+            Copiar plano
           </Button>
         </div>
       )}
@@ -304,7 +374,7 @@ export function EmentaCalendario({ campo, ementaInicial, receitas, restricoes }:
                   href={`/campo/${campo.id}/mamas/ementa/${diaAtual}`}
                   className="text-xs text-[#B85042] hover:underline flex items-center justify-center gap-1 mt-0.5"
                 >
-                  Ver detalhe completo
+                  Ver detalhe
                   <ExternalLink className="h-3 w-3" />
                 </Link>
               </div>
@@ -350,58 +420,14 @@ export function EmentaCalendario({ campo, ementaInicial, receitas, restricoes }:
 
           {/* Meals for the current day */}
           <div className="p-4 space-y-3">
-            {REFEICOES.map((refeicao) => {
-              const slot = getSlot(diaAtual, refeicao)
-              const alertas = getAlertasSlot(diaAtual, refeicao)
-              const corCategoria = slot?.receita?.categoria
-                ? CATEGORIA_CORES[slot.receita.categoria as keyof typeof CATEGORIA_CORES]
-                : ''
-
-              return (
-                <div key={refeicao}>
-                  <p className="text-[10px] font-bold text-gray-400 uppercase tracking-widest mb-1.5 px-1">
-                    {REFEICAO_LABELS[refeicao]}
-                  </p>
-                  {slot ? (
-                    <button
-                      onClick={() => abrirSlot(diaAtual, refeicao)}
-                      className={cnUtil(
-                        'w-full text-left rounded-xl border p-4 min-h-[56px] transition-all active:scale-[0.98] hover:shadow-md',
-                        corCategoria || 'bg-gray-50 text-gray-700 border-gray-200'
-                      )}
-                    >
-                      <span className="font-semibold text-sm block">
-                        {slot.receita?.nome ?? slot.receita_nome_custom ?? '—'}
-                      </span>
-                      {slot.responsavel && (
-                        <span className="text-xs opacity-70 block mt-0.5">
-                          Resp: {slot.responsavel}
-                        </span>
-                      )}
-                      {slot.notas && (
-                        <span className="text-xs opacity-60 block mt-0.5 italic truncate">
-                          {slot.notas}
-                        </span>
-                      )}
-                      {alertas.length > 0 && (
-                        <div className="mt-2 flex items-center gap-1.5 text-[#F96167]">
-                          <AlertTriangle className="h-3.5 w-3.5 shrink-0" />
-                          <span className="text-xs">{alertas[0]}{alertas.length > 1 ? ` +${alertas.length - 1}` : ''}</span>
-                        </div>
-                      )}
-                    </button>
-                  ) : (
-                    <button
-                      onClick={() => abrirSlot(diaAtual, refeicao)}
-                      className="w-full rounded-xl border-2 border-dashed border-[#E7E8D1] min-h-[56px] flex items-center justify-center gap-2 text-gray-400 hover:border-[#B85042] hover:text-[#B85042] hover:bg-[#B85042]/5 transition-colors active:scale-[0.98]"
-                    >
-                      <Plus className="h-4 w-4" />
-                      <span className="text-sm">Adicionar {REFEICAO_LABELS[refeicao].toLowerCase()}</span>
-                    </button>
-                  )}
-                </div>
-              )
-            })}
+            {REFEICOES.map((refeicao) => (
+              <div key={refeicao}>
+                <p className="text-[10px] font-bold text-gray-400 uppercase tracking-widest mb-1.5 px-1">
+                  {REFEICAO_LABELS[refeicao]}
+                </p>
+                {renderSlotCard(diaAtual, refeicao)}
+              </div>
+            ))}
           </div>
         </div>
       )}
@@ -446,55 +472,17 @@ export function EmentaCalendario({ campo, ementaInicial, receitas, restricoes }:
                   </span>
                 </div>
                 {/* Slots */}
-                {diasList.map((dia) => {
-                  const slot = getSlot(dia, refeicao)
-                  const alertas = getAlertasSlot(dia, refeicao)
-                  const corCategoria = slot?.receita?.categoria
-                    ? CATEGORIA_CORES[slot.receita.categoria as keyof typeof CATEGORIA_CORES]
-                    : ''
-
-                  return (
-                    <div
-                      key={dia}
-                      className={cnUtil(
-                        'w-36 shrink-0 border-r border-[#E7E8D1] min-h-[80px] p-1 relative group',
-                        dia === diaHoje ? 'bg-[#2D5016]/5' : ''
-                      )}
-                    >
-                      {slot ? (
-                        <button
-                          onClick={() => abrirSlot(dia, refeicao)}
-                          className={cnUtil(
-                            'w-full h-full min-h-[72px] rounded-lg border text-left p-2 text-xs leading-tight transition-all hover:shadow-md',
-                            corCategoria || 'bg-gray-50 text-gray-700 border-gray-200'
-                          )}
-                        >
-                          <span className="font-semibold block truncate">
-                            {slot.receita?.nome ?? slot.receita_nome_custom ?? '—'}
-                          </span>
-                          {slot.responsavel && (
-                            <span className="text-[10px] opacity-70 block mt-0.5 truncate">
-                              {slot.responsavel}
-                            </span>
-                          )}
-                          {alertas.length > 0 && (
-                            <div className="mt-1 flex items-center gap-1 text-[#F96167]">
-                              <AlertTriangle className="h-3 w-3 shrink-0" />
-                              <span className="text-[10px] truncate">{alertas[0]}</span>
-                            </div>
-                          )}
-                        </button>
-                      ) : (
-                        <button
-                          onClick={() => abrirSlot(dia, refeicao)}
-                          className="w-full h-full min-h-[72px] rounded-lg border-2 border-dashed border-gray-200 flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity hover:border-[#B85042] hover:bg-[#B85042]/5"
-                        >
-                          <Plus className="h-4 w-4 text-[#B85042]" />
-                        </button>
-                      )}
-                    </div>
-                  )
-                })}
+                {diasList.map((dia) => (
+                  <div
+                    key={dia}
+                    className={cnUtil(
+                      'w-36 shrink-0 border-r border-[#E7E8D1] min-h-[80px] p-1 relative group',
+                      dia === diaHoje ? 'bg-[#2D5016]/5' : ''
+                    )}
+                  >
+                    {renderSlotCard(dia, refeicao, true)}
+                  </div>
+                ))}
               </div>
             ))}
           </div>
@@ -504,32 +492,20 @@ export function EmentaCalendario({ campo, ementaInicial, receitas, restricoes }:
       {/* Legenda */}
       <div className="hidden lg:flex items-center gap-3 px-4 py-2 bg-white border-t border-[#E7E8D1] text-xs text-gray-500 flex-wrap">
         <Info className="h-3.5 w-3.5 shrink-0" />
-        <span>Clica numa célula para adicionar ou editar um prato</span>
+        <span>Clica numa célula para adicionar ou editar pratos</span>
         <span>·</span>
-        <span>Clica no dia para ver o detalhe</span>
-        {[
-          { label: 'Sopa', cls: 'bg-green-100 text-green-800 border-green-200' },
-          { label: 'Carne', cls: 'bg-red-100 text-red-800 border-red-200' },
-          { label: 'Frango', cls: 'bg-yellow-100 text-yellow-800 border-yellow-200' },
-          { label: 'Peixe', cls: 'bg-blue-100 text-blue-800 border-blue-200' },
-          { label: 'Massa', cls: 'bg-orange-100 text-orange-800 border-orange-200' },
-          { label: 'Doce', cls: 'bg-purple-100 text-purple-800 border-purple-200' },
-        ].map((item) => (
-          <Badge key={item.label} className={cnUtil('text-[10px] py-0 px-1.5 border', item.cls)}>
-            {item.label}
-          </Badge>
-        ))}
+        <span>Cada refeição pode ter sopa, prato, sobremesa, extra e outros</span>
       </div>
 
-      {/* Modal */}
+      {/* Modal de edição de pratos */}
       {modalAberto && slotSelecionado && (
         <EmentaSlotModal
           dia={slotSelecionado.dia}
           refeicao={slotSelecionado.refeicao}
-          slotAtual={slotAtual}
+          existingPratos={existingPratos}
           receitas={receitas}
-          onSave={salvarSlot}
-          onRemove={() => removerSlot(slotSelecionado.dia, slotSelecionado.refeicao)}
+          onSave={salvarPratos}
+          onRemoveAll={() => removerRefeicao(slotSelecionado.dia, slotSelecionado.refeicao)}
           onClose={() => setModalAberto(false)}
         />
       )}
@@ -538,12 +514,11 @@ export function EmentaCalendario({ campo, ementaInicial, receitas, restricoes }:
       <Dialog open={cloneModalAberto} onOpenChange={setCloneModalAberto}>
         <DialogContent>
           <DialogHeader>
-            <DialogTitle>Copiar ementa de outro campo</DialogTitle>
+            <DialogTitle>Copiar plano de refeições de outro campo</DialogTitle>
           </DialogHeader>
           <div className="space-y-3">
             <p className="text-sm text-gray-500">
               Seleciona o campo de origem. As refeições serão copiadas para este campo.
-              Podes editar depois.
             </p>
             <div className="space-y-2 max-h-64 overflow-y-auto">
               {camposDisponiveis.length === 0 ? (
@@ -573,7 +548,7 @@ export function EmentaCalendario({ campo, ementaInicial, receitas, restricoes }:
               disabled={!campoFonte || clonando}
               className="bg-[#2D5016] hover:bg-[#2D5016]/90"
             >
-              {clonando ? 'A copiar...' : 'Copiar ementa'}
+              {clonando ? 'A copiar...' : 'Copiar plano'}
             </Button>
           </DialogFooter>
         </DialogContent>

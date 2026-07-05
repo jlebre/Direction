@@ -26,7 +26,7 @@ export default async function AnimadosPage({ params }: { params: Promise<{ id: s
     <>
       <Header
         title={`Animados (${animados?.length ?? 0})`}
-        backHref={`/campo/${id}/mamas`}
+        backHref={`/campo/${id}`}
       />
       <AnimadosClient campoId={id} campoSeccao={campo.seccao} animadosIniciais={(animados ?? []) as Animado[]} />
     </>

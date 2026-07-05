@@ -1,11 +1,10 @@
 'use client'
 
 import { useState, useMemo } from 'react'
-import { Search, Trash2, ChevronDown, Star } from 'lucide-react'
+import { Search, Trash2, Plus, X, Star } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
-import { Textarea } from '@/components/ui/textarea'
 import { Badge } from '@/components/ui/badge'
 import {
   Dialog,
@@ -19,44 +18,69 @@ import { getDiaLabel } from '@/types/shared'
 import {
   type EmentaItem,
   type RefeicaoTipo,
+  type TipoPrato,
   REFEICAO_LABELS,
   CATEGORIA_LABELS,
   CATEGORIA_CORES,
+  TIPO_PRATO_LABELS,
 } from '@/types/mamas'
+
+// Item em edição dentro do modal
+interface PratoEdit {
+  tempId: string
+  tipo_prato: TipoPrato
+  // modo receita vs custom
+  modo: 'receita' | 'custom'
+  receita_id?: string
+  receita_nome?: string       // nome para display quando ligado a receita
+  receita_nome_custom?: string
+  notas?: string
+}
+
+function gerarTempId() {
+  return Math.random().toString(36).slice(2)
+}
+
+function fromExisting(items: EmentaItem[]): PratoEdit[] {
+  if (items.length === 0) {
+    return [{ tempId: gerarTempId(), tipo_prato: 'prato', modo: 'custom', receita_nome_custom: '' }]
+  }
+  return items.map((item) => ({
+    tempId: gerarTempId(),
+    tipo_prato: item.tipo_prato ?? 'prato',
+    modo: item.receita_id ? 'receita' : 'custom',
+    receita_id: item.receita_id,
+    receita_nome: (item.receita as { nome?: string } | undefined)?.nome,
+    receita_nome_custom: item.receita_nome_custom,
+    notas: item.notas,
+  }))
+}
+
+const TIPOS_PRATO: TipoPrato[] = ['sopa', 'prato', 'sobremesa', 'extra', 'bebida', 'outro']
 
 interface EmentaSlotModalProps {
   dia: number
   refeicao: RefeicaoTipo
-  slotAtual?: EmentaItem
+  existingPratos: EmentaItem[]
   receitas: unknown[]
-  onSave: (dados: {
-    receita_id?: string
-    receita_nome_custom?: string
-    responsavel?: string
-    notas?: string
-  }) => Promise<void>
-  onRemove: () => void
+  onSave: (pratos: { tipo_prato: TipoPrato; receita_id?: string; receita_nome_custom?: string; notas?: string }[]) => Promise<void>
+  onRemoveAll: () => void
   onClose: () => void
 }
 
 export function EmentaSlotModal({
   dia,
   refeicao,
-  slotAtual,
+  existingPratos,
   receitas,
   onSave,
-  onRemove,
+  onRemoveAll,
   onClose,
 }: EmentaSlotModalProps) {
+  const [pratos, setPratos] = useState<PratoEdit[]>(() => fromExisting(existingPratos))
+  const [pickerIdx, setPickerIdx] = useState<number | null>(null)
   const [pesquisa, setPesquisa] = useState('')
-  const [receitaSelecionada, setReceitaSelecionada] = useState<string | undefined>(
-    slotAtual?.receita_id
-  )
-  const [nomeCustom, setNomeCustom] = useState(slotAtual?.receita_nome_custom ?? '')
-  const [responsavel, setResponsavel] = useState(slotAtual?.responsavel ?? '')
-  const [notas, setNotas] = useState(slotAtual?.notas ?? '')
   const [saving, setSaving] = useState(false)
-  const [modoCustom, setModoCustom] = useState(!slotAtual?.receita_id && !!slotAtual?.receita_nome_custom)
 
   const receitasFiltradas = useMemo(() => {
     const q = pesquisa.toLowerCase()
@@ -68,22 +92,118 @@ export function EmentaSlotModal({
     )
   }, [receitas, pesquisa])
 
+  function upd(idx: number, patch: Partial<PratoEdit>) {
+    setPratos((prev) => prev.map((p, i) => (i === idx ? { ...p, ...patch } : p)))
+  }
+
+  function addPrato() {
+    setPratos((prev) => [...prev, { tempId: gerarTempId(), tipo_prato: 'prato', modo: 'custom', receita_nome_custom: '' }])
+  }
+
+  function removePrato(idx: number) {
+    setPratos((prev) => prev.filter((_, i) => i !== idx))
+  }
+
+  function openPicker(idx: number) {
+    setPesquisa('')
+    setPickerIdx(idx)
+  }
+
+  function pickReceita(receita: { id: string; nome: string }) {
+    if (pickerIdx === null) return
+    upd(pickerIdx, { modo: 'receita', receita_id: receita.id, receita_nome: receita.nome })
+    setPickerIdx(null)
+  }
+
   async function handleSave() {
+    const valid = pratos.filter((p) => {
+      if (p.modo === 'receita') return !!p.receita_id
+      return !!(p.receita_nome_custom?.trim())
+    })
+    if (valid.length === 0) return
+
     setSaving(true)
     try {
-      await onSave({
-        receita_id: modoCustom ? undefined : receitaSelecionada,
-        receita_nome_custom: modoCustom ? nomeCustom : undefined,
-        responsavel: responsavel || undefined,
-        notas: notas || undefined,
-      })
+      await onSave(
+        valid.map((p) => ({
+          tipo_prato: p.tipo_prato,
+          receita_id: p.modo === 'receita' ? p.receita_id : undefined,
+          receita_nome_custom: p.modo === 'custom' ? (p.receita_nome_custom?.trim() || undefined) : undefined,
+          notas: p.notas?.trim() || undefined,
+        }))
+      )
     } finally {
       setSaving(false)
     }
   }
 
-  const canSave = modoCustom ? !!nomeCustom : !!receitaSelecionada
+  const canSave = pratos.some((p) =>
+    p.modo === 'receita' ? !!p.receita_id : !!(p.receita_nome_custom?.trim())
+  )
 
+  // ── Picker de receitas (sobrepõe a lista de pratos) ───────────────────────
+  if (pickerIdx !== null) {
+    return (
+      <Dialog open onOpenChange={onClose}>
+        <DialogContent className="max-w-xl">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2">
+              <button
+                type="button"
+                onClick={() => setPickerIdx(null)}
+                className="p-1 rounded-lg hover:bg-gray-100 transition-colors"
+              >
+                <X className="h-4 w-4 text-gray-500" />
+              </button>
+              Escolher receita
+            </DialogTitle>
+          </DialogHeader>
+          <div className="space-y-3">
+            <div className="relative">
+              <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-gray-400" />
+              <Input
+                className="pl-9"
+                placeholder="Pesquisar receita..."
+                value={pesquisa}
+                onChange={(e) => setPesquisa(e.target.value)}
+                autoFocus
+              />
+            </div>
+            <div className="max-h-72 overflow-y-auto space-y-1 rounded-lg border border-gray-200 p-1">
+              {receitasFiltradas.length === 0 ? (
+                <p className="text-sm text-gray-400 text-center py-4">Nenhuma receita encontrada</p>
+              ) : (
+                receitasFiltradas.map((receita) => {
+                  const corCat = CATEGORIA_CORES[receita.categoria as keyof typeof CATEGORIA_CORES]
+                  return (
+                    <button
+                      key={receita.id}
+                      type="button"
+                      onClick={() => pickReceita(receita)}
+                      className="w-full flex items-center gap-2 px-3 py-2 rounded-md text-left hover:bg-[#E7E8D1] transition-colors text-sm"
+                    >
+                      <Badge className={cnUtil('shrink-0 text-[10px] border', corCat)}>
+                        {CATEGORIA_LABELS[receita.categoria as keyof typeof CATEGORIA_LABELS]}
+                      </Badge>
+                      <span className="flex-1 truncate font-medium text-[#36454F]">{receita.nome}</span>
+                      {receita.is_oficial && (
+                        <Star className="h-3.5 w-3.5 shrink-0 text-[#B85042]" fill="currentColor" />
+                      )}
+                    </button>
+                  )
+                })
+              )}
+            </div>
+          </div>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setPickerIdx(null)}>Cancelar</Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+    )
+  }
+
+  // ── Editor de pratos ───────────────────────────────────────────────────────
   return (
     <Dialog open onOpenChange={onClose}>
       <DialogContent className="max-w-xl">
@@ -93,117 +213,92 @@ export function EmentaSlotModal({
           </DialogTitle>
         </DialogHeader>
 
-        <div className="space-y-4">
-          {/* Toggle custom */}
-          <div className="flex gap-2">
-            <button
-              type="button"
-              onClick={() => setModoCustom(false)}
-              className={cnUtil(
-                'flex-1 py-2 rounded-lg text-sm font-medium border transition-colors',
-                !modoCustom
-                  ? 'bg-[#B85042] text-white border-[#B85042]'
-                  : 'border-gray-200 text-gray-500 hover:border-gray-300'
-              )}
-            >
-              Escolher receita
-            </button>
-            <button
-              type="button"
-              onClick={() => setModoCustom(true)}
-              className={cnUtil(
-                'flex-1 py-2 rounded-lg text-sm font-medium border transition-colors',
-                modoCustom
-                  ? 'bg-[#B85042] text-white border-[#B85042]'
-                  : 'border-gray-200 text-gray-500 hover:border-gray-300'
-              )}
-            >
-              Nome personalizado
-            </button>
+        <div className="space-y-3">
+          <Label className="text-xs font-bold text-gray-500 uppercase tracking-wider">Pratos</Label>
+
+          <div className="space-y-2">
+            {pratos.map((prato, idx) => (
+              <div key={prato.tempId} className="flex items-start gap-2">
+                {/* Tipo de prato */}
+                <select
+                  value={prato.tipo_prato}
+                  onChange={(e) => upd(idx, { tipo_prato: e.target.value as TipoPrato })}
+                  className="shrink-0 text-xs border border-[#E7E8D1] rounded-lg px-2 py-2 bg-white text-[#36454F] font-medium focus:outline-none focus:ring-1 focus:ring-[#2D5016]"
+                >
+                  {TIPOS_PRATO.map((t) => (
+                    <option key={t} value={t}>{TIPO_PRATO_LABELS[t]}</option>
+                  ))}
+                </select>
+
+                {/* Nome / receita */}
+                <div className="flex-1 min-w-0">
+                  {prato.modo === 'receita' ? (
+                    <button
+                      type="button"
+                      onClick={() => openPicker(idx)}
+                      className="w-full text-left px-3 py-2 border border-[#2D5016] rounded-lg text-sm font-medium text-[#2D5016] bg-[#2D5016]/5 hover:bg-[#2D5016]/10 transition-colors truncate"
+                    >
+                      {prato.receita_nome || 'Escolher receita...'}
+                    </button>
+                  ) : (
+                    <Input
+                      placeholder="Nome do prato..."
+                      value={prato.receita_nome_custom ?? ''}
+                      onChange={(e) => upd(idx, { receita_nome_custom: e.target.value })}
+                      className="text-sm"
+                    />
+                  )}
+                </div>
+
+                {/* Toggle modo */}
+                <button
+                  type="button"
+                  onClick={() => {
+                    if (prato.modo === 'custom') {
+                      openPicker(idx)
+                      upd(idx, { modo: 'receita' })
+                    } else {
+                      upd(idx, { modo: 'custom', receita_id: undefined, receita_nome: undefined })
+                    }
+                  }}
+                  title={prato.modo === 'custom' ? 'Ligar a receita' : 'Escrever nome'}
+                  className="shrink-0 p-2 rounded-lg hover:bg-gray-100 transition-colors text-gray-400 hover:text-[#2D5016]"
+                >
+                  <Star className="h-4 w-4" />
+                </button>
+
+                {/* Remover */}
+                <button
+                  type="button"
+                  onClick={() => removePrato(idx)}
+                  disabled={pratos.length === 1}
+                  className="shrink-0 p-2 rounded-lg hover:bg-red-50 transition-colors text-gray-300 hover:text-red-500 disabled:opacity-30"
+                >
+                  <X className="h-4 w-4" />
+                </button>
+              </div>
+            ))}
           </div>
 
-          {modoCustom ? (
-            <div className="space-y-2">
-              <Label>Nome do prato</Label>
-              <Input
-                placeholder="Ex: Almoço partilhado, Piquenique..."
-                value={nomeCustom}
-                onChange={(e) => setNomeCustom(e.target.value)}
-              />
-            </div>
-          ) : (
-            <div className="space-y-2">
-              <div className="relative">
-                <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-gray-400" />
-                <Input
-                  className="pl-9"
-                  placeholder="Pesquisar receita..."
-                  value={pesquisa}
-                  onChange={(e) => setPesquisa(e.target.value)}
-                />
-              </div>
-              <div className="max-h-52 overflow-y-auto space-y-1 rounded-lg border border-gray-200 p-1">
-                {receitasFiltradas.length === 0 ? (
-                  <p className="text-sm text-gray-400 text-center py-4">Nenhuma receita encontrada</p>
-                ) : (
-                  receitasFiltradas.map((receita) => {
-                    const corCat = CATEGORIA_CORES[receita.categoria as keyof typeof CATEGORIA_CORES]
-                    const isSelected = receitaSelecionada === receita.id
-                    return (
-                      <button
-                        key={receita.id}
-                        type="button"
-                        onClick={() => setReceitaSelecionada(receita.id)}
-                        className={cnUtil(
-                          'w-full flex items-center gap-2 px-3 py-2 rounded-md text-left transition-colors text-sm',
-                          isSelected
-                            ? 'bg-[#B85042] text-white'
-                            : 'hover:bg-[#E7E8D1]'
-                        )}
-                      >
-                        <Badge className={cnUtil('shrink-0 text-[10px] border', isSelected ? 'bg-white/20 text-white border-white/30' : corCat)}>
-                          {CATEGORIA_LABELS[receita.categoria as keyof typeof CATEGORIA_LABELS]}
-                        </Badge>
-                        <span className="flex-1 truncate font-medium">{receita.nome}</span>
-                        {receita.is_oficial && (
-                          <Star className={cnUtil('h-3.5 w-3.5 shrink-0', isSelected ? 'text-white/70' : 'text-[#B85042]')} fill="currentColor" />
-                        )}
-                      </button>
-                    )
-                  })
-                )}
-              </div>
-            </div>
-          )}
-
-          <div className="grid grid-cols-2 gap-3">
-            <div className="space-y-1">
-              <Label>Responsável</Label>
-              <Input
-                placeholder="Mamã Mema, Tia..."
-                value={responsavel}
-                onChange={(e) => setResponsavel(e.target.value)}
-              />
-            </div>
-            <div className="space-y-1">
-              <Label>Notas</Label>
-              <Input
-                placeholder="Fazer mousse de manhã..."
-                value={notas}
-                onChange={(e) => setNotas(e.target.value)}
-              />
-            </div>
-          </div>
+          <button
+            type="button"
+            onClick={addPrato}
+            className="w-full flex items-center justify-center gap-2 py-2 rounded-lg border-2 border-dashed border-[#E7E8D1] text-sm text-gray-400 hover:border-[#2D5016] hover:text-[#2D5016] transition-colors"
+          >
+            <Plus className="h-4 w-4" />
+            Adicionar prato
+          </button>
         </div>
 
-        <DialogFooter className="gap-2">
-          {slotAtual && (
-            <Button variant="destructive" size="sm" onClick={onRemove}>
+        <DialogFooter className="gap-2 flex-wrap">
+          {existingPratos.length > 0 && (
+            <Button variant="destructive" size="sm" onClick={onRemoveAll} className="gap-1">
               <Trash2 className="h-4 w-4" />
+              Remover refeição
             </Button>
           )}
           <Button variant="outline" onClick={onClose}>Cancelar</Button>
-          <Button onClick={handleSave} disabled={!canSave || saving}>
+          <Button onClick={handleSave} disabled={!canSave || saving} className="bg-[#2D5016] hover:bg-[#2D5016]/90">
             {saving ? 'A guardar...' : 'Guardar'}
           </Button>
         </DialogFooter>

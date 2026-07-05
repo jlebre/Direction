@@ -6,7 +6,6 @@ import { usePathname } from 'next/navigation'
 import {
   CalendarDays,
   UtensilsCrossed,
-  Users,
   LayoutDashboard,
   BookOpen,
   MoreHorizontal,
@@ -16,17 +15,15 @@ import {
 import { cn } from '@/lib/utils'
 
 const navItems = [
-  { href: 'ementa',    label: 'Ementa',      icon: CalendarDays },
-  { href: 'animados',  label: 'Animados',    icon: Users },
-  { href: 'receitas',  label: 'Receitas',    icon: UtensilsCrossed },
-  { href: 'restricoes', label: 'Restrições', icon: AlertTriangle },
-  { href: 'conselhos', label: 'Conselhos',   icon: BookOpen },
+  { href: 'ementa',     label: 'Plano de Refeições', icon: CalendarDays },
+  { href: 'receitas',   label: 'Receitas',            icon: UtensilsCrossed },
+  { href: 'restricoes', label: 'Restrições',          icon: AlertTriangle },
+  { href: 'conselhos',  label: 'Conselhos',           icon: BookOpen },
 ]
 
 const bottomNavMain = [
-  { href: '', label: 'Hub', icon: LayoutDashboard },
-  { href: 'ementa', label: 'Ementa', icon: CalendarDays },
-  { href: 'animados', label: 'Animados', icon: Users },
+  { href: '',           label: 'Hub',       icon: LayoutDashboard },
+  { href: 'ementa',     label: 'Refeições', icon: CalendarDays },
   { href: 'restricoes', label: 'Restrições', icon: AlertTriangle },
 ]
 
@@ -139,7 +136,7 @@ export function CampoNav({ campoId, campoNome }: { campoId: string; campoNome: s
           />
           <div className="lg:hidden fixed bottom-0 left-0 right-0 z-50 bg-white rounded-t-2xl shadow-2xl pb-safe">
             <div className="flex items-center justify-between px-4 py-3 border-b border-[#E7E8D1]">
-              <span className="font-bold text-[#36454F] text-sm">Mais módulos</span>
+              <span className="font-bold text-[#36454F] text-sm">Mais</span>
               <button onClick={() => setMaisAberto(false)} className="p-1 rounded-lg hover:bg-[#E7E8D1] transition-colors">
                 <X className="h-5 w-5 text-gray-500" />
               </button>

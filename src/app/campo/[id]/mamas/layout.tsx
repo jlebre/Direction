@@ -1,6 +1,5 @@
 import { createClient } from '@/lib/supabase/server'
 import { notFound } from 'next/navigation'
-import { CampoNav } from '@/components/mamas/CampoNav'
 import { CampoTracker } from '@/components/CampoTracker'
 
 export default async function MamasLayout({
@@ -16,10 +15,9 @@ export default async function MamasLayout({
   if (!campo) notFound()
 
   return (
-    <div className="lg:pl-56">
+    <div className="min-h-screen">
       <CampoTracker campoId={id} campoNome={campo.nome} />
-      <CampoNav campoId={id} campoNome={campo.nome} />
-      <div className="pb-16 lg:pb-0 min-h-screen">{children}</div>
+      {children}
     </div>
   )
 }

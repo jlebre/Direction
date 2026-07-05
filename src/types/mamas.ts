@@ -64,11 +64,23 @@ export interface ReceitaIngrediente {
 }
 
 // ── Ementa ───────────────────────────────────────────────────────────────────
+export type TipoPrato = 'sopa' | 'prato' | 'sobremesa' | 'extra' | 'bebida' | 'outro'
+
+export const TIPO_PRATO_LABELS: Record<TipoPrato, string> = {
+  sopa: 'Sopa',
+  prato: 'Prato',
+  sobremesa: 'Sobremesa',
+  extra: 'Extra',
+  bebida: 'Bebida',
+  outro: 'Outro',
+}
+
 export interface EmentaItem {
   id: string
   campo_id: string
   dia: number
   refeicao: RefeicaoTipo
+  tipo_prato: TipoPrato
   receita_id?: string
   receita_nome_custom?: string
   responsavel?: string
