@@ -2,6 +2,8 @@
 
 import { useState, useMemo } from 'react'
 import { Search, Trash2, Plus, X, Star } from 'lucide-react'
+import { createClient } from '@/lib/supabase/client'
+import { toast } from 'sonner'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
@@ -81,6 +83,8 @@ export function EmentaSlotModal({
   const [pickerIdx, setPickerIdx] = useState<number | null>(null)
   const [pesquisa, setPesquisa] = useState('')
   const [saving, setSaving] = useState(false)
+  const [criando, setCriando] = useState(false)
+  const supabase = createClient()
 
   const receitasFiltradas = useMemo(() => {
     const q = pesquisa.toLowerCase()
@@ -107,6 +111,24 @@ export function EmentaSlotModal({
   function openPicker(idx: number) {
     setPesquisa('')
     setPickerIdx(idx)
+  }
+
+  async function criarRascunho(nome: string) {
+    setCriando(true)
+    try {
+      const { data, error } = await supabase
+        .from('receitas')
+        .insert({ nome, categoria: 'outro', is_oficial: false })
+        .select('id, nome')
+        .single()
+      if (error) throw error
+      pickReceita({ id: data.id, nome: data.nome })
+      toast.success(`Receita "${nome}" criada — podes preencher os detalhes depois`)
+    } catch {
+      toast.error('Erro ao criar receita')
+    } finally {
+      setCriando(false)
+    }
   }
 
   function pickReceita(receita: { id: string; nome: string }) {
@@ -171,7 +193,23 @@ export function EmentaSlotModal({
             </div>
             <div className="max-h-72 overflow-y-auto space-y-1 rounded-lg border border-gray-200 p-1">
               {receitasFiltradas.length === 0 ? (
-                <p className="text-sm text-gray-400 text-center py-4">Nenhuma receita encontrada</p>
+                <div className="text-center py-4 space-y-3">
+                  <p className="text-sm text-gray-400">Nenhuma receita encontrada</p>
+                  {pesquisa.trim().length > 0 && (
+                    <>
+                      <button
+                        type="button"
+                        onClick={() => criarRascunho(pesquisa.trim())}
+                        disabled={criando}
+                        className="mx-auto flex items-center gap-1.5 text-sm font-semibold text-[#2D5016] bg-[#2D5016]/10 hover:bg-[#2D5016]/20 rounded-lg px-4 py-2 transition-colors disabled:opacity-60"
+                      >
+                        <Plus className="h-4 w-4" />
+                        {criando ? 'A criar...' : `Criar "${pesquisa.trim()}"`}
+                      </button>
+                      <p className="text-xs text-gray-400">Podes preencher os detalhes depois</p>
+                    </>
+                  )}
+                </div>
               ) : (
                 receitasFiltradas.map((receita) => {
                   const corCat = CATEGORIA_CORES[receita.categoria as keyof typeof CATEGORIA_CORES]

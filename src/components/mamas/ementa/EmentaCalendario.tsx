@@ -3,7 +3,7 @@
 import { useState } from 'react'
 import Link from 'next/link'
 import { toast } from 'sonner'
-import { Plus, AlertTriangle, ShoppingCart, Info, Copy, ChevronLeft, ChevronRight, Calendar, LayoutGrid, ExternalLink } from 'lucide-react'
+import { Plus, AlertTriangle, Info, Copy, ChevronLeft, ChevronRight, Calendar, LayoutGrid, ExternalLink } from 'lucide-react'
 import { createClient } from '@/lib/supabase/client'
 import { Button } from '@/components/ui/button'
 import { Badge } from '@/components/ui/badge'
@@ -35,7 +35,6 @@ export function EmentaCalendario({ campo, ementaInicial, receitas, restricoes }:
   const [ementa, setEmenta] = useState<EmentaItem[]>(ementaInicial)
   const [modalAberto, setModalAberto] = useState(false)
   const [slotSelecionado, setSlotSelecionado] = useState<{ dia: number; refeicao: RefeicaoTipo } | null>(null)
-  const [gerandoLista, setGerandoLista] = useState(false)
   const [cloneModalAberto, setCloneModalAberto] = useState(false)
   const [camposDisponiveis, setCamposDisponiveis] = useState<{ id: string; nome: string }[]>([])
   const [campoFonte, setCampoFonte] = useState<string>('')
@@ -204,21 +203,6 @@ export function EmentaCalendario({ campo, ementaInicial, receitas, restricoes }:
     }
   }
 
-  async function gerarListaCompras() {
-    setGerandoLista(true)
-    try {
-      const { error } = await supabase.functions.invoke('gerar-lista-compras', {
-        body: { campo_id: campo.id },
-      })
-      if (error) throw error
-      toast.success('Lista de compras gerada!')
-    } catch {
-      toast.info('Lista gerada — vai ao separador Compras')
-    } finally {
-      setGerandoLista(false)
-    }
-  }
-
   const existingPratos = slotSelecionado
     ? getSlots(slotSelecionado.dia, slotSelecionado.refeicao)
     : []
@@ -307,16 +291,6 @@ export function EmentaCalendario({ campo, ementaInicial, receitas, restricoes }:
           </button>
         </div>
 
-        <Link href={`/campo/${campo.id}/mamas/lista`}>
-          <Button variant="outline" size="sm" className="gap-1">
-            <ShoppingCart className="h-4 w-4" />
-            <span className="hidden sm:inline">Ver lista</span>
-          </Button>
-        </Link>
-        <Button size="sm" onClick={gerarListaCompras} disabled={gerandoLista} className="gap-1 bg-[#2D5016] hover:bg-[#2D5016]/90">
-          <ShoppingCart className="h-4 w-4" />
-          <span className="hidden sm:inline">Gerar lista</span>
-        </Button>
       </div>
 
       {/* ── VISTA DIA ── */}
