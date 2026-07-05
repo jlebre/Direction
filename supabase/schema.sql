@@ -181,7 +181,8 @@ create table if not exists receita_ingredientes (
   quantidade_aranh_melgas numeric,
   quantidade_cam_trem     numeric,
   unidade                 text not null,
-  notas                   text
+  notas                   text,
+  unique (receita_id, ingrediente_id)
 );
 
 -- ── Ementa ────────────────────────────────────────────────────────────────────
@@ -238,7 +239,7 @@ create table if not exists campo_produtos (
 -- ── Preços do Campo ───────────────────────────────────────────────────────────
 create table if not exists campo_precos (
   id          uuid primary key default gen_random_uuid(),
-  campo_id    uuid not null references campos(id) on delete cascade,
+  campo_id    uuid references campos(id) on delete cascade,
   item        text not null,
   categoria   text not null default 'outro',
   preco       numeric,

@@ -1,7 +1,7 @@
 import { createClient } from '@/lib/supabase/server'
 import { notFound } from 'next/navigation'
 import Link from 'next/link'
-import { CalendarDays, ShoppingCart, Pill, AlertTriangle, Users, UtensilsCrossed, Lightbulb, Settings } from 'lucide-react'
+import { CalendarDays, ShoppingCart, Pill, AlertTriangle, Users, UtensilsCrossed, Lightbulb, BookOpen, Settings } from 'lucide-react'
 import type { Campo } from '@/types/shared'
 
 export const dynamic = 'force-dynamic'
@@ -28,6 +28,7 @@ export default async function MamasPage({ params }: { params: Promise<{ id: stri
     { href: 'farmacia', label: 'Farmácia', icon: Pill, desc: `${medicacoesCount ?? 0} medicações`, color: 'text-purple-700 bg-purple-50 border-purple-200' },
     { href: 'restricoes', label: 'Restrições', icon: AlertTriangle, desc: `${restricoesCount ?? 0} restrições alimentares`, color: 'text-yellow-700 bg-yellow-50 border-yellow-200' },
     { href: 'dicas', label: 'Dicas', icon: Lightbulb, desc: 'Truques e sugestões', color: 'text-teal-700 bg-teal-50 border-teal-200' },
+    { href: 'conselhos', label: 'Conselhos', icon: BookOpen, desc: 'Guia das mamãs CAMTIL', color: 'text-emerald-700 bg-emerald-50 border-emerald-200' },
     { href: 'definicoes', label: 'Definições', icon: Settings, desc: 'Datas, secção, orçamento', color: 'text-gray-700 bg-gray-50 border-gray-200' },
   ]
 

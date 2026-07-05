@@ -13,6 +13,7 @@ import {
   Settings,
   LayoutDashboard,
   Lightbulb,
+  BookOpen,
   MoreHorizontal,
   X,
   AlertTriangle,
@@ -24,6 +25,7 @@ const navItems = [
   { href: 'animados', label: 'Animados', icon: Users },
   { href: 'lista', label: 'Compras', icon: ShoppingCart },
   { href: 'dicas', label: 'Dicas', icon: Lightbulb },
+  { href: 'conselhos', label: 'Conselhos', icon: BookOpen },
   { href: 'receitas', label: 'Receitas', icon: UtensilsCrossed },
   { href: 'farmacia', label: 'Farmácia', icon: Pill },
   { href: 'restricoes', label: 'Restrições', icon: AlertTriangle },
@@ -40,6 +42,7 @@ const bottomNavMain = [
 
 const maisItems = [
   { href: 'dicas', label: 'Dicas', icon: Lightbulb },
+  { href: 'conselhos', label: 'Conselhos', icon: BookOpen },
   { href: 'receitas', label: 'Receitas', icon: UtensilsCrossed },
   { href: 'farmacia', label: 'Farmácia', icon: Pill },
   { href: 'restricoes', label: 'Restrições', icon: AlertTriangle },
