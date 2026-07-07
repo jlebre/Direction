@@ -1,7 +1,7 @@
 'use client'
 
 import { useState, useEffect, useMemo } from 'react'
-import { ShoppingCart, Check, Plus, Trash2, Package, Refrigerator, Truck, X, ExternalLink } from 'lucide-react'
+import { ShoppingCart, Check, Plus, Trash2, Package, Refrigerator, Truck, X, ExternalLink, Copy } from 'lucide-react'
 import Link from 'next/link'
 import { createClient } from '@/lib/supabase/client'
 import { toast } from 'sonner'
@@ -9,13 +9,14 @@ import { Button } from '@/components/ui/button'
 import { Tabs, TabsList, TabsTrigger, TabsContent } from '@/components/ui/tabs'
 import { Badge } from '@/components/ui/badge'
 import { Checkbox } from '@/components/ui/checkbox'
-import type { Campo } from '@/types/shared'
+import type { Campo, SeccaoTipo } from '@/types/shared'
 import {
   type ListaCompras,
   type ListaComprasItem,
   type ZonaSupermercado,
   type ArmazenamentoTipo,
   ZONA_LABELS,
+  calcularQuantidade,
 } from '@/types/mamas'
 import { cn, formatQuantidade, formatCurrency } from '@/lib/utils'
 
@@ -162,15 +163,24 @@ export function ListaComprasView({ campo, listas, campoId }: ListaComprasViewPro
   async function gerarLista() {
     setGerandoLista(true)
     try {
-      const { data: ementa } = await supabase
-        .from('ementa')
-        .select('*, receita:receitas(receita_ingredientes(*, ingrediente:ingredientes(*)))')
-        .eq('campo_id', campoId)
+      const [{ data: ementa }, { data: multData }] = await Promise.all([
+        supabase
+          .from('ementa')
+          .select('*, receita:receitas(receita_ingredientes(*, ingrediente:ingredientes(*)))')
+          .eq('campo_id', campoId),
+        supabase
+          .from('escalao_multiplicadores')
+          .select('multiplicador')
+          .eq('escalao', campo?.escalao ?? '')
+          .maybeSingle(),
+      ])
 
       if (!ementa || ementa.length === 0) {
         toast.info('Adiciona pratos à ementa primeiro')
         return
       }
+
+      const multiplicador = (multData as { multiplicador: number } | null)?.multiplicador ?? 1.0
 
       const agregados: Record<string, {
         ingrediente_id: string
@@ -184,13 +194,23 @@ export function ListaComprasView({ campo, listas, campoId }: ListaComprasViewPro
       for (const slot of ementa) {
         const ri = (slot.receita as unknown as { receita_ingredientes?: Array<{
           ingrediente_id: string
-          quantidade_aranh_melgas: number
+          quantidade_mosquitos: number | null
+          quantidade_aranh_melgas: number | null
+          quantidade_cam_trem: number | null
           unidade: string
           ingrediente?: { nome: string; categoria_supermercado: string; tipo_armazenamento: string }
         }> })?.receita_ingredientes ?? []
         for (const item of ri) {
           const key = item.ingrediente_id
-          const qty = item.quantidade_aranh_melgas ?? 0
+          const qty = calcularQuantidade(
+            (campo?.seccao ?? 'aranhicos') as SeccaoTipo,
+            item.quantidade_mosquitos,
+            item.quantidade_aranh_melgas,
+            item.quantidade_cam_trem,
+            campo?.num_animados ?? 58,
+            58,
+            multiplicador
+          )
           if (agregados[key]) {
             agregados[key].quantidade += qty
           } else {
@@ -248,6 +268,46 @@ export function ListaComprasView({ campo, listas, campoId }: ListaComprasViewPro
     }
   }
 
+  function gerarMensagem(): string {
+    const allItems = (listaDespensa?.items ?? []) as ListaComprasItem[]
+    if (allItems.length === 0) return 'Lista de compras vazia.'
+
+    const grupos = new Map<string, { label: string; items: ListaComprasItem[] }>()
+    for (const item of allItems) {
+      const zona = (item.zona_supermercado ?? 'outro') as ZonaSupermercado
+      const label = ZONA_LABELS[zona] ?? 'Outros'
+      if (!grupos.has(zona)) grupos.set(zona, { label, items: [] })
+      grupos.get(zona)!.items.push(item)
+    }
+
+    const hoje = new Date().toLocaleDateString('pt-PT', { day: '2-digit', month: '2-digit', year: 'numeric' })
+    const linhas = [`🛒 Lista de Compras — ${campo?.nome ?? 'Campo'}`, `📅 ${hoje}`, '']
+
+    for (const [, grupo] of grupos) {
+      linhas.push(`📦 ${grupo.label.toUpperCase()}`)
+      for (const item of grupo.items) {
+        const nome = item.ingrediente?.nome ?? item.nome_custom ?? '?'
+        const qty = formatQuantidade(item.quantidade, item.unidade)
+        const tick = item.comprado ? '✅' : '☐'
+        linhas.push(`${tick} ${nome}: ${qty}`)
+      }
+      linhas.push('')
+    }
+
+    const comprados = allItems.filter((i) => i.comprado).length
+    linhas.push(`${comprados}/${allItems.length} itens comprados`)
+    return linhas.join('\n')
+  }
+
+  async function copiarMensagem() {
+    try {
+      await navigator.clipboard.writeText(gerarMensagem())
+      toast.success('Lista copiada para a área de transferência')
+    } catch {
+      toast.error('Não foi possível copiar automaticamente')
+    }
+  }
+
   if (listasState.length === 0) {
     return (
       <div className="flex flex-col items-center justify-center py-16 px-4 text-center gap-4">
@@ -284,6 +344,13 @@ export function ListaComprasView({ campo, listas, campoId }: ListaComprasViewPro
           {listaDespensa?.items?.length ?? 0} itens comprados
         </p>
         <div className="flex items-center gap-2">
+          <button
+            onClick={copiarMensagem}
+            className="flex items-center gap-1.5 text-xs font-medium text-[#36454F] border border-[#E7E8D1] rounded-lg px-2.5 py-1.5 hover:bg-[#f8f8f4] transition-colors"
+          >
+            <Copy className="h-3.5 w-3.5" />
+            Copiar
+          </button>
           <Link
             href={`/campo/${campoId}/mamas/lista/adjunto`}
             className="flex items-center gap-1.5 text-xs font-medium text-[#B85042] border border-[#B85042]/30 rounded-lg px-2.5 py-1.5 hover:bg-[#B85042]/5 transition-colors"

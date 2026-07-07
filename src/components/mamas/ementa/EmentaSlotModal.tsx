@@ -141,6 +141,32 @@ export function EmentaSlotModal({
 
   const supabase = createClient()
 
+  // ── Sugestões por tipo de refeição ──────────────────────────────────────────
+
+  const sugestoesPicker = useMemo(() => {
+    if (refeicao !== 'pequeno_almoco' && refeicao !== 'lanche') return []
+    const cat = refeicao === 'pequeno_almoco' ? 'pequeno_almoco' : 'lanche'
+    return (receitas as { id: string; nome: string; categoria: string; is_oficial: boolean }[])
+      .filter((r) => r.categoria === cat)
+      .sort((a, b) => (b.is_oficial ? 1 : 0) - (a.is_oficial ? 1 : 0))
+  }, [receitas, refeicao])
+
+  function adicionarReceitaDefault(r: { id: string; nome: string }) {
+    const novoPrato: PratoEdit = {
+      tempId: gerarTempId(),
+      tipo_prato: 'prato',
+      modo: 'receita',
+      receita_id: r.id,
+      receita_nome: r.nome,
+    }
+    // Substitui o prato inicial se estiver vazio
+    if (pratos.length === 1 && pratos[0].modo === 'custom' && !pratos[0].receita_nome_custom?.trim() && !pratos[0].receita_id) {
+      setPratos([novoPrato])
+    } else {
+      setPratos((prev) => [...prev, novoPrato])
+    }
+  }
+
   // ── Receitas filtradas ──────────────────────────────────────────────────────
 
   const receitasFiltradas = useMemo(() => {
@@ -587,6 +613,28 @@ export function EmentaSlotModal({
         </DialogHeader>
 
         <div className="space-y-3">
+          {/* Sugestões rápidas para PA e lanche */}
+          {sugestoesPicker.length > 0 && existingPratos.length === 0 && (
+            <div>
+              <p className="text-[10px] font-bold text-gray-400 uppercase tracking-wider mb-1.5">
+                Sugestões para {REFEICAO_LABELS[refeicao]}
+              </p>
+              <div className="flex flex-wrap gap-1.5">
+                {sugestoesPicker.map((r) => (
+                  <button
+                    key={r.id}
+                    type="button"
+                    onClick={() => adicionarReceitaDefault(r)}
+                    className="flex items-center gap-1 text-xs font-medium px-2.5 py-1.5 rounded-lg border border-[#E7E8D1] text-[#36454F] hover:border-[#2D5016]/40 hover:text-[#2D5016] hover:bg-[#2D5016]/5 transition-colors"
+                  >
+                    <Plus className="h-3 w-3" />
+                    {r.nome}
+                  </button>
+                ))}
+              </div>
+            </div>
+          )}
+
           <Label className="text-xs font-bold text-gray-500 uppercase tracking-wider">Pratos</Label>
 
           <div className="space-y-2">

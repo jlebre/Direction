@@ -73,7 +73,8 @@ export default function ExportButton({ campo }: { campo: Campo }) {
         type="button"
         onClick={() => setOpen((v) => !v)}
         disabled={!!loading}
-        className="flex items-center gap-1.5 text-red-200 text-sm font-medium px-3 py-1.5 rounded-lg bg-red-900/30 active:bg-red-900/50 disabled:opacity-60"
+        className="flex items-center gap-1.5 text-sm font-medium px-3 py-1.5 rounded-lg disabled:opacity-60"
+        style={{ color: 'rgba(255,255,255,0.85)', backgroundColor: 'rgba(0,0,0,0.2)' }}
       >
         {label}
       </button>

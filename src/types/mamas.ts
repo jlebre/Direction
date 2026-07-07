@@ -246,7 +246,8 @@ export function calcularQuantidade(
   qtdAranhMelgas: number | null | undefined,
   qtdCamTrem: number | null | undefined,
   pessoasCampo: number,
-  pessoasBase = 58
+  pessoasBase = 58,
+  multiplicador = 1.0
 ): number {
   let qtdBase: number | null | undefined
   switch (seccao) {
@@ -265,5 +266,28 @@ export function calcularQuantidade(
       qtdBase = qtdAranhMelgas ?? qtdCamTrem ?? qtdMosquitos
   }
   if (!qtdBase) return 0
-  return Math.ceil((qtdBase * pessoasCampo) / pessoasBase * 100) / 100
+  return Math.ceil((qtdBase * pessoasCampo * multiplicador) / pessoasBase * 100) / 100
+}
+
+export interface OrcamentoItem {
+  id: string
+  campo_id: string
+  categoria: string
+  nome: string
+  quantidade: number | null
+  unidade: string | null
+  preco_unit: number | null
+  notas: string | null
+  created_at: string
+  updated_at: string
+}
+
+export type EstimativaItem = {
+  id: string
+  nome: string
+  categoria: string
+  quantidade: number
+  unidade: string
+  preco: number | null
+  total: number | null
 }

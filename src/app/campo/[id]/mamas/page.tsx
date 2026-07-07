@@ -3,7 +3,7 @@ import { notFound } from 'next/navigation'
 import Link from 'next/link'
 import { UtensilsCrossed, BookOpen } from 'lucide-react'
 import type { Campo } from '@/types/shared'
-import { getNumDias } from '@/types/shared'
+import { getNumDias, ESCALAO_COR } from '@/types/shared'
 import type { EmentaItem, RestricaoAlimentar } from '@/types/mamas'
 import { EmentaCalendario } from '@/components/mamas/ementa/EmentaCalendario'
 import { ExportarPlanoButton } from './ExportarPlanoButton'
@@ -27,6 +27,7 @@ export default async function MamasPage({ params }: { params: Promise<{ id: stri
   if (!campo) notFound()
 
   const c = campo as Campo
+  const cor = ESCALAO_COR[c.escalao] ?? { bg: '#2D5016', text: '#1a3009', light: '#E7F3DD', border: '#86efac' }
   const primeiroNome = c.mama?.split(' ')[0] || 'Mamã'
 
   const restricoes: RestricaoAlimentar[] = (animados ?? []).flatMap(
@@ -38,11 +39,11 @@ export default async function MamasPage({ params }: { params: Promise<{ id: stri
 
   return (
     <div className="flex flex-col h-screen">
-      {/* Header verde */}
-      <div className="bg-[#2D5016] text-white px-4 pt-8 pb-5 shrink-0">
+      {/* Header — cor do escalão */}
+      <div className="text-white px-4 pt-8 pb-5 shrink-0" style={{ backgroundColor: cor.bg }}>
         <div className="max-w-lg mx-auto">
           <div className="flex items-center justify-between mb-3">
-            <Link href={`/campo/${id}`} className="text-green-200 text-sm">
+            <Link href={`/campo/${id}`} className="text-sm" style={{ color: 'rgba(255,255,255,0.75)' }}>
               ← {c.nome}
             </Link>
             <ExportarPlanoButton campo={c} diasList={diasList} />
@@ -63,6 +64,18 @@ export default async function MamasPage({ params }: { params: Promise<{ id: stri
               <BookOpen className="h-4 w-4" />
               Conselhos
             </Link>
+            <Link
+              href={`/campo/${id}/mamas/orcamento`}
+              className="flex items-center gap-1.5 bg-white/20 hover:bg-white/30 text-white text-sm font-semibold rounded-xl px-3 py-2 transition-colors"
+            >
+              Orçamento
+            </Link>
+            <Link
+              href={`/campo/${id}/mamas/lista`}
+              className="flex items-center gap-1.5 bg-white/20 hover:bg-white/30 text-white text-sm font-semibold rounded-xl px-3 py-2 transition-colors"
+            >
+              Compras
+            </Link>
           </div>
         </div>
       </div>
@@ -74,6 +87,7 @@ export default async function MamasPage({ params }: { params: Promise<{ id: stri
           ementaInicial={(ementa ?? []) as EmentaItem[]}
           receitas={receitas ?? []}
           restricoes={restricoes}
+          corEscalao={cor}
         />
       </div>
     </div>

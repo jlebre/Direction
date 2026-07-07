@@ -10,9 +10,10 @@ export default async function PrecosPage({ params }: { params: Promise<{ id: str
   const { id } = await params
   const supabase = createClient()
 
-  const [{ data: campo }, { data: precos }] = await Promise.all([
+  const [{ data: campo }, { data: precos }, { data: precosRef }] = await Promise.all([
     supabase.from('campos').select('id, nome').eq('id', id).single(),
     supabase.from('campo_precos').select('*, campo:campos(nome)').order('categoria').order('item'),
+    supabase.from('campo_precos').select('*, campo:campos(nome)').is('campo_id', null).order('categoria').order('item'),
   ])
 
   if (!campo) notFound()
@@ -20,7 +21,11 @@ export default async function PrecosPage({ params }: { params: Promise<{ id: str
   return (
     <>
       <Header title="Preços" backHref={`/campo/${id}`} />
-      <PrecosView campoId={id} precosIniciais={(precos ?? []) as CampoPreco[]} />
+      <PrecosView
+        campoId={id}
+        precosIniciais={(precos ?? []) as CampoPreco[]}
+        precosReferencia={(precosRef ?? []) as CampoPreco[]}
+      />
     </>
   )
 }

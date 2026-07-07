@@ -2,6 +2,7 @@ import { createClient } from '@/lib/supabase/server'
 import { notFound, redirect } from 'next/navigation'
 import Link from 'next/link'
 import type { Campo } from '@/types/shared'
+import { ESCALAO_COR } from '@/types/shared'
 import type { Despesa, RegularizacaoNif } from '@/types/adjuntos'
 import DespesaItem from '@/components/adjuntos/DespesaItem'
 import BudgetBar from '@/components/adjuntos/BudgetBar'
@@ -24,6 +25,7 @@ export default async function AdjuntosDashboard({ params }: { params: Promise<{ 
   if (!campo.setup_completo) redirect(`/campo/${id}/setup`)
 
   const c = campo as Campo
+  const cor = ESCALAO_COR[c.escalao] ?? { bg: '#B85042', text: '#5c1f15', light: '#FDECEA', border: '#F4A090' }
   const ds = (despesas ?? []) as Despesa[]
   const regs = (regularizacoes ?? []) as RegularizacaoNif[]
 
@@ -47,11 +49,11 @@ export default async function AdjuntosDashboard({ params }: { params: Promise<{ 
 
   return (
     <main className="min-h-screen pb-28">
-      {/* Header */}
-      <div className="bg-[#B85042] text-white px-4 pt-10 pb-6">
+      {/* Header — cor do escalão */}
+      <div className="text-white px-4 pt-10 pb-6" style={{ backgroundColor: cor.bg }}>
         <div className="max-w-lg mx-auto">
           <div className="flex items-center justify-between mb-4">
-            <Link href={`/campo/${id}`} className="text-red-200 text-sm flex items-center gap-1">
+            <Link href={`/campo/${id}`} className="text-sm flex items-center gap-1" style={{ color: 'rgba(255,255,255,0.75)' }}>
               ← {c.nome}
             </Link>
             <ExportButton campo={c} />
@@ -59,7 +61,8 @@ export default async function AdjuntosDashboard({ params }: { params: Promise<{ 
           <h1 className="text-2xl font-bold">Olá, {c.adjunto?.split(' ')[0] || 'Adjunto'}</h1>
           <Link
             href={`/campo/${id}/adjuntos/faturas`}
-            className="inline-flex items-center gap-2 mt-2 text-red-200 text-sm hover:text-white transition-colors"
+            className="inline-flex items-center gap-2 mt-2 text-sm hover:text-white transition-colors"
+            style={{ color: 'rgba(255,255,255,0.75)' }}
           >
             <span>Ver todas as faturas</span>
             <span className="bg-white/20 rounded-full px-2 py-0.5 text-xs font-semibold">{ds.length}</span>
@@ -67,22 +70,23 @@ export default async function AdjuntosDashboard({ params }: { params: Promise<{ 
           </Link>
 
           <div className="mt-5">
-            <p className="text-red-200 text-sm">Saldo disponível</p>
+            <p className="text-sm" style={{ color: 'rgba(255,255,255,0.75)' }}>Saldo disponível</p>
             <p className={`text-4xl font-bold mt-1 ${saldoDisponivel < 0 ? 'text-red-300' : 'text-white'}`}>
               €{saldoDisponivel.toFixed(2)}
             </p>
-            <div className="mt-3 flex items-center gap-2 text-xs text-red-200">
+            <div className="mt-3 flex items-center gap-2 text-xs" style={{ color: 'rgba(255,255,255,0.65)' }}>
               <span>€{totalDespesas.toFixed(2)} gasto</span>
               <span>de €{c.saldo_inicial.toFixed(2)}</span>
             </div>
           </div>
 
-          <div className="mt-3 w-full bg-red-900/50 rounded-full h-2">
+          <div className="mt-3 w-full rounded-full h-2" style={{ backgroundColor: 'rgba(0,0,0,0.25)' }}>
             <div
-              className={`h-2 rounded-full transition-all ${
-                pctGasto > 90 ? 'bg-red-300' : pctGasto > 70 ? 'bg-yellow-300' : 'bg-red-200'
-              }`}
-              style={{ width: `${pctGasto}%` }}
+              className="h-2 rounded-full transition-all"
+              style={{
+                width: `${pctGasto}%`,
+                backgroundColor: pctGasto > 90 ? '#fca5a5' : pctGasto > 70 ? '#fde68a' : 'rgba(255,255,255,0.7)',
+              }}
             />
           </div>
         </div>
@@ -139,7 +143,8 @@ export default async function AdjuntosDashboard({ params }: { params: Promise<{ 
       <div className="fixed bottom-6 right-4 z-40">
         <Link
           href={`/campo/${id}/adjuntos/nova-despesa`}
-          className="flex items-center gap-2 bg-[#B85042] text-white px-5 py-4 rounded-2xl shadow-2xl font-semibold text-base active:scale-95 transition-transform"
+          className="flex items-center gap-2 text-white px-5 py-4 rounded-2xl shadow-2xl font-semibold text-base active:scale-95 transition-transform"
+          style={{ backgroundColor: cor.bg }}
         >
           <span className="text-xl font-light">+</span>
           Nova Despesa

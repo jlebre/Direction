@@ -24,14 +24,18 @@ import { cn as cnUtil } from '@/lib/utils'
 
 const REFEICOES: RefeicaoTipo[] = ['pequeno_almoco', 'almoco', 'lanche', 'jantar', 'ceia']
 
+type CorEscalao = { bg: string; text: string; light: string; border: string }
+const COR_FALLBACK: CorEscalao = { bg: '#2D5016', text: '#1a3009', light: '#E7F3DD', border: '#86efac' }
+
 interface EmentaCalendarioProps {
   campo: Campo
   ementaInicial: EmentaItem[]
   receitas: unknown[]
   restricoes: RestricaoAlimentar[]
+  corEscalao?: CorEscalao
 }
 
-export function EmentaCalendario({ campo, ementaInicial, receitas, restricoes }: EmentaCalendarioProps) {
+export function EmentaCalendario({ campo, ementaInicial, receitas, restricoes, corEscalao = COR_FALLBACK }: EmentaCalendarioProps) {
   const [ementa, setEmenta] = useState<EmentaItem[]>(ementaInicial)
   const [modalAberto, setModalAberto] = useState(false)
   const [slotSelecionado, setSlotSelecionado] = useState<{ dia: number; refeicao: RefeicaoTipo } | null>(null)
@@ -39,7 +43,7 @@ export function EmentaCalendario({ campo, ementaInicial, receitas, restricoes }:
   const [camposDisponiveis, setCamposDisponiveis] = useState<{ id: string; nome: string }[]>([])
   const [campoFonte, setCampoFonte] = useState<string>('')
   const [clonando, setClonando] = useState(false)
-  const [vista, setVista] = useState<'dia' | 'semana'>('dia')
+  const [vista, setVista] = useState<'periodo' | 'dia' | 'semana'>('periodo')
   const supabase = createClient()
 
   const numDias = getNumDias(campo.seccao as SeccaoTipo)
@@ -181,7 +185,7 @@ export function EmentaCalendario({ campo, ementaInicial, receitas, restricoes }:
     try {
       const { data: fonte, error: fetchErr } = await supabase
         .from('ementa')
-        .select('dia, refeicao, tipo_prato, receita_id, receita_nome_custom, responsavel, notas, ordem')
+        .select('dia, refeicao, tipo_prato, receita_id, receita_versao_id, receita_nome_custom, responsavel, notas, ordem')
         .eq('campo_id', campoFonte)
       if (fetchErr) throw fetchErr
       if (!fonte || fonte.length === 0) {
@@ -267,37 +271,130 @@ export function EmentaCalendario({ campo, ementaInicial, receitas, restricoes }:
     <div className="flex flex-col h-full">
       {/* Toolbar */}
       <div className="flex items-center gap-2 px-4 py-3 bg-white border-b border-[#E7E8D1]">
+        {/* Back to period button when in dia/semana view */}
+        {vista !== 'periodo' && (
+          <button
+            onClick={() => setVista('periodo')}
+            className="flex items-center gap-1 text-xs font-medium text-gray-500 hover:text-[#36454F] transition-colors shrink-0"
+          >
+            <ChevronLeft className="h-3.5 w-3.5" />
+            Período
+          </button>
+        )}
+
         <div className="flex-1 text-sm text-gray-500 hidden sm:flex items-center gap-2 flex-wrap">
-          <span className="font-semibold text-[#36454F]">{campo.seccao}</span>
-          <span>·</span>
-          <span className="font-semibold text-[#B85042]">{ementa.length} pratos planeados</span>
+          {vista === 'periodo' && (
+            <>
+              <span className="font-semibold text-[#36454F]">{campo.seccao}</span>
+              <span>·</span>
+              <span className="font-semibold" style={{ color: corEscalao.bg }}>{ementa.length} pratos planeados</span>
+            </>
+          )}
         </div>
 
-        {/* View toggle */}
-        <div className="flex items-center bg-[#E7E8D1] rounded-lg p-0.5 gap-0.5 mr-auto sm:mr-0">
+        {/* View toggle — Dia / Semana (só visível fora do período) */}
+        <div className="flex items-center bg-[#E7E8D1] rounded-lg p-0.5 gap-0.5 ml-auto">
+          <button
+            onClick={() => setVista('periodo')}
+            className={cnUtil(
+              'flex items-center gap-1.5 px-3 py-1.5 rounded-md text-xs font-medium transition-colors',
+              vista === 'periodo' ? 'bg-white shadow-sm' : 'text-gray-500 hover:text-[#36454F]'
+            )}
+            style={vista === 'periodo' ? { color: corEscalao.bg } : undefined}
+          >
+            <LayoutGrid className="h-3.5 w-3.5" />
+            <span>Período</span>
+          </button>
           <button
             onClick={() => setVista('dia')}
             className={cnUtil(
               'flex items-center gap-1.5 px-3 py-1.5 rounded-md text-xs font-medium transition-colors',
-              vista === 'dia' ? 'bg-white text-[#2D5016] shadow-sm' : 'text-gray-500 hover:text-[#36454F]'
+              vista === 'dia' ? 'bg-white shadow-sm' : 'text-gray-500 hover:text-[#36454F]'
             )}
+            style={vista === 'dia' ? { color: corEscalao.bg } : undefined}
           >
             <Calendar className="h-3.5 w-3.5" />
             <span>Dia</span>
           </button>
-          <button
-            onClick={() => setVista('semana')}
-            className={cnUtil(
-              'flex items-center gap-1.5 px-3 py-1.5 rounded-md text-xs font-medium transition-colors',
-              vista === 'semana' ? 'bg-white text-[#2D5016] shadow-sm' : 'text-gray-500 hover:text-[#36454F]'
-            )}
-          >
-            <LayoutGrid className="h-3.5 w-3.5" />
-            <span>Semana</span>
-          </button>
         </div>
-
       </div>
+
+      {/* ── VISTA PERÍODO ── */}
+      {vista === 'periodo' && (
+        <div className="flex-1 overflow-auto">
+          <div className="p-4 space-y-2 max-w-lg mx-auto">
+            {diasList.map((dia) => {
+              const slots = REFEICOES.flatMap((r) => getSlots(dia, r))
+              const almoco = getSlots(dia, 'almoco')
+              const jantar = getSlots(dia, 'jantar')
+              const isToday = dia === diaHoje
+              const state = getDayState(dia)
+
+              return (
+                <button
+                  key={dia}
+                  onClick={() => { setDiaAtual(dia); setVista('dia') }}
+                  className="w-full text-left bg-white rounded-xl border border-[#E7E8D1] px-4 py-3 hover:shadow-md active:scale-[0.99] transition-all"
+                  style={isToday ? { borderColor: corEscalao.bg, borderWidth: 2 } : undefined}
+                >
+                  <div className="flex items-center justify-between mb-1">
+                    <div className="flex items-center gap-2">
+                      <span className="font-bold text-sm text-[#36454F]">{getDiaLabel(dia)}</span>
+                      {isToday && (
+                        <span className="text-[10px] font-bold px-1.5 py-0.5 rounded-full text-white" style={{ backgroundColor: corEscalao.bg }}>Hoje</span>
+                      )}
+                    </div>
+                    <div className="flex items-center gap-1.5">
+                      {state === 'completo' && <span className="text-[10px] text-green-600 font-semibold">✓ Completo</span>}
+                      {state === 'parcial' && <span className="text-[10px] text-yellow-600 font-semibold">Parcial</span>}
+                      {state === 'vazio' && <span className="text-[10px] text-gray-300 font-medium">Por definir</span>}
+                      <ChevronRight className="h-3.5 w-3.5 text-gray-300" />
+                    </div>
+                  </div>
+                  {slots.length > 0 ? (
+                    <div className="space-y-0.5">
+                      {almoco.length > 0 && (
+                        <p className="text-xs text-gray-500 truncate">
+                          <span className="font-semibold">Almoço:</span>{' '}
+                          {almoco.map((s) => s.receita?.nome ?? s.receita_nome_custom ?? '—').join(' · ')}
+                        </p>
+                      )}
+                      {jantar.length > 0 && (
+                        <p className="text-xs text-gray-500 truncate">
+                          <span className="font-semibold">Jantar:</span>{' '}
+                          {jantar.map((s) => s.receita?.nome ?? s.receita_nome_custom ?? '—').join(' · ')}
+                        </p>
+                      )}
+                      {almoco.length === 0 && jantar.length === 0 && (
+                        <p className="text-xs text-gray-400">
+                          {REFEICOES.filter((r) => getSlots(dia, r).length > 0).map((r) => REFEICAO_LABELS[r]).join(' · ')}
+                        </p>
+                      )}
+                    </div>
+                  ) : (
+                    <p className="text-xs text-gray-300">Sem refeições definidas</p>
+                  )}
+                </button>
+              )
+            })}
+
+            {/* Copy action when empty */}
+            {ementa.length === 0 && (
+              <div className="pt-4 border-t border-[#E7E8D1] text-center">
+                <p className="text-xs text-gray-400 mb-2">Já tens um plano noutro campo?</p>
+                <button
+                  onClick={abrirCloneModal}
+                  className="inline-flex items-center gap-1.5 text-sm font-medium hover:underline"
+                  style={{ color: corEscalao.bg }}
+                >
+                  <Copy className="h-3.5 w-3.5" />
+                  Copiar plano existente
+                </button>
+              </div>
+            )}
+          </div>
+        </div>
+      )}
 
       {/* ── VISTA DIA ── */}
       {vista === 'dia' && (
@@ -317,7 +414,7 @@ export function EmentaCalendario({ campo, ementaInicial, receitas, restricoes }:
                 <div className="flex items-center justify-center gap-2">
                   <span className="font-bold text-[#36454F] text-base">{getDiaLabel(diaAtual)}</span>
                   {diaAtual === diaHoje && (
-                    <Badge className="bg-[#2D5016] text-white text-[10px] py-0 px-1.5">Hoje</Badge>
+                    <Badge className="text-white text-[10px] py-0 px-1.5 border-0" style={{ backgroundColor: corEscalao.bg }}>Hoje</Badge>
                   )}
                   {(() => {
                     const state = getDayState(diaAtual)
@@ -356,16 +453,21 @@ export function EmentaCalendario({ campo, ementaInicial, receitas, restricoes }:
                     onClick={() => setDiaAtual(dia)}
                     className={cnUtil(
                       'shrink-0 flex flex-col items-center px-2.5 py-1.5 rounded-xl text-[10px] font-bold transition-all border min-w-[44px]',
-                      isSelected
-                        ? 'bg-[#2D5016] text-white border-[#2D5016]'
-                        : isToday
-                          ? 'bg-[#2D5016]/10 text-[#2D5016] border-[#2D5016]/30'
-                          : state === 'completo'
-                            ? 'bg-green-50 text-green-700 border-green-200'
-                            : state === 'parcial'
-                              ? 'bg-yellow-50 text-yellow-700 border-yellow-200'
-                              : 'bg-white text-gray-500 border-[#E7E8D1]'
+                      !isSelected && !isToday && (
+                        state === 'completo'
+                          ? 'bg-green-50 text-green-700 border-green-200'
+                          : state === 'parcial'
+                            ? 'bg-yellow-50 text-yellow-700 border-yellow-200'
+                            : 'bg-white text-gray-500 border-[#E7E8D1]'
+                      )
                     )}
+                    style={
+                      isSelected
+                        ? { backgroundColor: corEscalao.bg, borderColor: corEscalao.bg, color: 'white' }
+                        : isToday
+                          ? { backgroundColor: corEscalao.bg + '18', color: corEscalao.bg, borderColor: corEscalao.bg + '40' }
+                          : undefined
+                    }
                   >
                     <span>{dia < 0 ? (dia === -2 ? 'P-2' : 'P-1') : `D${dia}`}</span>
                   </button>
@@ -385,19 +487,16 @@ export function EmentaCalendario({ campo, ementaInicial, receitas, restricoes }:
               </div>
             ))}
 
-            {/* Ação secundária — copiar plano, só quando vazio */}
-            {ementa.length === 0 && (
-              <div className="pt-4 border-t border-[#E7E8D1] text-center">
-                <p className="text-xs text-gray-400 mb-2">Já tens um plano noutro campo?</p>
-                <button
-                  onClick={abrirCloneModal}
-                  className="inline-flex items-center gap-1.5 text-sm text-[#2D5016] font-medium hover:underline"
-                >
-                  <Copy className="h-3.5 w-3.5" />
-                  Copiar plano existente
-                </button>
-              </div>
-            )}
+            {/* Ver todos os dias */}
+            <div className="pt-4 border-t border-[#E7E8D1] text-center">
+              <button
+                onClick={() => setVista('periodo')}
+                className="inline-flex items-center gap-1 text-sm text-gray-400 hover:text-[#36454F] transition-colors font-medium"
+              >
+                <LayoutGrid className="h-3.5 w-3.5" />
+                Ver todos os dias
+              </button>
+            </div>
           </div>
         </div>
       )}
@@ -414,10 +513,8 @@ export function EmentaCalendario({ campo, ementaInicial, receitas, restricoes }:
               {diasList.map((dia) => (
                 <div
                   key={dia}
-                  className={cnUtil(
-                    'w-36 shrink-0 border-r border-[#d0d1bb] py-2 px-2 text-center',
-                    dia === diaHoje ? 'bg-[#2D5016]/10' : ''
-                  )}
+                  className="w-36 shrink-0 border-r border-[#d0d1bb] py-2 px-2 text-center"
+                  style={dia === diaHoje ? { backgroundColor: corEscalao.bg + '18' } : undefined}
                 >
                   <Link
                     href={`/campo/${campo.id}/mamas/ementa/${dia}`}
@@ -426,7 +523,7 @@ export function EmentaCalendario({ campo, ementaInicial, receitas, restricoes }:
                     {getDiaLabel(dia)}
                   </Link>
                   {dia === diaHoje && (
-                    <span className="text-[9px] text-[#2D5016] font-bold">Hoje</span>
+                    <span className="text-[9px] font-bold" style={{ color: corEscalao.bg }}>Hoje</span>
                   )}
                 </div>
               ))}
@@ -445,10 +542,8 @@ export function EmentaCalendario({ campo, ementaInicial, receitas, restricoes }:
                 {diasList.map((dia) => (
                   <div
                     key={dia}
-                    className={cnUtil(
-                      'w-36 shrink-0 border-r border-[#E7E8D1] min-h-[80px] p-1 relative group',
-                      dia === diaHoje ? 'bg-[#2D5016]/5' : ''
-                    )}
+                    className="w-36 shrink-0 border-r border-[#E7E8D1] min-h-[80px] p-1 relative group"
+                    style={dia === diaHoje ? { backgroundColor: corEscalao.bg + '0C' } : undefined}
                   >
                     {renderSlotCard(dia, refeicao, true)}
                   </div>
