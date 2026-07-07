@@ -1,6 +1,6 @@
 import * as XLSX from 'xlsx'
 import type { Campo } from '@/types/shared'
-import type { Despesa, RegularizacaoNif } from '@/types/adjuntos'
+import type { Despesa, RegularizacaoNif, DespesaLinha } from '@/types/adjuntos'
 import { CODE_CATEGORIES } from './codes'
 import { VALORES_REF_VERAO } from './valores-referencia'
 
@@ -33,7 +33,8 @@ function applyNumFmt(
 export function generateExcelBuffer(
   campo: Campo,
   despesas: Despesa[],
-  regularizacoes: RegularizacaoNif[] = []
+  regularizacoes: RegularizacaoNif[] = [],
+  despesaLinhas: DespesaLinha[] = []
 ): ArrayBuffer {
   const wb = XLSX.utils.book_new()
   const sorted = [...despesas].sort((a, b) => a.numero_recibo - b.numero_recibo)
@@ -181,6 +182,39 @@ export function generateExcelBuffer(
   }
   XLSX.utils.book_append_sheet(wb, ws3, 'Resumo')
 
+  // ── Sheet 4: Produtos OCR (só se houver linhas confirmadas/corrigidas) ────────
+  const linhasValidadas = despesaLinhas.filter(
+    (l) => l.estado === 'confirmado' || l.estado === 'corrigido'
+  )
+  if (linhasValidadas.length > 0) {
+    const produtosRows: (string | number | null)[][] = [
+      ['Recibo', 'Fornecedor', 'Data', 'Produto', 'Qtd', 'Unidade', '€/un', 'Total (€)', 'Estado'],
+    ]
+    for (const linha of linhasValidadas) {
+      const d = sorted.find((ds) => ds.id === linha.despesa_id)
+      produtosRows.push([
+        d?.numero_recibo ?? null,
+        d?.ocr_fornecedor ?? '',
+        d ? formatDatePT(d.data) : '',
+        linha.nome_produto_bruto,
+        linha.quantidade ?? null,
+        linha.unidade ?? '',
+        linha.preco_unitario ?? null,
+        linha.preco_total ?? null,
+        linha.estado,
+      ])
+    }
+    const ws4 = XLSX.utils.aoa_to_sheet(produtosRows)
+    ws4['!cols'] = [
+      { wch: 8 }, { wch: 16 }, { wch: 12 }, { wch: 30 },
+      { wch: 7 }, { wch: 7 }, { wch: 10 }, { wch: 12 }, { wch: 12 },
+    ]
+    applyNumFmt(ws4, 4, 1, produtosRows.length - 1, '#,##0.000')
+    applyNumFmt(ws4, 6, 1, produtosRows.length - 1, '#,##0.00')
+    applyNumFmt(ws4, 7, 1, produtosRows.length - 1, '#,##0.00')
+    XLSX.utils.book_append_sheet(wb, ws4, 'Produtos OCR')
+  }
+
   const u8 = XLSX.write(wb, { type: 'array', bookType: 'xlsx' }) as Uint8Array
   return u8.buffer.slice(u8.byteOffset, u8.byteOffset + u8.byteLength) as ArrayBuffer
 }
@@ -188,9 +222,10 @@ export function generateExcelBuffer(
 export function generateExcel(
   campo: Campo,
   despesas: Despesa[],
-  regularizacoes: RegularizacaoNif[] = []
+  regularizacoes: RegularizacaoNif[] = [],
+  despesaLinhas: DespesaLinha[] = []
 ): void {
-  const buffer = generateExcelBuffer(campo, despesas, regularizacoes)
+  const buffer = generateExcelBuffer(campo, despesas, regularizacoes, despesaLinhas)
   const blob = new Blob([buffer], {
     type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
   })

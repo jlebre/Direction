@@ -2,10 +2,11 @@ import { createClient } from '@/lib/supabase/server'
 import { notFound } from 'next/navigation'
 import Link from 'next/link'
 import type { Campo } from '@/types/shared'
-import type { Despesa } from '@/types/adjuntos'
+import type { Despesa, DespesaLinha } from '@/types/adjuntos'
 import { getCodeColor } from '@/lib/adjuntos/codes'
 import { getPhotoUrl } from '@/lib/adjuntos/supabase-storage'
 import DespesaActions from './DespesaActions'
+import { DespesaLinhasClient } from '@/components/adjuntos/DespesaLinhasClient'
 
 export const dynamic = 'force-dynamic'
 
@@ -17,15 +18,22 @@ export default async function DespesaDetailPage({
   const { id, despesaId } = await params
   const supabase = createClient()
 
-  const [{ data: campo }, { data: despesa }] = await Promise.all([
+  const [{ data: campo }, { data: despesa }, { data: linhas }] = await Promise.all([
     supabase.from('campos').select('*').eq('id', id).single(),
     supabase.from('despesas').select('*').eq('id', despesaId).single(),
+    supabase
+      .from('despesa_linhas')
+      .select('*')
+      .eq('despesa_id', despesaId)
+      .order('confianca')
+      .order('preco_total', { ascending: false }),
   ])
 
   if (!campo || !despesa) notFound()
 
   const c = campo as Campo
   const d = despesa as Despesa
+  const dl = (linhas ?? []) as DespesaLinha[]
   const codeColor = getCodeColor(d.codigo)
   const photoUrl = d.foto_path ? getPhotoUrl(d.foto_path) : null
 
@@ -84,7 +92,53 @@ export default async function DespesaDetailPage({
               <span className="text-red-500 text-sm">Não confirmado</span>
             )}
           </div>
+
+          {/* Dados OCR — só mostra se foi processado */}
+          {d.ocr_status === 'processado' && (
+            <>
+              <div className="px-4 py-2 bg-gray-50">
+                <p className="text-[10px] font-bold text-gray-400 uppercase tracking-wider">OCR</p>
+              </div>
+              {d.ocr_fornecedor && (
+                <div className="flex justify-between items-center px-4 py-3 gap-4">
+                  <span className="text-sm text-gray-400 shrink-0">Fornecedor</span>
+                  <span className="text-sm font-medium text-gray-800">{d.ocr_fornecedor}</span>
+                </div>
+              )}
+              {d.ocr_total !== null && (
+                <div className="flex justify-between items-center px-4 py-3 gap-4">
+                  <span className="text-sm text-gray-400 shrink-0">Total OCR</span>
+                  <span className={`text-sm font-semibold ${
+                    Math.abs(Number(d.ocr_total) - Number(d.valor)) < 0.02
+                      ? 'text-green-600'
+                      : 'text-amber-600'
+                  }`}>
+                    €{Number(d.ocr_total).toFixed(2)}
+                    {Math.abs(Number(d.ocr_total) - Number(d.valor)) >= 0.02 && (
+                      <span className="text-xs ml-1 text-gray-400">(≠ registado)</span>
+                    )}
+                  </span>
+                </div>
+              )}
+              {d.ocr_data && d.ocr_data !== d.data && (
+                <div className="flex justify-between items-center px-4 py-3 gap-4">
+                  <span className="text-sm text-gray-400 shrink-0">Data OCR</span>
+                  <span className="text-sm text-gray-600">
+                    {new Date(d.ocr_data + 'T00:00:00').toLocaleDateString('pt-PT')}
+                  </span>
+                </div>
+              )}
+            </>
+          )}
         </div>
+
+        {/* Linhas de produto OCR */}
+        {dl.length > 0 && (
+          <DespesaLinhasClient
+            linhasIniciais={dl}
+            despesaId={despesaId}
+          />
+        )}
 
         <Link
           href={`/campo/${id}/adjuntos/despesa/${despesaId}/editar`}

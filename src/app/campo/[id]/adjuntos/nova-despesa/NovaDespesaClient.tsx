@@ -10,6 +10,8 @@ import PhotoCapture from '@/components/adjuntos/PhotoCapture'
 import CodeSelector from '@/components/adjuntos/CodeSelector'
 import PinDialog from '@/components/shared/PinDialog'
 import Toast from '@/components/shared/Toast'
+import { OcrResultCard } from '@/components/adjuntos/OcrResultCard'
+import { useOcr } from '@/hooks/useOcr'
 
 type Step = 1 | 2 | 3 | 4
 
@@ -41,6 +43,8 @@ export default function NovaDespesaClient({ campo }: { campo: Campo }) {
   const [pinError, setPinError] = useState(false)
   const [pinUnlocked, setPinUnlocked] = useState(!campo.pin)
 
+  const ocr = useOcr()
+
   function handlePinConfirm(pin: string) {
     if (pin === campo.pin) { setPinUnlocked(true); setShowPin(false); setPinError(false) }
     else { setPinError(true); setTimeout(() => setPinError(false), 1200) }
@@ -48,7 +52,19 @@ export default function NovaDespesaClient({ campo }: { campo: Campo }) {
 
   const handlePhoto = useCallback((file: File, preview: string) => {
     setForm((f) => ({ ...f, photoFile: file, photoPreview: preview }))
-  }, [])
+    // Inicia OCR automaticamente após capturar foto
+    ocr.processar(file)
+  }, [ocr])
+
+  function handleUsarOcr(total: number | null, data: string | null, fornecedor: string | null) {
+    setForm((f) => ({
+      ...f,
+      valor: total !== null ? total.toFixed(2) : f.valor,
+      data: data ?? f.data,
+      descricao: fornecedor && !f.descricao ? `Compras ${fornecedor}` : f.descricao,
+    }))
+    setStep(2)
+  }
 
   function canGoNext(): boolean {
     if (step === 1) return true
@@ -77,13 +93,42 @@ export default function NovaDespesaClient({ campo }: { campo: Campo }) {
         if (!uploadError) fotoPath = path
       }
 
-      const { error: insertError } = await supabase.from('despesas').insert({
+      // Campos OCR — guardados mesmo que parciais
+      const ocrStatus = ocr.resultado ? 'processado' : (ocr.status === 'error' ? 'falhou' : 'nenhum')
+
+      const { data: novaDespesa, error: insertError } = await supabase.from('despesas').insert({
         campo_id: campo.id, numero_recibo: numeroRecibo, data: form.data,
         valor: parseFloat(form.valor), descricao: form.descricao.trim() || null,
         codigo: form.codigo!, codigo_descricao: form.codigoDescricao!,
         tipo: 'despesa', nif_confirmado: form.nifConfirmado, foto_path: fotoPath,
-      })
+        ocr_status: ocrStatus,
+        ocr_texto: ocr.resultado?.texto_bruto ?? null,
+        ocr_fornecedor: ocr.resultado?.fornecedor ?? null,
+        ocr_total: ocr.resultado?.total_detectado ?? null,
+        ocr_data: ocr.resultado?.data_detectada ?? null,
+      }).select('id').single()
+
       if (insertError) throw insertError
+
+      // Guarda linhas de produto detectadas (para futura validação)
+      if (novaDespesa?.id && ocr.resultado && ocr.resultado.linhas.length > 0) {
+        const linhasParaInserir = ocr.resultado.linhas
+          .filter((l) => l.preco_total !== null)
+          .map((l) => ({
+            despesa_id: novaDespesa.id,
+            texto_linha_original: l.texto_linha_original,
+            nome_produto_bruto: l.nome_produto_bruto,
+            quantidade: l.quantidade,
+            unidade: l.unidade,
+            preco_unitario: l.preco_unitario,
+            preco_total: l.preco_total,
+            confianca: l.confianca,
+            estado: 'sugerido' as const,
+          }))
+        if (linhasParaInserir.length > 0) {
+          await supabase.from('despesa_linhas').insert(linhasParaInserir)
+        }
+      }
 
       setToast({ msg: `Despesa #${numeroRecibo} registada!`, type: 'success' })
       setTimeout(() => { router.push(`/campo/${campo.id}/adjuntos`); router.refresh() }, 800)
@@ -136,9 +181,39 @@ export default function NovaDespesaClient({ campo }: { campo: Campo }) {
               onSkip={() => setStep(2)}
               currentPreview={form.photoPreview}
             />
-            {form.photoPreview && (
-              <button type="button" onClick={() => setStep(2)} className="w-full mt-4 py-4 bg-[#B85042] text-white font-bold text-base rounded-xl active:opacity-90">
-                Seguinte →
+
+            {/* OCR card — aparece automaticamente após capturar foto */}
+            {ocr.status !== 'idle' && (
+              <div className="mt-4">
+                <OcrResultCard
+                  status={ocr.status}
+                  progress={ocr.progress}
+                  statusMsg={ocr.statusMsg}
+                  resultado={ocr.resultado}
+                  onUsar={handleUsarOcr}
+                />
+              </div>
+            )}
+
+            {/* Botão Seguinte manual (sem usar OCR) */}
+            {form.photoPreview && ocr.status !== 'a_carregar' && ocr.status !== 'a_processar' && (
+              <button
+                type="button"
+                onClick={() => setStep(2)}
+                className="w-full mt-4 py-4 bg-[#B85042] text-white font-bold text-base rounded-xl active:opacity-90"
+              >
+                {ocr.status === 'done' ? 'Ignorar OCR e continuar →' : 'Seguinte →'}
+              </button>
+            )}
+
+            {/* Enquanto OCR corre, mostrar botão mais discreto */}
+            {form.photoPreview && (ocr.status === 'a_carregar' || ocr.status === 'a_processar') && (
+              <button
+                type="button"
+                onClick={() => setStep(2)}
+                className="w-full mt-3 py-3 text-sm text-gray-400 font-medium"
+              >
+                Continuar sem esperar pelo OCR →
               </button>
             )}
           </StepWrapper>
@@ -146,6 +221,25 @@ export default function NovaDespesaClient({ campo }: { campo: Campo }) {
 
         {step === 2 && (
           <StepWrapper title="Detalhes" subtitle="Valor e descrição da despesa">
+            {/* Banner se OCR detectou um total diferente do campo actual */}
+            {ocr.resultado?.total_detectado !== null &&
+              ocr.resultado?.total_detectado !== undefined &&
+              form.valor !== ocr.resultado.total_detectado.toFixed(2) &&
+              form.valor !== '' && (
+                <div className="mb-4 bg-green-50 border border-green-200 rounded-xl px-3 py-2 flex items-center justify-between gap-2">
+                  <p className="text-xs text-green-700">
+                    OCR detectou: <strong>€{ocr.resultado.total_detectado.toFixed(2).replace('.', ',')}</strong>
+                  </p>
+                  <button
+                    type="button"
+                    onClick={() => setForm((f) => ({ ...f, valor: ocr.resultado!.total_detectado!.toFixed(2) }))}
+                    className="text-xs font-semibold text-green-700 underline shrink-0"
+                  >
+                    Usar
+                  </button>
+                </div>
+              )}
+
             <div className="space-y-4">
               <div>
                 <label className="block text-sm font-medium text-gray-700 mb-1">Valor (€) *</label>
@@ -216,6 +310,7 @@ export default function NovaDespesaClient({ campo }: { campo: Campo }) {
                   ['Código', form.codigo ?? ''],
                   ['Categoria', form.codigoDescricao ?? ''],
                   ['Foto', form.photoFile ? '✓ Incluída' : 'Sem foto'],
+                  ...(ocr.resultado ? [['OCR', `${ocr.resultado.linhas.length} produtos detectados`]] : []),
                 ].map(([label, value]) => (
                   <div key={label} className="flex justify-between items-start px-4 py-3 gap-4">
                     <span className="text-sm text-gray-500 shrink-0">{label}</span>

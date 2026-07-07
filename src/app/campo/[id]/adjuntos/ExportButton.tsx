@@ -5,7 +5,7 @@ import { supabase } from '@/lib/supabase/client'
 import { generateExcel } from '@/lib/adjuntos/export-excel'
 import { generateZip } from '@/lib/adjuntos/export-zip'
 import type { Campo } from '@/types/shared'
-import type { Despesa, RegularizacaoNif } from '@/types/adjuntos'
+import type { Despesa, RegularizacaoNif, DespesaLinha } from '@/types/adjuntos'
 
 export default function ExportButton({ campo }: { campo: Campo }) {
   const [loading, setLoading] = useState<'excel' | 'zip' | null>(null)
@@ -34,9 +34,21 @@ export default function ExportButton({ campo }: { campo: Campo }) {
         .select('*')
         .eq('campo_id', campo.id),
     ])
+
+    // Busca linhas de produto confirmadas/corrigidas para o sheet "Produtos OCR"
+    const despesaIds = (despesas ?? []).map((d) => d.id)
+    const { data: linhas } = despesaIds.length > 0
+      ? await supabase
+          .from('despesa_linhas')
+          .select('*')
+          .in('despesa_id', despesaIds)
+          .in('estado', ['confirmado', 'corrigido'])
+      : { data: [] }
+
     return {
       despesas: (despesas ?? []) as Despesa[],
       regularizacoes: (regularizacoes ?? []) as RegularizacaoNif[],
+      linhas: (linhas ?? []) as DespesaLinha[],
     }
   }
 
@@ -44,8 +56,8 @@ export default function ExportButton({ campo }: { campo: Campo }) {
     setOpen(false)
     setLoading('excel')
     try {
-      const { despesas, regularizacoes } = await fetchData()
-      generateExcel(campo, despesas, regularizacoes)
+      const { despesas, regularizacoes, linhas } = await fetchData()
+      generateExcel(campo, despesas, regularizacoes, linhas)
     } finally {
       setLoading(null)
     }
@@ -55,8 +67,8 @@ export default function ExportButton({ campo }: { campo: Campo }) {
     setOpen(false)
     setLoading('zip')
     try {
-      const { despesas, regularizacoes } = await fetchData()
-      await generateZip(campo, despesas, regularizacoes)
+      const { despesas, regularizacoes, linhas } = await fetchData()
+      await generateZip(campo, despesas, regularizacoes, linhas)
     } finally {
       setLoading(null)
     }

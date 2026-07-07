@@ -12,6 +12,38 @@ export interface Despesa {
   foto_path: string | null
   is_regularizacao_nif: boolean
   created_at: string
+  // OCR fields (nullable — despesas sem foto ou sem OCR têm 'nenhum')
+  ocr_status: 'nenhum' | 'processado' | 'falhou' | null
+  ocr_texto: string | null
+  ocr_fornecedor: string | null
+  ocr_total: number | null
+  ocr_data: string | null
+}
+
+export interface DespesaLinha {
+  id: string
+  despesa_id: string
+  texto_linha_original: string
+  nome_produto_bruto: string
+  ingrediente_id: string | null
+  campo_preco_id: string | null
+  quantidade: number | null
+  unidade: string | null
+  preco_unitario: number | null
+  preco_total: number | null
+  confianca: 'alta' | 'media' | 'baixa'
+  estado: 'sugerido' | 'confirmado' | 'corrigido' | 'ignorado'
+  created_at: string
+  updated_at: string
+}
+
+export interface ProdutoAlias {
+  id: string
+  alias: string
+  ingrediente_id: string | null
+  campo_preco_id: string | null
+  origem: 'ocr' | 'manual'
+  created_at: string
 }
 
 /** Ligação entre fatura original (sem NIF) e fatura de regularização (com NIF) */
