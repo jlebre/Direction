@@ -344,7 +344,9 @@ export default function NovaDespesaClient({ campo }: { campo: Campo }) {
                   <span className="text-green-600 mt-0.5 text-lg">✓</span>
                   <div>
                     <p className="font-semibold text-sm text-gray-800">NIF detetado automaticamente pelo OCR</p>
-                    <p className="text-sm font-mono font-bold text-[#B85042] mt-0.5">501 979 891</p>
+                    <p className="text-sm font-mono font-bold text-[#B85042] mt-0.5">
+                      {(ocr.resultado?.nif_detectado ?? '501979891').replace(/(\d{3})(\d{3})(\d{3})/, '$1 $2 $3')}
+                    </p>
                     <button
                       type="button"
                       onClick={() => setForm((f) => ({ ...f, nifConfirmado: false, nifOrigemOcr: false }))}
