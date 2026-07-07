@@ -12,6 +12,7 @@ import PinDialog from '@/components/shared/PinDialog'
 import Toast from '@/components/shared/Toast'
 import { OcrResultCard } from '@/components/adjuntos/OcrResultCard'
 import type { OcrUsarPayload } from '@/components/adjuntos/OcrResultCard'
+import type { LinhaParsed } from '@/lib/adjuntos/ocr-parser'
 import { useOcr } from '@/hooks/useOcr'
 
 type Step = 1 | 2 | 3 | 4
@@ -44,6 +45,8 @@ export default function NovaDespesaClient({ campo }: { campo: Campo }) {
   const [showPin, setShowPin] = useState(!!campo.pin)
   const [pinError, setPinError] = useState(false)
   const [pinUnlocked, setPinUnlocked] = useState(!campo.pin)
+  // Linhas OCR editadas pelo utilizador antes de confirmar
+  const [linhasOcrEditadas, setLinhasOcrEditadas] = useState<LinhaParsed[] | null>(null)
 
   const ocr = useOcr()
 
@@ -58,16 +61,17 @@ export default function NovaDespesaClient({ campo }: { campo: Campo }) {
     ocr.processar(file)
   }, [ocr])
 
-  function handleUsarOcr({ total, data, fornecedor, nifConfirmado }: OcrUsarPayload) {
+  function handleUsarOcr({ total, data, fornecedor, nifConfirmado, linhas }: OcrUsarPayload) {
     setForm((f) => ({
       ...f,
       valor: total !== null ? total.toFixed(2) : f.valor,
       data: data ?? f.data,
       descricao: fornecedor && !f.descricao ? `Compras ${fornecedor}` : f.descricao,
-      // Se NIF foi aceite via OCR, marcar imediatamente — não volta a perguntar
       nifConfirmado: nifConfirmado ? true : f.nifConfirmado,
       nifOrigemOcr: nifConfirmado,
     }))
+    // Guardar linhas editadas pelo utilizador no card OCR
+    setLinhasOcrEditadas(linhas)
     // Saltar directamente para categoria se NIF confirmado e temos valor
     const novoValor = total !== null ? total.toFixed(2) : ''
     if (nifConfirmado && novoValor) {
@@ -121,10 +125,11 @@ export default function NovaDespesaClient({ campo }: { campo: Campo }) {
 
       if (insertError) throw insertError
 
-      // Guarda linhas de produto detectadas (para futura validação)
-      if (novaDespesa?.id && ocr.resultado && ocr.resultado.linhas.length > 0) {
-        const linhasParaInserir = ocr.resultado.linhas
-          .filter((l) => l.preco_total !== null)
+      // Guarda linhas de produto (editadas no card OCR, ou versão bruta como fallback)
+      const linhasParaGuardar = linhasOcrEditadas ?? ocr.resultado?.linhas ?? []
+      if (novaDespesa?.id && linhasParaGuardar.length > 0) {
+        const linhasParaInserir = linhasParaGuardar
+          .filter((l) => l.preco_total !== null && l.tipo_linha === 'produto')
           .map((l) => ({
             despesa_id: novaDespesa.id,
             texto_linha_original: l.texto_linha_original,
@@ -135,6 +140,8 @@ export default function NovaDespesaClient({ campo }: { campo: Campo }) {
             preco_total: l.preco_total,
             confianca: l.confianca,
             estado: 'sugerido' as const,
+            tipo_linha: l.tipo_linha,
+            categoria_linha: l.categoria_linha,
           }))
         if (linhasParaInserir.length > 0) {
           await supabase.from('despesa_linhas').insert(linhasParaInserir)
@@ -321,7 +328,9 @@ export default function NovaDespesaClient({ campo }: { campo: Campo }) {
                   ['Código', form.codigo ?? ''],
                   ['Categoria', form.codigoDescricao ?? ''],
                   ['Foto', form.photoFile ? '✓ Incluída' : 'Sem foto'],
-                  ...(ocr.resultado ? [['OCR', `${ocr.resultado.linhas.length} produtos detectados`]] : []),
+                  ...((linhasOcrEditadas ?? ocr.resultado?.linhas ?? []).length > 0
+                    ? [['OCR', `${(linhasOcrEditadas ?? ocr.resultado!.linhas).length} produtos`]]
+                    : []),
                 ].map(([label, value]) => (
                   <div key={label} className="flex justify-between items-start px-4 py-3 gap-4">
                     <span className="text-sm text-gray-500 shrink-0">{label}</span>

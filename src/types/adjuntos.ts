@@ -33,6 +33,8 @@ export interface DespesaLinha {
   preco_total: number | null
   confianca: 'alta' | 'media' | 'baixa'
   estado: 'sugerido' | 'confirmado' | 'corrigido' | 'ignorado'
+  tipo_linha: string | null    // 'produto' | 'deposito' | 'desconto' | 'iva' | 'total' | 'pagamento' | 'administrativo'
+  categoria_linha: string | null
   created_at: string
   updated_at: string
 }

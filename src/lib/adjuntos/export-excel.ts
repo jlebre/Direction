@@ -188,7 +188,7 @@ export function generateExcelBuffer(
   )
   if (linhasValidadas.length > 0) {
     const produtosRows: (string | number | null)[][] = [
-      ['Recibo', 'Fornecedor', 'Data', 'Produto', 'Qtd', 'Unidade', '€/un', 'Total (€)', 'Estado'],
+      ['Recibo', 'Fornecedor', 'Data', 'Produto', 'Qtd', 'Unidade', '€/un', 'Total (€)', 'Estado', 'Tipo', 'Categoria'],
     ]
     for (const linha of linhasValidadas) {
       const d = sorted.find((ds) => ds.id === linha.despesa_id)
@@ -202,12 +202,14 @@ export function generateExcelBuffer(
         linha.preco_unitario ?? null,
         linha.preco_total ?? null,
         linha.estado,
+        linha.tipo_linha ?? 'produto',
+        linha.categoria_linha ?? '',
       ])
     }
     const ws4 = XLSX.utils.aoa_to_sheet(produtosRows)
     ws4['!cols'] = [
       { wch: 8 }, { wch: 16 }, { wch: 12 }, { wch: 30 },
-      { wch: 7 }, { wch: 7 }, { wch: 10 }, { wch: 12 }, { wch: 12 },
+      { wch: 7 }, { wch: 7 }, { wch: 10 }, { wch: 12 }, { wch: 12 }, { wch: 12 }, { wch: 14 },
     ]
     applyNumFmt(ws4, 4, 1, produtosRows.length - 1, '#,##0.000')
     applyNumFmt(ws4, 6, 1, produtosRows.length - 1, '#,##0.00')
