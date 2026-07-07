@@ -11,6 +11,7 @@ import CodeSelector from '@/components/adjuntos/CodeSelector'
 import PinDialog from '@/components/shared/PinDialog'
 import Toast from '@/components/shared/Toast'
 import { OcrResultCard } from '@/components/adjuntos/OcrResultCard'
+import type { OcrUsarPayload } from '@/components/adjuntos/OcrResultCard'
 import { useOcr } from '@/hooks/useOcr'
 
 type Step = 1 | 2 | 3 | 4
@@ -24,6 +25,7 @@ interface FormState {
   codigo: string | null
   codigoDescricao: string | null
   nifConfirmado: boolean
+  nifOrigemOcr: boolean  // true quando NIF foi aceite via OCR (não mostrar pergunta manual)
 }
 
 function today() {
@@ -35,7 +37,7 @@ export default function NovaDespesaClient({ campo }: { campo: Campo }) {
   const [step, setStep] = useState<Step>(1)
   const [form, setForm] = useState<FormState>({
     photoFile: null, photoPreview: null, valor: '', descricao: '',
-    data: today(), codigo: null, codigoDescricao: null, nifConfirmado: false,
+    data: today(), codigo: null, codigoDescricao: null, nifConfirmado: false, nifOrigemOcr: false,
   })
   const [submitting, setSubmitting] = useState(false)
   const [toast, setToast] = useState<{ msg: string; type: 'success' | 'error' } | null>(null)
@@ -56,14 +58,23 @@ export default function NovaDespesaClient({ campo }: { campo: Campo }) {
     ocr.processar(file)
   }, [ocr])
 
-  function handleUsarOcr(total: number | null, data: string | null, fornecedor: string | null) {
+  function handleUsarOcr({ total, data, fornecedor, nifConfirmado }: OcrUsarPayload) {
     setForm((f) => ({
       ...f,
       valor: total !== null ? total.toFixed(2) : f.valor,
       data: data ?? f.data,
       descricao: fornecedor && !f.descricao ? `Compras ${fornecedor}` : f.descricao,
+      // Se NIF foi aceite via OCR, marcar imediatamente — não volta a perguntar
+      nifConfirmado: nifConfirmado ? true : f.nifConfirmado,
+      nifOrigemOcr: nifConfirmado,
     }))
-    setStep(2)
+    // Saltar directamente para categoria se NIF confirmado e temos valor
+    const novoValor = total !== null ? total.toFixed(2) : ''
+    if (nifConfirmado && novoValor) {
+      setStep(3)
+    } else {
+      setStep(2)
+    }
   }
 
   function canGoNext(): boolean {
@@ -190,7 +201,7 @@ export default function NovaDespesaClient({ campo }: { campo: Campo }) {
                   progress={ocr.progress}
                   statusMsg={ocr.statusMsg}
                   resultado={ocr.resultado}
-                  onUsar={handleUsarOcr}
+                  onUsar={(payload) => handleUsarOcr(payload)}
                 />
               </div>
             )}
@@ -319,22 +330,39 @@ export default function NovaDespesaClient({ campo }: { campo: Campo }) {
                 ))}
               </div>
 
-              <div className={`rounded-xl border-2 p-4 transition-colors ${form.nifConfirmado ? 'border-green-300 bg-green-50' : 'border-amber-200 bg-amber-50'}`}>
-                <label className="flex items-start gap-3 cursor-pointer">
-                  <input
-                    type="checkbox" checked={form.nifConfirmado}
-                    onChange={(e) => setForm((f) => ({ ...f, nifConfirmado: e.target.checked }))}
-                    className="mt-0.5 w-5 h-5 accent-[#B85042] cursor-pointer"
-                  />
+              {form.nifOrigemOcr ? (
+                <div className="rounded-xl border-2 border-green-300 bg-green-50 p-4 flex items-start gap-3">
+                  <span className="text-green-600 mt-0.5 text-lg">✓</span>
                   <div>
-                    <p className="font-semibold text-sm text-gray-800">A fatura tem o NIF do CAMTIL</p>
+                    <p className="font-semibold text-sm text-gray-800">NIF detetado automaticamente pelo OCR</p>
                     <p className="text-sm font-mono font-bold text-[#B85042] mt-0.5">501 979 891</p>
-                    {!form.nifConfirmado && (
-                      <p className="text-xs text-amber-700 mt-1">Sem NIF — o valor entrará na bolsa por liquidar.</p>
-                    )}
+                    <button
+                      type="button"
+                      onClick={() => setForm((f) => ({ ...f, nifConfirmado: false, nifOrigemOcr: false }))}
+                      className="text-xs text-gray-400 underline mt-1"
+                    >
+                      Corrigir manualmente
+                    </button>
                   </div>
-                </label>
-              </div>
+                </div>
+              ) : (
+                <div className={`rounded-xl border-2 p-4 transition-colors ${form.nifConfirmado ? 'border-green-300 bg-green-50' : 'border-amber-200 bg-amber-50'}`}>
+                  <label className="flex items-start gap-3 cursor-pointer">
+                    <input
+                      type="checkbox" checked={form.nifConfirmado}
+                      onChange={(e) => setForm((f) => ({ ...f, nifConfirmado: e.target.checked }))}
+                      className="mt-0.5 w-5 h-5 accent-[#B85042] cursor-pointer"
+                    />
+                    <div>
+                      <p className="font-semibold text-sm text-gray-800">A fatura tem o NIF do CAMTIL</p>
+                      <p className="text-sm font-mono font-bold text-[#B85042] mt-0.5">501 979 891</p>
+                      {!form.nifConfirmado && (
+                        <p className="text-xs text-amber-700 mt-1">Sem NIF — o valor entrará na bolsa por liquidar.</p>
+                      )}
+                    </div>
+                  </label>
+                </div>
+              )}
             </div>
             <button
               type="button" disabled={submitting} onClick={handleSubmit}

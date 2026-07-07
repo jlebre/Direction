@@ -18,6 +18,8 @@ export type OcrResultado = {
   total_detectado: number | null
   fornecedor: string | null
   data_detectada: string | null  // ISO: YYYY-MM-DD
+  nif_detectado: string | null   // 9 dígitos sem prefixo PT
+  nif_linha_original: string | null
   linhas: LinhaParsed[]
 }
 
@@ -26,14 +28,10 @@ export type OcrResultado = {
 /** Converte valor monetário PT ("1,49" ou "1.49" ou "1.234,56") para float. */
 function parseMoney(s: string): number | null {
   const t = s.trim()
-  // "1,49" → decimal comma (2 decimal digits after comma)
   if (/^\d+,\d{2}$/.test(t)) return parseFloat(t.replace(',', '.'))
-  // "1.49" → decimal dot
   if (/^\d+\.\d{2}$/.test(t)) return parseFloat(t)
-  // "1.234,56" → European thousands + decimal
   if (/^\d{1,3}(\.\d{3})+,\d{2}$/.test(t))
     return parseFloat(t.replace(/\./g, '').replace(',', '.'))
-  // Fallback: replace comma → dot
   const clean = t.replace(',', '.')
   const v = parseFloat(clean)
   return isNaN(v) ? null : v
@@ -47,16 +45,50 @@ function encontrarMonetarios(linha: string): number[] {
 
 // ── Listas de palavras-chave ───────────────────────────────────────────────────
 
+/**
+ * Palavras que identificam linhas administrativas/fiscais.
+ * Se qualquer uma aparecer, a linha NÃO é produto.
+ */
 const SKIP_KEYWORDS = [
-  'nif', 'contribuinte', 'iva', 'subtotal', 'sub-total', 'troco', 'pagamento',
-  'multibanco', 'mb way', 'mbway', 'cartão', 'cartao', 'obrigado', 'obrigada',
-  'bem-vindo', 'bem vindo', 'morada', 'endereço', 'endereco', 'telefone', 'telef',
-  'fax', 'email', '@', 'www.', 'http', 'operador', 'operadora', 'caixa',
-  'taxa iva', '% iva', 'base tributável', 'base tributavel', 'cod fiscal',
-  'código fiscal', 'n.º contrib', 'nº contrib', 'atm', 'terminal pos', 'pos ',
-  'desconto', 'desc.', 'isento', 'inc. iva', 'iva incluído', 'bolsa nif',
-  'emissão', 'emissao', 'talão', 'talao', 'recibo', 'factura', 'fatura nº',
-  'referencia', 'referência', 'atendido por', 'vendedor:', 'cliente:',
+  // Totais e pagamentos
+  'total', 'pagar', 'subtotal', 'sub-total', 'montante',
+  // IVA e impostos
+  'iva', 'taxa iva', '% iva', 'base tributável', 'base tributavel',
+  'isento', 'inc. iva', 'iva incluído', 'iva nao sujeito', 'iva não sujeito',
+  // Meios de pagamento
+  'visa', 'multibanco', 'mb way', 'mbway', 'cartão', 'cartao', 'atm',
+  'terminal pos', 'pos ', 'numerário', 'numerario',
+  // Troco / recibos
+  'troco', 'talão', 'talao',
+  // Dados de identificação / cabeçalho
+  'nif', 'contribuinte', 'n.º contrib', 'nº contrib', 'cod fiscal', 'código fiscal',
+  'atcud', 'certificado', 'processado por', 'programa certificado',
+  'decreto-lei', 'decreto lei',
+  // Dados de contacto / loja
+  'morada', 'endereço', 'endereco', 'telefone', 'telef', 'tel:', 'sede:',
+  'fax', 'email', '@', 'www.', 'http',
+  // Texto de loja
+  'obrigado', 'obrigada', 'bem-vindo', 'bem vindo',
+  'devolução', 'devolucao', 'troca',
+  // Referências de documento
+  'fatura simplificada', 'fatura nº', 'fatura n.', 'registada crc',
+  'operador', 'operadora', 'caixa', 'atendido por', 'vendedor:', 'cliente:',
+  'referencia', 'referência', 'nro:', 'loja',
+  // Descontos (linhas de desconto não são produto)
+  'desconto', 'desc.', 'bolsa nif',
+  // Emissão
+  'emissão', 'emissao',
+]
+
+/** Palavras que sinalizam o FIM da zona de produtos. */
+const STOP_PRODUCT_RE = [
+  /total\s+a\s+pagar/i,
+  /valor\s+a\s+pagar/i,
+  /montante\s+pago/i,
+  /total\s+pago/i,
+  /\btotal\b/i,
+  /\bsubtotal\b/i,
+  /\bsub-total\b/i,
 ]
 
 const TOTAL_KEYWORDS = [
@@ -82,17 +114,26 @@ const FORNECEDORES_CONHECIDOS: Array<{ pattern: RegExp; nome: string }> = [
   { pattern: /el\s*corte\s*ingl/i,           nome: 'El Corte Inglés' },
   { pattern: /\bmetro\b/i,                   nome: 'Metro' },
   { pattern: /makro/i,                       nome: 'Makro' },
+  { pattern: /meu\s*super/i,                 nome: 'Meu Super' },
+  { pattern: /\bspar\b/i,                    nome: 'Spar' },
+  { pattern: /\bpetrolx\b|\bgalpenergia\b|\bgalp\b/i, nome: 'Galp' },
+  { pattern: /\brepsol\b/i,                  nome: 'Repsol' },
+  { pattern: /\bbp\b/i,                      nome: 'BP' },
 ]
 
 // ── Padrões de quantidade ──────────────────────────────────────────────────────
 
-// "LEITE UHT 1L   6 X 0,89 5,34"  →  nome="LEITE UHT 1L" qtd=6 unit="un" pUnit=0.89 total=5.34
+// "LEITE UHT 1L   6 X 0,89 5,34"
 const RE_QTD_INT =
   /^(.*?)\s+(\d+)\s*[xX]\s*(\d+[,.]\d{2})\s+(\d+[,.]\d{2})\s*$/
 
-// "BANANA KG 0,750 KG X 1,99 1,49"  →  nome="BANANA KG" qtd=0.75 unit="kg" pUnit=1.99 total=1.49
+// "BANANA KG 0,750 KG X 1,99 1,49"
 const RE_QTD_KG =
   /^(.*?)\s+(\d+[,.]\d{3,})\s*kg\s*[xX]\s*(\d+[,.]\d{2})\s+(\d+[,.]\d{2})\s*$/i
+
+// Linha de quantidade isolada: "2 X 1,75 3,50" sem nome antes
+const RE_QTD_ONLY =
+  /^(\d+)\s*[xX]\s*(\d+[,.]\d{2})\s+(\d+[,.]\d{2})\s*$/
 
 // Linha simples: "ARROZ AGULHA 1KG   1,49"  (2+ espaços antes do preço)
 const RE_SIMPLES_2SP =
@@ -102,15 +143,49 @@ const RE_SIMPLES_2SP =
 const RE_SIMPLES_1SP =
   /^(.+)\s+(\d+[,.]\d{2})\s*$/
 
-// ── Funções de detecção ────────────────────────────────────────────────────────
+// ── Filtros de linha ──────────────────────────────────────────────────────────
 
-function deveIgnorar(linha: string): boolean {
+/** True se a linha deve ser ignorada como produto (fiscal/administrativa). */
+function isNonProductLine(linha: string): boolean {
   const lower = linha.toLowerCase()
-  return SKIP_KEYWORDS.some(kw => lower.includes(kw))
+  const upper = linha.toUpperCase()
+
+  // Contém percentagem → tabela fiscal (IVA, taxas)
+  if (lower.includes('%')) return true
+
+  // Contém palavra bloqueante
+  if (SKIP_KEYWORDS.some(kw => lower.includes(kw))) return true
+
+  // Linha só com números e separadores (ex: "0,30 0,00 0,30")
+  if (/^[\d\s.,]+$/.test(linha.trim())) return true
+
+  // Prefixo NS sem texto descritivo depois (ex: "NS 0,30 0,00")
+  // NS + espaço + só números → fiscal
+  if (/^NS\s+[\d\s.,]+$/.test(upper.trim())) return true
+
+  // Linha com (€) ou (C)/(I)/(E) seguido de % ou só números
+  if (/^\([€CIE]\)\s*[\d\s.,]+$/.test(upper.trim())) return true
+  if (/^\([€CIE]\)\s+\d+[,.]\d+%/.test(upper.trim())) return true
+
+  return false
 }
 
+/** Retorna true se a linha marca o fim da zona de produtos. */
+function isStopLine(linha: string): boolean {
+  return STOP_PRODUCT_RE.some(re => re.test(linha))
+}
+
+/** Remove prefixos fiscais de início de linha de produto. */
+function stripFiscalPrefix(s: string): string {
+  return s
+    .replace(/^\([A-Z€]\)\s*/i, '')  // (C), (I), (E), (€)
+    .replace(/^NS\s+/i, '')           // NS (Não Sujeito)
+    .trim()
+}
+
+// ── Funções de detecção ────────────────────────────────────────────────────────
+
 function detectarFornecedor(linhas: string[]): string | null {
-  // Verifica as primeiras 8 linhas — o nome do supermercado costuma estar no topo
   const amostra = linhas.slice(0, 8).join(' ')
   for (const { pattern, nome } of FORNECEDORES_CONHECIDOS) {
     if (pattern.test(amostra)) return nome
@@ -119,7 +194,6 @@ function detectarFornecedor(linhas: string[]): string | null {
 }
 
 function detectarData(texto: string): string | null {
-  // Formatos: DD/MM/YYYY, DD-MM-YYYY, DD.MM.YYYY, DD/MM/YY
   const m = texto.match(/\b(\d{2})[/\-.](\d{2})[/\-.](\d{2,4})\b/)
   if (!m) return null
   const [, dd, mm, aaaa] = m
@@ -130,40 +204,62 @@ function detectarData(texto: string): string | null {
 }
 
 function detectarTotal(linhas: string[]): number | null {
-  // Procura de baixo para cima — o total aparece no fim do talão
   const candidatos: number[] = []
   for (const linha of [...linhas].reverse()) {
     const lower = linha.toLowerCase()
-    const eTotalLine = TOTAL_KEYWORDS.some(re => re.test(lower))
-    if (eTotalLine) {
+    if (TOTAL_KEYWORDS.some(re => re.test(lower))) {
       const valores = encontrarMonetarios(linha)
-      if (valores.length > 0) {
-        // Pega o maior valor desta linha (geralmente o total)
-        candidatos.push(Math.max(...valores))
-      }
+      if (valores.length > 0) candidatos.push(Math.max(...valores))
     }
   }
-  // Prioridade: primeiro total encontrado de baixo para cima
   return candidatos[0] ?? null
 }
+
+/**
+ * Extrai NIF (9 dígitos) do texto completo.
+ * Alta confiança: keyword NIF explícita.
+ * Média confiança: prefixo PT + 9 dígitos.
+ */
+function extractNif(texto: string): { nif: string | null; linha: string | null } {
+  const linhas = texto.split('\n')
+
+  // Alta confiança: "NIF: PT501979891" ou "NIF: 501979891" ou "NIF PT501979891"
+  const reNifKeyword = /NIF[:\s]*(?:PT)?\s*([1235689]\d{8})\b/i
+  for (const l of linhas) {
+    const m = l.match(reNifKeyword)
+    if (m) return { nif: m[1], linha: l.trim() }
+  }
+
+  // Média confiança: "PT501979891" no texto
+  const rePT = /\bPT([1235689]\d{8})\b/
+  for (const l of linhas) {
+    const m = l.match(rePT)
+    if (m) return { nif: m[1], linha: l.trim() }
+  }
+
+  return { nif: null, linha: null }
+}
+
+// ── Parser de linha individual ─────────────────────────────────────────────────
 
 function parseLinha(linha: string): LinhaParsed | null {
   const limpa = linha.trim().replace(/\s+/g, ' ')
   if (!limpa || limpa.length < 3) return null
-  if (deveIgnorar(limpa)) return null
+  if (isNonProductLine(limpa)) return null
 
-  // Verifica se tem pelo menos um valor monetário
   const monetarios = encontrarMonetarios(limpa)
   if (monetarios.length === 0) return null
+
+  const nomeLimpo = (raw: string) => titularize(stripFiscalPrefix(raw))
 
   // Padrão: qtd inteiro × preço unit total  "6 X 0,89 5,34"
   const mQtdInt = limpa.match(RE_QTD_INT)
   if (mQtdInt) {
-    const nome = mQtdInt[1].trim()
+    const nome = nomeLimpo(mQtdInt[1])
     if (nome.length < 2) return null
     return {
       texto_linha_original: limpa,
-      nome_produto_bruto: titularize(nome),
+      nome_produto_bruto: nome,
       quantidade: parseFloat(mQtdInt[2]),
       unidade: 'un',
       preco_unitario: parseMoney(mQtdInt[3]),
@@ -175,11 +271,11 @@ function parseLinha(linha: string): LinhaParsed | null {
   // Padrão: quantidade em KG × preço  "0,750 KG X 4,99 3,74"
   const mQtdKg = limpa.match(RE_QTD_KG)
   if (mQtdKg) {
-    const nome = mQtdKg[1].trim()
+    const nome = nomeLimpo(mQtdKg[1])
     if (nome.length < 2) return null
     return {
       texto_linha_original: limpa,
-      nome_produto_bruto: titularize(nome),
+      nome_produto_bruto: nome,
       quantidade: parseMoney(mQtdKg[2]),
       unidade: 'kg',
       preco_unitario: parseMoney(mQtdKg[3]),
@@ -191,16 +287,15 @@ function parseLinha(linha: string): LinhaParsed | null {
   // Padrão simples com 2+ espaços antes do preço
   const mSimples2 = limpa.match(RE_SIMPLES_2SP)
   if (mSimples2) {
-    const nome = mSimples2[1].trim()
+    const nome = nomeLimpo(mSimples2[1])
     if (nome.length < 2) return null
-    const total = parseMoney(mSimples2[2])
     return {
       texto_linha_original: limpa,
-      nome_produto_bruto: titularize(nome),
+      nome_produto_bruto: nome,
       quantidade: null,
       unidade: null,
       preco_unitario: null,
-      preco_total: total,
+      preco_total: parseMoney(mSimples2[2]),
       confianca: 'media',
     }
   }
@@ -208,12 +303,11 @@ function parseLinha(linha: string): LinhaParsed | null {
   // Padrão simples fallback (1 espaço)
   const mSimples1 = limpa.match(RE_SIMPLES_1SP)
   if (mSimples1) {
-    const nome = mSimples1[1].trim()
-    // Ignorar se o "nome" tem keywords administrativas ou é muito curto
-    if (nome.length < 3 || deveIgnorar(nome)) return null
+    const nome = nomeLimpo(mSimples1[1])
+    if (nome.length < 3) return null
     return {
       texto_linha_original: limpa,
-      nome_produto_bruto: titularize(nome),
+      nome_produto_bruto: nome,
       quantidade: null,
       unidade: null,
       preco_unitario: null,
@@ -242,16 +336,55 @@ export function parsearFatura(textoBruto: string): OcrResultado {
   const fornecedor = detectarFornecedor(linhas)
   const data_detectada = detectarData(textoBruto)
   const total_detectado = detectarTotal(linhas)
+  const { nif: nif_detectado, linha: nif_linha_original } = extractNif(textoBruto)
 
+  // Parsing de produtos com stop na linha de total e mecanismo de linha pendente
   const linhasParsed: LinhaParsed[] = []
+  let pendingNome: string | null = null  // nome de produto sem preço na linha anterior
+
   for (const linha of linhas) {
-    const parsed = parseLinha(linha)
+    const limpa = linha.trim().replace(/\s+/g, ' ')
+    if (!limpa) continue
+
+    // Parar quando encontramos linha de total
+    if (isStopLine(limpa)) {
+      pendingNome = null
+      break
+    }
+
+    // Linha só com quantidade+preço (sem nome): "2 X 1,75 3,50"
+    const mQtdOnly = limpa.match(RE_QTD_ONLY)
+    if (mQtdOnly && pendingNome) {
+      // Combinar nome pendente com esta linha de quantidade
+      const combined = `${pendingNome} ${limpa}`
+      const parsed = parseLinha(combined)
+      if (parsed) linhasParsed.push(parsed)
+      pendingNome = null
+      continue
+    }
+
+    if (isNonProductLine(limpa)) {
+      pendingNome = null
+      continue
+    }
+
+    const parsed = parseLinha(limpa)
     if (parsed && parsed.preco_total !== null) {
       linhasParsed.push(parsed)
+      pendingNome = null
+    } else {
+      // Linha sem preço — pode ser nome de produto que continua na linha seguinte
+      const monetarios = encontrarMonetarios(limpa)
+      if (monetarios.length === 0 && limpa.length >= 3) {
+        const stripped = stripFiscalPrefix(limpa)
+        pendingNome = stripped.length >= 3 ? stripped : null
+      } else {
+        pendingNome = null
+      }
     }
   }
 
-  // Remove duplicados (mesma linha aparece duas vezes por OCR noise)
+  // Remove duplicados por nome_produto_bruto
   const semDuplicados = linhasParsed.filter(
     (l, i, arr) => arr.findIndex(x => x.nome_produto_bruto === l.nome_produto_bruto) === i
   )
@@ -261,6 +394,8 @@ export function parsearFatura(textoBruto: string): OcrResultado {
     total_detectado,
     fornecedor,
     data_detectada,
+    nif_detectado,
+    nif_linha_original,
     linhas: semDuplicados,
   }
 }

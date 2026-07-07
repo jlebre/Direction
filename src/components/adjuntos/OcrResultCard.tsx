@@ -1,19 +1,29 @@
 'use client'
 
-import { CheckCircle, AlertCircle, ChevronDown, ChevronUp } from 'lucide-react'
+import { CheckCircle, AlertCircle, ChevronDown, ChevronUp, ShieldCheck, ShieldX } from 'lucide-react'
 import { useState } from 'react'
 import type { OcrStatus, OcrResultado } from '@/hooks/useOcr'
+
+export interface OcrUsarPayload {
+  total: number | null
+  data: string | null
+  fornecedor: string | null
+  nifConfirmado: boolean
+  nifDetectado: string | null
+}
 
 interface OcrResultCardProps {
   status: OcrStatus
   progress: number
   statusMsg: string
   resultado: OcrResultado | null
-  onUsar: (total: number | null, data: string | null, fornecedor: string | null) => void
+  onUsar: (payload: OcrUsarPayload) => void
 }
 
 export function OcrResultCard({ status, progress, statusMsg, resultado, onUsar }: OcrResultCardProps) {
   const [mostrarLinhas, setMostrarLinhas] = useState(false)
+  // null = não decidido, true = aceita NIF, false = rejeita NIF
+  const [nifAceite, setNifAceite] = useState<boolean | null>(null)
 
   if (status === 'idle') return null
 
@@ -53,6 +63,21 @@ export function OcrResultCard({ status, progress, statusMsg, resultado, onUsar }
   if (status === 'done' && resultado) {
     const temDados = resultado.total_detectado !== null || resultado.fornecedor || resultado.data_detectada
     const nLinhas = resultado.linhas.length
+    const temNif = !!resultado.nif_detectado
+
+    // NIF aceite: null = não decidido (default aceitar se detetado), true, false
+    const nifEfetivo = temNif ? (nifAceite ?? true) : false
+
+    function handleUsar() {
+      if (!resultado) return
+      onUsar({
+        total: resultado.total_detectado,
+        data: resultado.data_detectada,
+        fornecedor: resultado.fornecedor,
+        nifConfirmado: nifEfetivo,
+        nifDetectado: resultado.nif_detectado,
+      })
+    }
 
     return (
       <div className="bg-green-50 border border-green-200 rounded-xl overflow-hidden">
@@ -92,6 +117,52 @@ export function OcrResultCard({ status, progress, statusMsg, resultado, onUsar }
                   </span>
                 </div>
               )}
+
+              {/* Linha NIF */}
+              <div className="px-3 py-2">
+                {temNif ? (
+                  <div className="space-y-1.5">
+                    <div className="flex justify-between items-center">
+                      <span className="text-gray-500">NIF detetado</span>
+                      <span className="font-mono font-medium text-gray-800">{resultado.nif_detectado}</span>
+                    </div>
+                    {/* Confirmar / rejeitar NIF */}
+                    {nifAceite === false ? (
+                      <div className="flex items-center justify-between">
+                        <span className="text-xs text-amber-600 flex items-center gap-1">
+                          <ShieldX className="h-3 w-3" /> NIF marcado como incorreto
+                        </span>
+                        <button
+                          type="button"
+                          onClick={() => setNifAceite(null)}
+                          className="text-xs text-gray-400 underline"
+                        >
+                          Desfazer
+                        </button>
+                      </div>
+                    ) : (
+                      <div className="flex items-center justify-between">
+                        <span className="text-xs text-green-600 flex items-center gap-1">
+                          <ShieldCheck className="h-3 w-3" /> NIF visível na fatura
+                        </span>
+                        <button
+                          type="button"
+                          onClick={() => setNifAceite(false)}
+                          className="text-xs text-gray-400 underline"
+                        >
+                          NIF incorreto
+                        </button>
+                      </div>
+                    )}
+                  </div>
+                ) : (
+                  <div className="flex justify-between items-center">
+                    <span className="text-gray-500">NIF</span>
+                    <span className="text-xs text-gray-400">Não detetado</span>
+                  </div>
+                )}
+              </div>
+
               {nLinhas > 0 && (
                 <div className="flex justify-between items-center px-3 py-2">
                   <span className="text-gray-500">Produtos</span>
@@ -104,9 +175,7 @@ export function OcrResultCard({ status, progress, statusMsg, resultado, onUsar }
           {temDados && (
             <button
               type="button"
-              onClick={() =>
-                onUsar(resultado.total_detectado, resultado.data_detectada, resultado.fornecedor)
-              }
+              onClick={handleUsar}
               className="w-full py-2.5 bg-green-600 hover:bg-green-700 active:bg-green-800 text-white rounded-lg text-sm font-semibold transition-colors"
             >
               Usar estes valores →
@@ -122,7 +191,7 @@ export function OcrResultCard({ status, progress, statusMsg, resultado, onUsar }
               {mostrarLinhas ? (
                 <>Ocultar linhas <ChevronUp className="h-3.5 w-3.5" /></>
               ) : (
-                <>Ver {nLinhas} linhas detectadas <ChevronDown className="h-3.5 w-3.5" /></>
+                <>Ver {nLinhas} produtos detectados <ChevronDown className="h-3.5 w-3.5" /></>
               )}
             </button>
           )}
