@@ -14,8 +14,12 @@ import { OcrResultCard } from '@/components/adjuntos/OcrResultCard'
 import type { OcrUsarPayload } from '@/components/adjuntos/OcrResultCard'
 import type { LinhaParsed } from '@/lib/adjuntos/ocr-parser'
 import { useOcr } from '@/hooks/useOcr'
+import { QRScanner } from '@/components/adjuntos/QRScanner'
+import { parsearQrFatura, type QrFaturaData } from '@/lib/adjuntos/qr-parser'
 
 type Step = 1 | 2 | 3 | 4
+
+const CAMTIL_NIF = '501979891'
 
 interface FormState {
   photoFile: File | null
@@ -26,7 +30,8 @@ interface FormState {
   codigo: string | null
   codigoDescricao: string | null
   nifConfirmado: boolean
-  nifOrigemOcr: boolean  // true quando NIF foi aceite via OCR (não mostrar pergunta manual)
+  nifOrigemOcr: boolean
+  nifVisivel: boolean
 }
 
 function today() {
@@ -38,15 +43,19 @@ export default function NovaDespesaClient({ campo }: { campo: Campo }) {
   const [step, setStep] = useState<Step>(1)
   const [form, setForm] = useState<FormState>({
     photoFile: null, photoPreview: null, valor: '', descricao: '',
-    data: today(), codigo: null, codigoDescricao: null, nifConfirmado: false, nifOrigemOcr: false,
+    data: today(), codigo: null, codigoDescricao: null,
+    nifConfirmado: false, nifOrigemOcr: false, nifVisivel: false,
   })
   const [submitting, setSubmitting] = useState(false)
   const [toast, setToast] = useState<{ msg: string; type: 'success' | 'error' } | null>(null)
   const [showPin, setShowPin] = useState(!!campo.pin)
   const [pinError, setPinError] = useState(false)
   const [pinUnlocked, setPinUnlocked] = useState(!campo.pin)
-  // Linhas OCR editadas pelo utilizador antes de confirmar
   const [linhasOcrEditadas, setLinhasOcrEditadas] = useState<LinhaParsed[] | null>(null)
+  // QR Code
+  const [mostrarQrScanner, setMostrarQrScanner] = useState(false)
+  const [qrParsed, setQrParsed] = useState<QrFaturaData | null>(null)
+  const [origemDados, setOrigemDados] = useState<'manual' | 'ocr' | 'qr_code'>('manual')
 
   const ocr = useOcr()
 
@@ -57,24 +66,50 @@ export default function NovaDespesaClient({ campo }: { campo: Campo }) {
 
   const handlePhoto = useCallback((file: File, preview: string) => {
     setForm((f) => ({ ...f, photoFile: file, photoPreview: preview }))
-    // Inicia OCR automaticamente após capturar foto
+    setQrParsed(null) // foto substitui QR
     ocr.processar(file)
   }, [ocr])
 
   function handleUsarOcr({ total, data, fornecedor, nifConfirmado, linhas }: OcrUsarPayload) {
+    setOrigemDados('ocr')
     setForm((f) => ({
       ...f,
-      valor: total !== null ? total.toFixed(2) : f.valor,
+      valor: total !== null && total > 0 ? total.toFixed(2) : f.valor,
       data: data ?? f.data,
       descricao: fornecedor && !f.descricao ? `Compras ${fornecedor}` : f.descricao,
       nifConfirmado: nifConfirmado ? true : f.nifConfirmado,
       nifOrigemOcr: nifConfirmado,
+      nifVisivel: nifConfirmado ? true : f.nifVisivel,
     }))
-    // Guardar linhas editadas pelo utilizador no card OCR
     setLinhasOcrEditadas(linhas)
-    // Saltar directamente para categoria se NIF confirmado e temos valor
-    const novoValor = total !== null ? total.toFixed(2) : ''
+    const novoValor = total !== null && total > 0 ? total.toFixed(2) : ''
     if (nifConfirmado && novoValor) {
+      setStep(3)
+    } else {
+      setStep(2)
+    }
+  }
+
+  function handleQrRead(raw: string) {
+    setMostrarQrScanner(false)
+    const data = parsearQrFatura(raw)
+    setQrParsed(data)
+  }
+
+  function handleUsarQr() {
+    if (!qrParsed) return
+    const nifConfirmado = qrParsed.qr_nif_adquirente?.replace(/\s/g, '') === CAMTIL_NIF
+    setOrigemDados('qr_code')
+    setForm((f) => ({
+      ...f,
+      valor: qrParsed.qr_total !== null ? qrParsed.qr_total.toFixed(2) : f.valor,
+      data: qrParsed.qr_data ?? f.data,
+      descricao: f.descricao || (qrParsed.qr_numero_documento ? `Fatura ${qrParsed.qr_numero_documento}` : f.descricao),
+      nifConfirmado: nifConfirmado ? true : f.nifConfirmado,
+      nifOrigemOcr: false,
+      nifVisivel: nifConfirmado ? true : f.nifVisivel,
+    }))
+    if (nifConfirmado && qrParsed.qr_total !== null) {
       setStep(3)
     } else {
       setStep(2)
@@ -108,7 +143,6 @@ export default function NovaDespesaClient({ campo }: { campo: Campo }) {
         if (!uploadError) fotoPath = path
       }
 
-      // Campos OCR — guardados mesmo que parciais
       const ocrStatus = ocr.resultado ? 'processado' : (ocr.status === 'error' ? 'falhou' : 'nenhum')
 
       const { data: novaDespesa, error: insertError } = await supabase.from('despesas').insert({
@@ -121,11 +155,21 @@ export default function NovaDespesaClient({ campo }: { campo: Campo }) {
         ocr_fornecedor: ocr.resultado?.fornecedor ?? null,
         ocr_total: ocr.resultado?.total_detectado ?? null,
         ocr_data: ocr.resultado?.data_detectada ?? null,
+        // QR Code + origem (migration 013)
+        origem_dados: origemDados,
+        nif_visivel: form.nifVisivel,
+        qr_raw: qrParsed?.qr_raw ?? null,
+        qr_total: qrParsed?.qr_total ?? null,
+        qr_data: qrParsed?.qr_data ?? null,
+        qr_nif_emitente: qrParsed?.qr_nif_emitente ?? null,
+        qr_nif_adquirente: qrParsed?.qr_nif_adquirente ?? null,
+        qr_numero_documento: qrParsed?.qr_numero_documento ?? null,
+        qr_atcud: qrParsed?.qr_atcud ?? null,
+        qr_tipo_documento: qrParsed?.qr_tipo_documento ?? null,
       }).select('id').single()
 
       if (insertError) throw insertError
 
-      // Guarda linhas de produto (editadas no card OCR, ou versão bruta como fallback)
       const linhasParaGuardar = linhasOcrEditadas ?? ocr.resultado?.linhas ?? []
       if (novaDespesa?.id && linhasParaGuardar.length > 0) {
         const linhasParaInserir = linhasParaGuardar
@@ -193,10 +237,11 @@ export default function NovaDespesaClient({ campo }: { campo: Campo }) {
 
       <div className="flex-1 max-w-lg mx-auto w-full px-4 py-6">
         {step === 1 && (
-          <StepWrapper title="Foto da Fatura" subtitle="Fotografia a fatura (recomendado)">
+          <StepWrapper title="Foto da Fatura" subtitle="Fotografia a fatura ou lê o QR Code">
             <PhotoCapture
               onPhoto={(file, preview) => { handlePhoto(file, preview) }}
               onSkip={() => setStep(2)}
+              onQrCode={() => setMostrarQrScanner(true)}
               currentPreview={form.photoPreview}
             />
 
@@ -210,6 +255,96 @@ export default function NovaDespesaClient({ campo }: { campo: Campo }) {
                   resultado={ocr.resultado}
                   onUsar={(payload) => handleUsarOcr(payload)}
                 />
+              </div>
+            )}
+
+            {/* QR confirmação — aparece após ler QR Code */}
+            {qrParsed && (
+              <div className="mt-4 bg-blue-50 border border-blue-200 rounded-xl overflow-hidden">
+                <div className="p-3 space-y-2">
+                  <div className="flex items-center gap-2">
+                    <span className="text-blue-600 text-base">📱</span>
+                    <p className="text-sm font-semibold text-blue-700">QR Code lido</p>
+                  </div>
+                  {!qrParsed.tem_dados_uteis ? (
+                    <p className="text-xs text-amber-600">
+                      Código lido mas sem dados úteis (total, NIF ou data). Tenta uma foto ou preenche manualmente.
+                    </p>
+                  ) : (
+                    <div className="bg-white/70 rounded-lg divide-y divide-blue-100 text-sm">
+                      {qrParsed.qr_total !== null && (
+                        <div className="flex justify-between items-center px-3 py-2">
+                          <span className="text-gray-500">Total</span>
+                          <span className="font-bold text-blue-700">
+                            €{qrParsed.qr_total.toFixed(2).replace('.', ',')}
+                          </span>
+                        </div>
+                      )}
+                      {qrParsed.qr_data && (
+                        <div className="flex justify-between items-center px-3 py-2">
+                          <span className="text-gray-500">Data</span>
+                          <span className="font-medium text-gray-800">
+                            {qrParsed.qr_data.split('-').reverse().join('/')}
+                          </span>
+                        </div>
+                      )}
+                      {qrParsed.qr_nif_adquirente && (
+                        <div className="flex justify-between items-center px-3 py-2">
+                          <span className="text-gray-500">NIF adquirente</span>
+                          <span className={`font-mono text-sm font-semibold ${qrParsed.qr_nif_adquirente === CAMTIL_NIF ? 'text-green-700' : 'text-gray-700'}`}>
+                            {qrParsed.qr_nif_adquirente}
+                            {qrParsed.qr_nif_adquirente === CAMTIL_NIF && ' ✓'}
+                          </span>
+                        </div>
+                      )}
+                      {qrParsed.qr_numero_documento && (
+                        <div className="flex justify-between items-center px-3 py-2">
+                          <span className="text-gray-500">Referência</span>
+                          <span className="text-xs text-gray-700 truncate max-w-[180px]">
+                            {qrParsed.qr_numero_documento}
+                          </span>
+                        </div>
+                      )}
+                    </div>
+                  )}
+                </div>
+                <div className="p-3 border-t border-blue-200 flex gap-2">
+                  {qrParsed.tem_dados_uteis ? (
+                    <>
+                      <button
+                        type="button"
+                        onClick={handleUsarQr}
+                        className="flex-1 py-2.5 bg-blue-600 text-white rounded-lg text-sm font-semibold active:opacity-90"
+                      >
+                        Usar estes valores →
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => setQrParsed(null)}
+                        className="px-3 py-2.5 text-gray-400 text-sm"
+                      >
+                        Ignorar
+                      </button>
+                    </>
+                  ) : (
+                    <>
+                      <button
+                        type="button"
+                        onClick={() => setMostrarQrScanner(true)}
+                        className="flex-1 py-2.5 border border-blue-300 text-blue-600 rounded-lg text-sm font-semibold"
+                      >
+                        Tentar novamente
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => setQrParsed(null)}
+                        className="flex-1 py-2.5 text-gray-400 text-sm"
+                      >
+                        Ignorar
+                      </button>
+                    </>
+                  )}
+                </div>
               </div>
             )}
 
@@ -239,9 +374,10 @@ export default function NovaDespesaClient({ campo }: { campo: Campo }) {
 
         {step === 2 && (
           <StepWrapper title="Detalhes" subtitle="Valor e descrição da despesa">
-            {/* Banner se OCR detectou um total diferente do campo actual */}
+            {/* Banner se OCR detectou um total diferente (só quando total > 0) */}
             {ocr.resultado?.total_detectado !== null &&
               ocr.resultado?.total_detectado !== undefined &&
+              ocr.resultado.total_detectado > 0 &&
               form.valor !== ocr.resultado.total_detectado.toFixed(2) &&
               form.valor !== '' && (
                 <div className="mb-4 bg-green-50 border border-green-200 rounded-xl px-3 py-2 flex items-center justify-between gap-2">
@@ -252,6 +388,25 @@ export default function NovaDespesaClient({ campo }: { campo: Campo }) {
                     type="button"
                     onClick={() => setForm((f) => ({ ...f, valor: ocr.resultado!.total_detectado!.toFixed(2) }))}
                     className="text-xs font-semibold text-green-700 underline shrink-0"
+                  >
+                    Usar
+                  </button>
+                </div>
+              )}
+
+            {/* Banner se QR detectou um total diferente do campo actual */}
+            {qrParsed?.qr_total !== null &&
+              qrParsed?.qr_total !== undefined &&
+              form.valor !== qrParsed.qr_total.toFixed(2) &&
+              form.valor !== '' && (
+                <div className="mb-4 bg-blue-50 border border-blue-200 rounded-xl px-3 py-2 flex items-center justify-between gap-2">
+                  <p className="text-xs text-blue-700">
+                    QR Code: <strong>€{qrParsed.qr_total.toFixed(2).replace('.', ',')}</strong>
+                  </p>
+                  <button
+                    type="button"
+                    onClick={() => setForm((f) => ({ ...f, valor: qrParsed!.qr_total!.toFixed(2) }))}
+                    className="text-xs font-semibold text-blue-700 underline shrink-0"
                   >
                     Usar
                   </button>
@@ -272,6 +427,9 @@ export default function NovaDespesaClient({ campo }: { campo: Campo }) {
                     autoFocus
                   />
                 </div>
+                {form.valor !== '' && parseFloat(form.valor) <= 0 && (
+                  <p className="text-xs text-red-600 mt-1.5">O valor tem de ser maior que zero.</p>
+                )}
               </div>
               <div>
                 <label className="block text-sm font-medium text-gray-700 mb-1">Descrição</label>
@@ -328,6 +486,7 @@ export default function NovaDespesaClient({ campo }: { campo: Campo }) {
                   ['Código', form.codigo ?? ''],
                   ['Categoria', form.codigoDescricao ?? ''],
                   ['Foto', form.photoFile ? '✓ Incluída' : 'Sem foto'],
+                  ...(origemDados !== 'manual' ? [['Origem', origemDados === 'qr_code' ? '📱 QR Code' : '🔍 OCR']] : []),
                   ...((linhasOcrEditadas ?? ocr.resultado?.linhas ?? []).length > 0
                     ? [['OCR', `${(linhasOcrEditadas ?? ocr.resultado!.linhas).length} produtos`]]
                     : []),
@@ -350,6 +509,21 @@ export default function NovaDespesaClient({ campo }: { campo: Campo }) {
                     <button
                       type="button"
                       onClick={() => setForm((f) => ({ ...f, nifConfirmado: false, nifOrigemOcr: false }))}
+                      className="text-xs text-gray-400 underline mt-1"
+                    >
+                      Corrigir manualmente
+                    </button>
+                  </div>
+                </div>
+              ) : form.nifVisivel && origemDados === 'qr_code' ? (
+                <div className="rounded-xl border-2 border-blue-200 bg-blue-50 p-4 flex items-start gap-3">
+                  <span className="text-blue-600 mt-0.5 text-lg">📱</span>
+                  <div>
+                    <p className="font-semibold text-sm text-gray-800">NIF confirmado via QR Code</p>
+                    <p className="text-sm font-mono font-bold text-[#B85042] mt-0.5">501 979 891</p>
+                    <button
+                      type="button"
+                      onClick={() => setForm((f) => ({ ...f, nifConfirmado: false, nifVisivel: false }))}
                       className="text-xs text-gray-400 underline mt-1"
                     >
                       Corrigir manualmente
@@ -386,6 +560,14 @@ export default function NovaDespesaClient({ campo }: { campo: Campo }) {
       </div>
 
       {toast && <Toast message={toast.msg} type={toast.type} onDismiss={() => setToast(null)} />}
+
+      {/* QR Scanner — overlay full-screen */}
+      {mostrarQrScanner && (
+        <QRScanner
+          onRead={handleQrRead}
+          onCancel={() => setMostrarQrScanner(false)}
+        />
+      )}
     </main>
   )
 }

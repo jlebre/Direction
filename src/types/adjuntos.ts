@@ -18,6 +18,19 @@ export interface Despesa {
   ocr_fornecedor: string | null
   ocr_total: number | null
   ocr_data: string | null
+  // QR Code fields (added by migration 013 — null when not scanned)
+  qr_raw: string | null
+  qr_total: number | null
+  qr_data: string | null
+  qr_nif_emitente: string | null
+  qr_nif_adquirente: string | null
+  qr_numero_documento: string | null
+  qr_atcud: string | null
+  qr_tipo_documento: string | null
+  // Como os dados foram obtidos: manual (default) | ocr | qr_code
+  origem_dados: 'manual' | 'ocr' | 'qr_code' | null
+  // NIF legível na fatura (detetado por QR ou OCR, distinto de nif_confirmado pelo utilizador)
+  nif_visivel: boolean | null
 }
 
 export interface DespesaLinha {
@@ -56,6 +69,28 @@ export interface RegularizacaoNif {
   despesa_original_id: string
   valor: number
   created_at: string
+}
+
+/** Devolução de fatura — tabela separada, pode ou não estar associada a uma fatura original */
+export interface Devolucao {
+  id: string
+  campo_id: string
+  fatura_original_id: string | null
+  numero_devolucao: number
+  data: string
+  valor: number
+  descricao: string | null
+  codigo: string | null
+  codigo_descricao: string | null
+  foto_path: string | null
+  qr_raw: string | null
+  qr_total: number | null
+  qr_atcud: string | null
+  origem_dados: 'manual' | 'ocr' | 'qr_code' | null
+  notas: string | null
+  created_at: string
+  updated_at: string
+  fatura_original?: Despesa | null
 }
 
 /** @deprecated Substituído por RegularizacaoNif — tabela liquidacoes_nif mantida por compatibilidade */

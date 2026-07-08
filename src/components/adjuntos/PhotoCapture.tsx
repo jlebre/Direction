@@ -6,10 +6,11 @@ import { compressImage, formatBytes, rotateImageBlob, getImageDimensions, isLike
 interface Props {
   onPhoto: (file: File, preview: string) => void
   onSkip: () => void
+  onQrCode?: () => void
   currentPreview?: string | null
 }
 
-export default function PhotoCapture({ onPhoto, onSkip, currentPreview }: Props) {
+export default function PhotoCapture({ onPhoto, onSkip, onQrCode, currentPreview }: Props) {
   const cameraRef = useRef<HTMLInputElement>(null)
   const galleryRef = useRef<HTMLInputElement>(null)
   const [preview, setPreview] = useState<string | null>(currentPreview ?? null)
@@ -159,29 +160,44 @@ export default function PhotoCapture({ onPhoto, onSkip, currentPreview }: Props)
           <p className="text-sm text-gray-400">A processar imagem...</p>
         </div>
       ) : (
-        <div className="grid grid-cols-2 gap-3">
-          <button
-            type="button"
-            onClick={() => cameraRef.current?.click()}
-            className="flex flex-col items-center justify-center gap-3 py-10 bg-white border-2 border-dashed border-gray-200 rounded-2xl active:bg-gray-50 transition-colors"
-          >
-            <span className="text-4xl">📷</span>
-            <div className="text-center">
-              <p className="font-semibold text-gray-800 text-sm">Câmara</p>
-              <p className="text-xs text-gray-400 mt-0.5">Tirar fotografia</p>
-            </div>
-          </button>
-          <button
-            type="button"
-            onClick={() => galleryRef.current?.click()}
-            className="flex flex-col items-center justify-center gap-3 py-10 bg-white border-2 border-dashed border-gray-200 rounded-2xl active:bg-gray-50 transition-colors"
-          >
-            <span className="text-4xl">🖼</span>
-            <div className="text-center">
-              <p className="font-semibold text-gray-800 text-sm">Galeria</p>
-              <p className="text-xs text-gray-400 mt-0.5">Escolher ficheiro</p>
-            </div>
-          </button>
+        <div className="space-y-3">
+          <div className="grid grid-cols-2 gap-3">
+            <button
+              type="button"
+              onClick={() => cameraRef.current?.click()}
+              className="flex flex-col items-center justify-center gap-3 py-10 bg-white border-2 border-dashed border-gray-200 rounded-2xl active:bg-gray-50 transition-colors"
+            >
+              <span className="text-4xl">📷</span>
+              <div className="text-center">
+                <p className="font-semibold text-gray-800 text-sm">Câmara</p>
+                <p className="text-xs text-gray-400 mt-0.5">Tirar fotografia</p>
+              </div>
+            </button>
+            <button
+              type="button"
+              onClick={() => galleryRef.current?.click()}
+              className="flex flex-col items-center justify-center gap-3 py-10 bg-white border-2 border-dashed border-gray-200 rounded-2xl active:bg-gray-50 transition-colors"
+            >
+              <span className="text-4xl">🖼</span>
+              <div className="text-center">
+                <p className="font-semibold text-gray-800 text-sm">Galeria</p>
+                <p className="text-xs text-gray-400 mt-0.5">Escolher ficheiro</p>
+              </div>
+            </button>
+          </div>
+          {onQrCode && (
+            <button
+              type="button"
+              onClick={onQrCode}
+              className="w-full flex items-center gap-3 px-5 py-4 bg-white border-2 border-dashed border-blue-200 rounded-2xl active:bg-blue-50 transition-colors"
+            >
+              <span className="text-3xl shrink-0">📱</span>
+              <div className="text-left">
+                <p className="font-semibold text-blue-700 text-sm">Ler QR Code da fatura</p>
+                <p className="text-xs text-gray-400 mt-0.5">Mais rápido — sem precisar de foto</p>
+              </div>
+            </button>
+          )}
         </div>
       )}
 

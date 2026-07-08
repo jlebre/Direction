@@ -89,8 +89,22 @@ export function OcrResultCard({ status, progress, statusMsg, resultado, onUsar }
   }
 
   if (status === 'done' && resultado) {
-    const temDados = resultado.total_detectado !== null || resultado.fornecedor || resultado.data_detectada
+    // total === 0 é ruído do OCR, não um dado útil
+    const totalValido = resultado.total_detectado !== null && resultado.total_detectado > 0
+    const temDados = totalValido || !!resultado.fornecedor || !!resultado.data_detectada
     const temNif = !!resultado.nif_detectado
+
+    // Sem dados úteis E sem produtos → não mostrar a card verde, mostrar mensagem discreta
+    if (!temDados && !temNif && linhasEditadas.length === 0) {
+      return (
+        <div className="bg-gray-50 border border-gray-200 rounded-xl p-3 flex items-center gap-2.5">
+          <AlertCircle className="h-4 w-4 text-gray-400 shrink-0" />
+          <p className="text-xs text-gray-500">
+            Não consegui interpretar a fatura. Preenche os dados manualmente.
+          </p>
+        </div>
+      )
+    }
     const nifEfetivo = temNif ? (nifAceite ?? true) : false
     const nLinhasEspeciais = resultado.linhasEspeciais?.length ?? 0
 
@@ -131,7 +145,7 @@ export function OcrResultCard({ status, progress, statusMsg, resultado, onUsar }
 
     function handleUsar() {
       onUsar({
-        total: resultado!.total_detectado,
+        total: totalValido ? resultado!.total_detectado : null,
         data: resultado!.data_detectada,
         fornecedor: resultado!.fornecedor,
         nifConfirmado: nifEfetivo,
@@ -149,16 +163,12 @@ export function OcrResultCard({ status, progress, statusMsg, resultado, onUsar }
             <p className="text-sm font-semibold text-green-700">Fatura interpretada</p>
           </div>
 
-          {!temDados && (
-            <p className="text-xs text-amber-600">Nenhum dado reconhecido com confiança. Verifica a qualidade da foto.</p>
-          )}
-
           {temDados && (
             <div className="bg-white/70 rounded-lg divide-y divide-green-100 text-sm">
-              {resultado.total_detectado !== null && (
+              {totalValido && (
                 <div className="flex justify-between items-center px-3 py-2">
                   <span className="text-gray-500">Total</span>
-                  <span className="font-bold text-green-700">€{resultado.total_detectado.toFixed(2).replace('.', ',')}</span>
+                  <span className="font-bold text-green-700">€{resultado.total_detectado!.toFixed(2).replace('.', ',')}</span>
                 </div>
               )}
               {resultado.fornecedor && (
