@@ -1,7 +1,7 @@
 'use client'
 
 import { useState, useMemo } from 'react'
-import { Search, Trash2, Plus, X, Star, ChevronLeft, Copy } from 'lucide-react'
+import { Search, Trash2, Plus, X, ChevronLeft, Copy } from 'lucide-react'
 import { createClient } from '@/lib/supabase/client'
 import { toast } from 'sonner'
 import { Button } from '@/components/ui/button'
@@ -21,7 +21,6 @@ import {
   type EmentaItem,
   type RefeicaoTipo,
   type TipoPrato,
-  type ReceitaVersao,
   REFEICAO_LABELS,
   CATEGORIA_LABELS,
   CATEGORIA_CORES,
@@ -62,16 +61,38 @@ interface VersaoCarregada {
   campo?: { nome: string } | null
 }
 
+type ReceitaLite = {
+  id: string
+  nome: string
+  categoria: string
+  tags: string[] | null
+  is_oficial: boolean
+}
+
+// ── Constantes ────────────────────────────────────────────────────────────────
+
+const TIPOS_PRATO: TipoPrato[] = ['sopa', 'prato', 'sobremesa', 'extra', 'bebida', 'outro']
+
+// Refeições com slots fixos (sopa/prato/sobremesa/extra pré-preenchidos)
+const SLOT_FIXO_REFEICOES: RefeicaoTipo[] = ['almoco', 'jantar']
+const SLOT_FIXOS: TipoPrato[] = ['sopa', 'prato', 'sobremesa', 'extra']
+
+// Categorias de receita correspondentes a cada tipo de slot
+const CATEGORIAS_POR_SLOT: Partial<Record<TipoPrato, string[]>> = {
+  sopa: ['sopa'],
+  prato: ['carne', 'frango', 'bacalhau', 'atum', 'massa', 'arroz_pure'],
+  sobremesa: ['doce', 'fruta'],
+  extra: ['lanche', 'outro', 'molho', 'salada', 'pequeno_almoco'],
+  bebida: ['lanche', 'outro'],
+}
+
 // ── Helpers ───────────────────────────────────────────────────────────────────
 
 function gerarTempId() {
   return Math.random().toString(36).slice(2)
 }
 
-function fromExisting(items: EmentaItem[]): PratoEdit[] {
-  if (items.length === 0) {
-    return [{ tempId: gerarTempId(), tipo_prato: 'prato', modo: 'custom', receita_nome_custom: '' }]
-  }
+function fromExistingItems(items: EmentaItem[]): PratoEdit[] {
   return items.map((item) => ({
     tempId: gerarTempId(),
     tipo_prato: item.tipo_prato ?? 'prato',
@@ -85,7 +106,48 @@ function fromExisting(items: EmentaItem[]): PratoEdit[] {
   }))
 }
 
-const TIPOS_PRATO: TipoPrato[] = ['sopa', 'prato', 'sobremesa', 'extra', 'bebida', 'outro']
+function getInitialPratos(
+  refeicao: RefeicaoTipo,
+  items: EmentaItem[],
+  receitas: ReceitaLite[]
+): PratoEdit[] {
+  // Existindo pratos salvos, preservá-los sempre
+  if (items.length > 0) return fromExistingItems(items)
+
+  // Pequeno-almoço: auto-selecionar receita oficial se existir
+  if (refeicao === 'pequeno_almoco') {
+    const r = receitas.find((r) => r.is_oficial && r.categoria === 'pequeno_almoco')
+    return [{
+      tempId: gerarTempId(),
+      tipo_prato: 'prato',
+      modo: 'receita',
+      ...(r ? { receita_id: r.id, receita_nome: r.nome } : {}),
+    }]
+  }
+
+  // Lanche: auto-selecionar receita oficial de lanche se existir
+  if (refeicao === 'lanche') {
+    const r = receitas.find((r) => r.is_oficial && r.categoria === 'lanche')
+    return [{
+      tempId: gerarTempId(),
+      tipo_prato: 'prato',
+      modo: 'receita',
+      ...(r ? { receita_id: r.id, receita_nome: r.nome } : {}),
+    }]
+  }
+
+  // Almoço/Jantar: 4 slots fixos vazios
+  if (SLOT_FIXO_REFEICOES.includes(refeicao)) {
+    return SLOT_FIXOS.map((tipo) => ({
+      tempId: gerarTempId(),
+      tipo_prato: tipo,
+      modo: 'receita' as const,
+    }))
+  }
+
+  // Default: 1 slot vazio
+  return [{ tempId: gerarTempId(), tipo_prato: 'prato', modo: 'receita' }]
+}
 
 // ── Props ─────────────────────────────────────────────────────────────────────
 
@@ -114,8 +176,9 @@ export function EmentaSlotModal({
   onRemoveAll,
   onClose,
 }: EmentaSlotModalProps) {
-  // Prato list state
-  const [pratos, setPratos] = useState<PratoEdit[]>(() => fromExisting(existingPratos))
+  const [pratos, setPratos] = useState<PratoEdit[]>(() =>
+    getInitialPratos(refeicao, existingPratos, receitas as ReceitaLite[])
+  )
   const [saving, setSaving] = useState(false)
 
   // Picker state
@@ -125,33 +188,34 @@ export function EmentaSlotModal({
   const [pickerReceita, setPickerReceita] = useState<{ id: string; nome: string } | null>(null)
   const [pickerVersoes, setPickerVersoes] = useState<VersaoCarregada[]>([])
   const [carregandoVersoes, setCarregandoVersoes] = useState(false)
+  const [filtroDesativado, setFiltroDesativado] = useState(false)
 
   // Criar rascunho state
   const [criando, setCriando] = useState(false)
 
   // Nova versão form state
   const [novaVersaoForm, setNovaVersaoForm] = useState({
-    nome: '',
-    notas: '',
-    especifica: true,
-    criada_por: '',
+    nome: '', notas: '', especifica: true, criada_por: '',
   })
   const [criandoVersao, setCriandoVersao] = useState(false)
   const [baseVersaoId, setBaseVersaoId] = useState<string | undefined>()
 
   const supabase = createClient()
+  const isSlotFixo = SLOT_FIXO_REFEICOES.includes(refeicao)
 
-  // ── Sugestões por tipo de refeição ──────────────────────────────────────────
+  // ── Sugestões por tipo de refeição (só PA/Lanche não auto-preenchidos) ───────
 
   const sugestoesPicker = useMemo(() => {
     if (refeicao !== 'pequeno_almoco' && refeicao !== 'lanche') return []
     const cat = refeicao === 'pequeno_almoco' ? 'pequeno_almoco' : 'lanche'
-    return (receitas as { id: string; nome: string; categoria: string; is_oficial: boolean }[])
+    return (receitas as ReceitaLite[])
       .filter((r) => r.categoria === cat)
       .sort((a, b) => (b.is_oficial ? 1 : 0) - (a.is_oficial ? 1 : 0))
   }, [receitas, refeicao])
 
-  function adicionarReceitaDefault(r: { id: string; nome: string }) {
+  const todosVazios = pratos.every((p) => !p.receita_id && !p.receita_nome_custom?.trim())
+
+  function adicionarReceitaDefault(r: ReceitaLite) {
     const novoPrato: PratoEdit = {
       tempId: gerarTempId(),
       tipo_prato: 'prato',
@@ -159,25 +223,31 @@ export function EmentaSlotModal({
       receita_id: r.id,
       receita_nome: r.nome,
     }
-    // Substitui o prato inicial se estiver vazio
-    if (pratos.length === 1 && pratos[0].modo === 'custom' && !pratos[0].receita_nome_custom?.trim() && !pratos[0].receita_id) {
+    if (pratos.length === 1 && todosVazios) {
       setPratos([novoPrato])
     } else {
       setPratos((prev) => [...prev, novoPrato])
     }
   }
 
-  // ── Receitas filtradas ──────────────────────────────────────────────────────
+  // ── Receitas filtradas (por pesquisa + tipo do slot atual) ──────────────────
 
   const receitasFiltradas = useMemo(() => {
     const q = pesquisa.toLowerCase()
-    return (receitas as { id: string; nome: string; categoria: string; tags: string[]; is_oficial: boolean }[]).filter(
-      (r) =>
+    const slotTipo = pickerIdx !== null ? pratos[pickerIdx]?.tipo_prato : null
+    const categoriasFiltro =
+      !filtroDesativado && slotTipo ? (CATEGORIAS_POR_SLOT[slotTipo] ?? []) : []
+
+    return (receitas as ReceitaLite[]).filter((r) => {
+      const matchPesquisa =
+        !q ||
         r.nome.toLowerCase().includes(q) ||
         CATEGORIA_LABELS[r.categoria as keyof typeof CATEGORIA_LABELS]?.toLowerCase().includes(q) ||
         r.tags?.some((t) => t.toLowerCase().includes(q))
-    )
-  }, [receitas, pesquisa])
+      const matchCat = categoriasFiltro.length === 0 || categoriasFiltro.includes(r.categoria)
+      return matchPesquisa && matchCat
+    })
+  }, [receitas, pesquisa, pickerIdx, pratos, filtroDesativado])
 
   // ── Prato list helpers ──────────────────────────────────────────────────────
 
@@ -186,17 +256,33 @@ export function EmentaSlotModal({
   }
 
   function addPrato() {
-    setPratos((prev) => [...prev, { tempId: gerarTempId(), tipo_prato: 'prato', modo: 'custom', receita_nome_custom: '' }])
+    setPratos((prev) => [
+      ...prev,
+      { tempId: gerarTempId(), tipo_prato: 'prato', modo: 'receita' },
+    ])
   }
 
   function removePrato(idx: number) {
     setPratos((prev) => prev.filter((_, i) => i !== idx))
   }
 
+  // Limpa slot fixo (volta a vazio) sem remover a linha
+  function clearSlot(idx: number) {
+    upd(idx, {
+      modo: 'receita',
+      receita_id: undefined,
+      receita_nome: undefined,
+      receita_versao_id: undefined,
+      receita_versao_nome: undefined,
+      receita_nome_custom: undefined,
+    })
+  }
+
   // ── Picker navigation ───────────────────────────────────────────────────────
 
   function openPicker(idx: number) {
     setPesquisa('')
+    setFiltroDesativado(false)
     setPickerIdx(idx)
     setPickerEtapa('receita')
     setPickerReceita(null)
@@ -223,7 +309,6 @@ export function EmentaSlotModal({
         .order('created_at', { ascending: true })
       const versoes = (data ?? []) as VersaoCarregada[]
 
-      // Quando só existe uma versão, seleciona automaticamente sem mostrar picker
       if (versoes.length === 1 && pickerIdx !== null) {
         const v = versoes[0]
         upd(pickerIdx, {
@@ -274,10 +359,18 @@ export function EmentaSlotModal({
 
   async function criarRascunho(nome: string) {
     setCriando(true)
+    // Inferir categoria pelo tipo do slot atual
+    const slotTipo = pickerIdx !== null ? pratos[pickerIdx]?.tipo_prato : null
+    const categoriaMap: Partial<Record<TipoPrato, string>> = {
+      sopa: 'sopa',
+      sobremesa: 'doce',
+    }
+    const categoria = (slotTipo && categoriaMap[slotTipo]) || 'outro'
+
     try {
       const { data: receita, error: rErr } = await supabase
         .from('receitas')
-        .insert({ nome, categoria: 'outro', is_oficial: false })
+        .insert({ nome, categoria, is_oficial: false })
         .select('id, nome')
         .single()
       if (rErr) throw rErr
@@ -350,7 +443,8 @@ export function EmentaSlotModal({
           tipo_prato: p.tipo_prato,
           receita_id: p.modo === 'receita' ? p.receita_id : undefined,
           receita_versao_id: p.modo === 'receita' ? p.receita_versao_id : undefined,
-          receita_nome_custom: p.modo === 'custom' ? (p.receita_nome_custom?.trim() || undefined) : undefined,
+          receita_nome_custom:
+            p.modo === 'custom' ? (p.receita_nome_custom?.trim() || undefined) : undefined,
           notas: p.notas?.trim() || undefined,
         }))
       )
@@ -540,6 +634,10 @@ export function EmentaSlotModal({
   // ── PICKER: Pesquisa de receitas ──────────────────────────────────────────
 
   if (pickerIdx !== null) {
+    const slotAtual = pratos[pickerIdx]?.tipo_prato
+    const temFiltroAtivo =
+      !filtroDesativado && slotAtual && (CATEGORIAS_POR_SLOT[slotAtual]?.length ?? 0) > 0
+
     return (
       <Dialog open onOpenChange={onClose}>
         <DialogContent className="max-w-xl">
@@ -553,6 +651,11 @@ export function EmentaSlotModal({
                 <X className="h-4 w-4 text-gray-500" />
               </button>
               Escolher receita
+              {slotAtual && (
+                <span className="text-sm font-normal text-gray-400">
+                  · {TIPO_PRATO_LABELS[slotAtual]}
+                </span>
+              )}
             </DialogTitle>
           </DialogHeader>
           <div className="space-y-3">
@@ -566,6 +669,35 @@ export function EmentaSlotModal({
                 autoFocus
               />
             </div>
+
+            {/* Filtro ativo — mostrar hint e opção "Ver todas" */}
+            {temFiltroAtivo && (
+              <div className="flex items-center justify-between text-xs bg-[#2D5016]/5 border border-[#2D5016]/10 rounded-lg px-3 py-1.5">
+                <span className="text-[#2D5016]">
+                  A mostrar: {TIPO_PRATO_LABELS[slotAtual!]}
+                </span>
+                <button
+                  type="button"
+                  onClick={() => setFiltroDesativado(true)}
+                  className="font-semibold text-[#2D5016] hover:underline ml-2 shrink-0"
+                >
+                  Ver todas
+                </button>
+              </div>
+            )}
+            {filtroDesativado && (
+              <div className="flex items-center justify-between text-xs bg-gray-50 border border-gray-200 rounded-lg px-3 py-1.5">
+                <span className="text-gray-400">A mostrar todas as receitas</span>
+                <button
+                  type="button"
+                  onClick={() => setFiltroDesativado(false)}
+                  className="font-semibold text-gray-500 hover:underline ml-2 shrink-0"
+                >
+                  Filtrar por {slotAtual ? TIPO_PRATO_LABELS[slotAtual] : 'tipo'}
+                </button>
+              </div>
+            )}
+
             <div className="max-h-72 overflow-y-auto space-y-1 rounded-lg border border-gray-200 p-1">
               {receitasFiltradas.length === 0 ? (
                 <div className="text-center py-4 space-y-3">
@@ -584,6 +716,15 @@ export function EmentaSlotModal({
                       <p className="text-xs text-gray-400">Podes preencher os detalhes depois</p>
                     </>
                   )}
+                  {temFiltroAtivo && pesquisa.trim().length === 0 && (
+                    <button
+                      type="button"
+                      onClick={() => setFiltroDesativado(true)}
+                      className="text-sm text-[#2D5016] hover:underline"
+                    >
+                      Ver todas as receitas
+                    </button>
+                  )}
                 </div>
               ) : (
                 receitasFiltradas.map((receita) => {
@@ -600,7 +741,7 @@ export function EmentaSlotModal({
                       </Badge>
                       <span className="flex-1 truncate font-medium text-[#36454F]">{receita.nome}</span>
                       {receita.is_oficial && (
-                        <Star className="h-3.5 w-3.5 shrink-0 text-[#B85042]" fill="currentColor" />
+                        <span className="shrink-0 text-[10px] text-[#B85042] font-semibold">★</span>
                       )}
                     </button>
                   )
@@ -628,8 +769,8 @@ export function EmentaSlotModal({
         </DialogHeader>
 
         <div className="space-y-3">
-          {/* Sugestões rápidas para PA e lanche */}
-          {sugestoesPicker.length > 0 && existingPratos.length === 0 && (
+          {/* Sugestões rápidas PA/Lanche — só quando todos os slots estão vazios */}
+          {sugestoesPicker.length > 0 && todosVazios && (
             <div>
               <p className="text-[10px] font-bold text-gray-400 uppercase tracking-wider mb-1.5">
                 Sugestões para {REFEICAO_LABELS[refeicao]}
@@ -650,91 +791,181 @@ export function EmentaSlotModal({
             </div>
           )}
 
-          <Label className="text-xs font-bold text-gray-500 uppercase tracking-wider">Pratos</Label>
-
-          <div className="space-y-2">
-            {pratos.map((prato, idx) => (
-              <div key={prato.tempId} className="flex items-start gap-2">
-                {/* Tipo de prato */}
-                <select
-                  value={prato.tipo_prato}
-                  onChange={(e) => upd(idx, { tipo_prato: e.target.value as TipoPrato })}
-                  className="shrink-0 text-xs border border-[#E7E8D1] rounded-lg px-2 py-2 bg-white text-[#36454F] font-medium focus:outline-none focus:ring-1 focus:ring-[#2D5016]"
+          {/* ── Slots fixos (Almoço/Jantar) ─────────────────────────────────── */}
+          {isSlotFixo ? (
+            <div className="space-y-2">
+              {pratos.map((prato, idx) => (
+                <div
+                  key={prato.tempId}
+                  className="border border-gray-100 bg-gray-50/60 rounded-xl p-3 space-y-1.5"
                 >
-                  {TIPOS_PRATO.map((t) => (
-                    <option key={t} value={t}>{TIPO_PRATO_LABELS[t]}</option>
-                  ))}
-                </select>
+                  <div className="flex items-center justify-between">
+                    <span className="text-[11px] font-bold text-gray-400 uppercase tracking-wider">
+                      {TIPO_PRATO_LABELS[prato.tipo_prato]}
+                    </span>
+                    {(prato.receita_id || prato.receita_nome_custom?.trim()) && (
+                      <button
+                        type="button"
+                        onClick={() => clearSlot(idx)}
+                        className="text-gray-300 hover:text-red-400 transition-colors"
+                        title="Limpar slot"
+                      >
+                        <X className="h-3.5 w-3.5" />
+                      </button>
+                    )}
+                  </div>
 
-                {/* Nome / receita */}
-                <div className="flex-1 min-w-0">
-                  {prato.modo === 'receita' ? (
-                    <div>
+                  {prato.modo === 'receita' && prato.receita_nome ? (
+                    /* Receita selecionada */
+                    <button
+                      type="button"
+                      onClick={() => openPicker(idx)}
+                      className="w-full text-left px-3 py-2.5 border border-[#2D5016]/20 bg-[#2D5016]/5 rounded-lg text-sm font-medium text-[#2D5016] truncate"
+                    >
+                      {prato.receita_nome}
+                      {prato.receita_versao_nome && (
+                        <span className="ml-1.5 text-[10px] font-normal text-gray-400">
+                          ({prato.receita_versao_nome})
+                        </span>
+                      )}
+                    </button>
+                  ) : prato.modo === 'custom' ? (
+                    /* Modo texto livre */
+                    <div className="space-y-1">
+                      <Input
+                        placeholder={`Nome da ${TIPO_PRATO_LABELS[prato.tipo_prato].toLowerCase()}...`}
+                        value={prato.receita_nome_custom ?? ''}
+                        onChange={(e) => upd(idx, { receita_nome_custom: e.target.value })}
+                        className="text-sm"
+                      />
+                      <button
+                        type="button"
+                        onClick={() => { upd(idx, { modo: 'receita', receita_nome_custom: undefined }); openPicker(idx) }}
+                        className="text-xs text-[#2D5016] hover:underline"
+                      >
+                        ou escolher receita
+                      </button>
+                    </div>
+                  ) : (
+                    /* Slot vazio — ação principal: escolher receita */
+                    <div className="space-y-1">
                       <button
                         type="button"
                         onClick={() => openPicker(idx)}
-                        className="w-full text-left px-3 py-2 border border-[#2D5016] rounded-lg text-sm font-medium text-[#2D5016] bg-[#2D5016]/5 hover:bg-[#2D5016]/10 transition-colors truncate"
+                        className="w-full py-3 border-2 border-dashed border-gray-200 rounded-lg text-sm text-gray-400 hover:border-[#2D5016]/40 hover:text-[#2D5016] transition-colors"
                       >
-                        {prato.receita_nome || 'Escolher receita...'}
+                        + Escolher receita
                       </button>
-                      {prato.receita_versao_nome && (
-                        <p className="text-[10px] text-gray-400 mt-0.5 px-1">
-                          Versão: {prato.receita_versao_nome}
-                        </p>
-                      )}
+                      <button
+                        type="button"
+                        onClick={() => upd(idx, { modo: 'custom' })}
+                        className="text-xs text-gray-400 hover:text-gray-600 block w-full text-center"
+                      >
+                        ou escrever nome livre
+                      </button>
                     </div>
-                  ) : (
-                    <Input
-                      placeholder="Nome do prato..."
-                      value={prato.receita_nome_custom ?? ''}
-                      onChange={(e) => upd(idx, { receita_nome_custom: e.target.value })}
-                      className="text-sm"
-                    />
                   )}
                 </div>
+              ))}
+            </div>
+          ) : (
+            /* ── Slots dinâmicos (PA, Lanche, Ceia, Extra) ─────────────────── */
+            <>
+              <Label className="text-xs font-bold text-gray-500 uppercase tracking-wider">Pratos</Label>
+              <div className="space-y-2">
+                {pratos.map((prato, idx) => (
+                  <div key={prato.tempId} className="flex items-start gap-2">
+                    {/* Tipo de prato */}
+                    <select
+                      value={prato.tipo_prato}
+                      onChange={(e) => upd(idx, { tipo_prato: e.target.value as TipoPrato })}
+                      className="shrink-0 text-xs border border-[#E7E8D1] rounded-lg px-2 py-2 bg-white text-[#36454F] font-medium focus:outline-none focus:ring-1 focus:ring-[#2D5016]"
+                    >
+                      {TIPOS_PRATO.map((t) => (
+                        <option key={t} value={t}>{TIPO_PRATO_LABELS[t]}</option>
+                      ))}
+                    </select>
 
-                {/* Toggle modo */}
-                <button
-                  type="button"
-                  onClick={() => {
-                    if (prato.modo === 'custom') {
-                      openPicker(idx)
-                    } else {
-                      upd(idx, { modo: 'custom', receita_id: undefined, receita_nome: undefined, receita_versao_id: undefined, receita_versao_nome: undefined })
-                    }
-                  }}
-                  title={prato.modo === 'custom' ? 'Ligar a receita' : 'Escrever nome livre'}
-                  className={cnUtil(
-                    'shrink-0 px-2 py-1.5 rounded-lg border text-xs font-semibold transition-colors',
-                    prato.modo === 'receita'
-                      ? 'border-[#2D5016]/30 text-[#2D5016] bg-[#2D5016]/5 hover:bg-[#2D5016]/10'
-                      : 'border-[#E7E8D1] text-gray-400 hover:border-[#2D5016]/30 hover:text-[#2D5016]'
-                  )}
-                >
-                  {prato.modo === 'custom' ? 'Receita' : 'Texto'}
-                </button>
+                    {/* Nome / receita */}
+                    <div className="flex-1 min-w-0">
+                      {prato.modo === 'receita' && prato.receita_nome ? (
+                        <div>
+                          <button
+                            type="button"
+                            onClick={() => openPicker(idx)}
+                            className="w-full text-left px-3 py-2 border border-[#2D5016] rounded-lg text-sm font-medium text-[#2D5016] bg-[#2D5016]/5 hover:bg-[#2D5016]/10 transition-colors truncate"
+                          >
+                            {prato.receita_nome}
+                          </button>
+                          {prato.receita_versao_nome && (
+                            <p className="text-[10px] text-gray-400 mt-0.5 px-1">
+                              Versão: {prato.receita_versao_nome}
+                            </p>
+                          )}
+                        </div>
+                      ) : prato.modo === 'receita' ? (
+                        <button
+                          type="button"
+                          onClick={() => openPicker(idx)}
+                          className="w-full text-left px-3 py-2 border border-dashed border-[#E7E8D1] rounded-lg text-sm text-gray-400 hover:border-[#2D5016]/40 hover:text-[#2D5016] transition-colors"
+                        >
+                          Escolher receita...
+                        </button>
+                      ) : (
+                        <Input
+                          placeholder="Nome do prato..."
+                          value={prato.receita_nome_custom ?? ''}
+                          onChange={(e) => upd(idx, { receita_nome_custom: e.target.value })}
+                          className="text-sm"
+                        />
+                      )}
+                    </div>
 
-                {/* Remover */}
-                <button
-                  type="button"
-                  onClick={() => removePrato(idx)}
-                  disabled={pratos.length === 1}
-                  className="shrink-0 p-2 rounded-lg hover:bg-red-50 transition-colors text-gray-300 hover:text-red-500 disabled:opacity-30"
-                >
-                  <X className="h-4 w-4" />
-                </button>
+                    {/* Toggle modo */}
+                    <button
+                      type="button"
+                      onClick={() => {
+                        if (prato.modo === 'custom') {
+                          upd(idx, { modo: 'receita', receita_nome_custom: undefined })
+                          openPicker(idx)
+                        } else {
+                          upd(idx, { modo: 'custom', receita_id: undefined, receita_nome: undefined, receita_versao_id: undefined, receita_versao_nome: undefined })
+                        }
+                      }}
+                      title={prato.modo === 'custom' ? 'Ligar a receita' : 'Escrever nome livre'}
+                      className={cnUtil(
+                        'shrink-0 px-2 py-1.5 rounded-lg border text-xs font-semibold transition-colors',
+                        prato.modo === 'receita'
+                          ? 'border-[#2D5016]/30 text-[#2D5016] bg-[#2D5016]/5 hover:bg-[#2D5016]/10'
+                          : 'border-[#E7E8D1] text-gray-400 hover:border-[#2D5016]/30 hover:text-[#2D5016]'
+                      )}
+                    >
+                      {prato.modo === 'custom' ? 'Receita' : 'Texto'}
+                    </button>
+
+                    {/* Remover */}
+                    <button
+                      type="button"
+                      onClick={() => removePrato(idx)}
+                      disabled={pratos.length === 1}
+                      className="shrink-0 p-2 rounded-lg hover:bg-red-50 transition-colors text-gray-300 hover:text-red-500 disabled:opacity-30"
+                    >
+                      <X className="h-4 w-4" />
+                    </button>
+                  </div>
+                ))}
               </div>
-            ))}
-          </div>
 
-          <button
-            type="button"
-            onClick={addPrato}
-            className="w-full flex items-center justify-center gap-2 py-2 rounded-lg border-2 border-dashed border-[#E7E8D1] text-sm text-gray-400 hover:border-[#2D5016] hover:text-[#2D5016] transition-colors"
-          >
-            <Plus className="h-4 w-4" />
-            Adicionar prato
-          </button>
+              <button
+                type="button"
+                onClick={addPrato}
+                className="w-full flex items-center justify-center gap-2 py-2 rounded-lg border-2 border-dashed border-[#E7E8D1] text-sm text-gray-400 hover:border-[#2D5016] hover:text-[#2D5016] transition-colors"
+              >
+                <Plus className="h-4 w-4" />
+                Adicionar prato
+              </button>
+            </>
+          )}
         </div>
 
         <DialogFooter className="gap-2 flex-wrap">

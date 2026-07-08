@@ -1,12 +1,10 @@
 'use client'
 
 import { useState, useEffect, useMemo } from 'react'
-import { ShoppingCart, Check, Plus, Trash2, Package, Refrigerator, Truck, X, ExternalLink, Copy } from 'lucide-react'
-import Link from 'next/link'
+import { ShoppingCart, Plus, X, Copy } from 'lucide-react'
 import { createClient } from '@/lib/supabase/client'
 import { toast } from 'sonner'
 import { Button } from '@/components/ui/button'
-import { Tabs, TabsList, TabsTrigger, TabsContent } from '@/components/ui/tabs'
 import { Badge } from '@/components/ui/badge'
 import { Checkbox } from '@/components/ui/checkbox'
 import type { Campo } from '@/types/shared'
@@ -55,10 +53,18 @@ export function ListaComprasView({ campo, listas, campoId }: ListaComprasViewPro
   const supabase = createClient()
   const [selecaoState, setSelecaoState] = useState<SelecaoState | null>(null)
   const [inserindoSelecionados, setInserindoSelecionados] = useState(false)
+  const [ordenacao, setOrdenacao] = useState<'zona' | 'alfabetica'>('zona')
 
   const listaDespensa = listasState.find((l) => l.tipo === 'despensa')
   const listaFresco = listasState.find((l) => l.tipo === 'fresco_diario')
   const listaCasaApoio = listasState.find((l) => l.tipo === 'casa_apoio')
+
+  // Vista unificada — todos os itens de todas as listas
+  const todosItems: ListaComprasItem[] = [
+    ...((listaDespensa?.items ?? []) as ListaComprasItem[]),
+    ...((listaFresco?.items ?? []) as ListaComprasItem[]),
+    ...((listaCasaApoio?.items ?? []) as ListaComprasItem[]),
+  ]
 
   // Realtime subscription
   useEffect(() => {
@@ -311,7 +317,7 @@ export function ListaComprasView({ campo, listas, campoId }: ListaComprasViewPro
   }
 
   function gerarMensagem(): string {
-    const allItems = (listaDespensa?.items ?? []) as ListaComprasItem[]
+    const allItems = todosItems
     if (allItems.length === 0) return 'Lista de compras vazia.'
 
     const grupos = new Map<string, { label: string; items: ListaComprasItem[] }>()
@@ -390,8 +396,8 @@ export function ListaComprasView({ campo, listas, campoId }: ListaComprasViewPro
     <div className="p-4 space-y-4">
       <div className="flex justify-between items-center">
         <p className="text-sm text-gray-500">
-          {listaDespensa?.items?.filter((i) => i.comprado).length ?? 0} /{' '}
-          {listaDespensa?.items?.length ?? 0} itens comprados
+          {todosItems.filter((i) => i.comprado).length} /{' '}
+          {todosItems.length} itens comprados
         </p>
         <div className="flex items-center gap-2">
           <button
@@ -401,65 +407,46 @@ export function ListaComprasView({ campo, listas, campoId }: ListaComprasViewPro
             <Copy className="h-3.5 w-3.5" />
             Copiar
           </button>
-          <Link
-            href={`/campo/${campoId}/mamas/lista/adjunto`}
-            className="flex items-center gap-1.5 text-xs font-medium text-[#B85042] border border-[#B85042]/30 rounded-lg px-2.5 py-1.5 hover:bg-[#B85042]/5 transition-colors"
-          >
-            <ExternalLink className="h-3.5 w-3.5" />
-            Vista adjunto
-          </Link>
           <Button variant="outline" size="sm" onClick={gerarLista} disabled={gerandoLista}>
-            Atualizar lista
+            {gerandoLista ? 'A gerar...' : 'Atualizar lista'}
           </Button>
         </div>
       </div>
 
-      <Tabs defaultValue="despensa" className="w-full">
-        <TabsList className="w-full grid grid-cols-3">
-          <TabsTrigger value="despensa" className="gap-1 text-xs sm:text-sm">
-            <Package className="h-3.5 w-3.5 sm:h-4 sm:w-4" />
-            Despensa
-          </TabsTrigger>
-          <TabsTrigger value="frescos" className="gap-1 text-xs sm:text-sm">
-            <Truck className="h-3.5 w-3.5 sm:h-4 sm:w-4" />
-            Frescos
-          </TabsTrigger>
-          <TabsTrigger value="frigorifico" className="gap-1 text-xs sm:text-sm">
-            <Refrigerator className="h-3.5 w-3.5 sm:h-4 sm:w-4" />
-            Frigorífico
-          </TabsTrigger>
-        </TabsList>
+      {/* Ordenação */}
+      <div className="flex items-center gap-1.5">
+        <span className="text-xs text-gray-500 shrink-0">Ordenar por:</span>
+        <button
+          onClick={() => setOrdenacao('zona')}
+          className={cn(
+            'text-xs font-semibold px-2.5 py-1 rounded-full border transition-colors',
+            ordenacao === 'zona'
+              ? 'bg-[#2D5016] text-white border-[#2D5016]'
+              : 'text-gray-500 border-gray-200 hover:border-[#2D5016]/40 hover:text-[#2D5016]'
+          )}
+        >
+          Zona
+        </button>
+        <button
+          onClick={() => setOrdenacao('alfabetica')}
+          className={cn(
+            'text-xs font-semibold px-2.5 py-1 rounded-full border transition-colors',
+            ordenacao === 'alfabetica'
+              ? 'bg-[#2D5016] text-white border-[#2D5016]'
+              : 'text-gray-500 border-gray-200 hover:border-[#2D5016]/40 hover:text-[#2D5016]'
+          )}
+        >
+          A–Z
+        </button>
+      </div>
 
-        <TabsContent value="despensa">
-          <ListaTab
-            lista={listaDespensa}
-            onToggle={toggleComprado}
-            onRemove={removerItem}
-            onAddManual={() => abrirAddSheet('despensa', listaDespensa?.id ?? null)}
-            groupByZone
-          />
-        </TabsContent>
-
-        <TabsContent value="frescos">
-          <ListaTab
-            lista={listaFresco}
-            onToggle={toggleComprado}
-            onRemove={removerItem}
-            onAddManual={() => abrirAddSheet('fresco_diario', listaFresco?.id ?? null)}
-            groupByDay
-          />
-        </TabsContent>
-
-        <TabsContent value="frigorifico">
-          <ListaTab
-            lista={listaCasaApoio}
-            onToggle={toggleComprado}
-            onRemove={removerItem}
-            onAddManual={() => abrirAddSheet('casa_apoio', listaCasaApoio?.id ?? null)}
-            groupByDay
-          />
-        </TabsContent>
-      </Tabs>
+      <ListaTab
+        lista={listaDespensa ? { ...listaDespensa, items: todosItems } : undefined}
+        onToggle={toggleComprado}
+        onRemove={removerItem}
+        onAddManual={() => abrirAddSheet('despensa', listaDespensa?.id ?? null)}
+        ordenacao={ordenacao}
+      />
 
       {/* Add item bottom sheet */}
       <PresetAddSheet
@@ -782,40 +769,31 @@ function ListaTab({
   onToggle,
   onRemove,
   onAddManual,
-  groupByZone,
-  groupByDay,
+  ordenacao = 'zona',
 }: {
   lista: ListaCompras | undefined
   onToggle: (id: string, comprado: boolean) => void
   onRemove: (id: string) => void
   onAddManual: () => void
-  groupByZone?: boolean
-  groupByDay?: boolean
+  ordenacao?: 'zona' | 'alfabetica'
 }) {
   const items = (lista?.items ?? []) as ListaComprasItem[]
   const total = items.reduce((sum, i) => sum + (i.preco_estimado ?? 0), 0)
   const comprados = items.filter((i) => i.comprado).length
 
   const grupos = useMemo(() => {
-    if (groupByZone) {
-      const map = new Map<string, ListaComprasItem[]>()
-      items.forEach((item) => {
-        const key = item.zona_supermercado ?? 'outro'
-        if (!map.has(key)) map.set(key, [])
-        map.get(key)!.push(item)
+    if (ordenacao === 'alfabetica') {
+      const sorted = [...items].sort((a, b) => {
+        const na = (a.ingrediente?.nome ?? a.nome_custom ?? '').toLowerCase()
+        const nb = (b.ingrediente?.nome ?? b.nome_custom ?? '').toLowerCase()
+        return na.localeCompare(nb, 'pt')
       })
-      return Array.from(map.entries()).map(([key, items]) => ({
-        key,
-        label: ZONA_LABELS[key as ZonaSupermercado] ?? key,
-        items,
-      }))
-    }
-    if (groupByDay) {
       const map = new Map<string, ListaComprasItem[]>()
-      items.forEach((item) => {
-        const key = item.dia != null ? `Dia ${item.dia}` : 'Sem dia'
-        if (!map.has(key)) map.set(key, [])
-        map.get(key)!.push(item)
+      sorted.forEach((item) => {
+        const nome = item.ingrediente?.nome ?? item.nome_custom ?? '?'
+        const letra = nome[0]?.toUpperCase() ?? '#'
+        if (!map.has(letra)) map.set(letra, [])
+        map.get(letra)!.push(item)
       })
       return Array.from(map.entries()).map(([key, items]) => ({
         key,
@@ -823,8 +801,19 @@ function ListaTab({
         items,
       }))
     }
-    return [{ key: 'all', label: 'Todos', items }]
-  }, [items, groupByZone, groupByDay])
+    // ordenacao === 'zona'
+    const map = new Map<string, ListaComprasItem[]>()
+    items.forEach((item) => {
+      const key = item.zona_supermercado ?? 'outro'
+      if (!map.has(key)) map.set(key, [])
+      map.get(key)!.push(item)
+    })
+    return Array.from(map.entries()).map(([key, items]) => ({
+      key,
+      label: ZONA_LABELS[key as ZonaSupermercado] ?? key,
+      items,
+    }))
+  }, [items, ordenacao])
 
   return (
     <div className="space-y-4 mt-2">
