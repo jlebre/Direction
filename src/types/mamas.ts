@@ -137,8 +137,11 @@ export interface ListaComprasItem {
 // ── Restrições, Farmácia, Contactos ─────────────────────────────────────────
 export interface RestricaoAlimentar {
   id: string
-  animado_id: string
+  animado_id: string | null
+  campo_id?: string | null
+  crianca_nome?: string | null
   tipo: RestricaoTipo
+  gravidade?: 'leve' | 'media' | 'grave' | null
   descricao: string
   ingredientes_proibidos: string[]
   notas?: string
@@ -147,8 +150,11 @@ export interface RestricaoAlimentar {
 
 export interface FarmaciaMedicacao {
   id: string
-  animado_id: string
+  animado_id: string | null
+  campo_id?: string | null
+  crianca_nome?: string | null
   medicamento: string
+  dose?: string | null
   horarios: string[]
   notas?: string
   ativo: boolean
@@ -166,7 +172,9 @@ export interface FarmaciaInventario {
 
 export interface ContactoEmergencia {
   id: string
-  animado_id: string
+  animado_id: string | null
+  campo_id?: string | null
+  crianca_nome?: string | null
   tipo: string
   nome: string
   telefone: string

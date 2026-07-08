@@ -114,9 +114,10 @@ function getInitialPratos(
   // Existindo pratos salvos, preservá-los sempre
   if (items.length > 0) return fromExistingItems(items)
 
-  // Pequeno-almoço: auto-selecionar receita oficial se existir
+  // Pequeno-almoço: preferir receita oficial chamada "Pequeno-almoço" (omnibus)
   if (refeicao === 'pequeno_almoco') {
-    const r = receitas.find((r) => r.is_oficial && r.categoria === 'pequeno_almoco')
+    const r = receitas.find((r) => r.is_oficial && r.nome === 'Pequeno-almoço')
+      ?? receitas.find((r) => r.is_oficial && r.categoria === 'pequeno_almoco')
     return [{
       tempId: gerarTempId(),
       tipo_prato: 'prato',
@@ -125,9 +126,10 @@ function getInitialPratos(
     }]
   }
 
-  // Lanche: auto-selecionar receita oficial de lanche se existir
+  // Lanche: preferir receita oficial chamada "Bolachas"
   if (refeicao === 'lanche') {
-    const r = receitas.find((r) => r.is_oficial && r.categoria === 'lanche')
+    const r = receitas.find((r) => r.is_oficial && r.nome === 'Bolachas')
+      ?? receitas.find((r) => r.is_oficial && r.categoria === 'lanche')
     return [{
       tempId: gerarTempId(),
       tipo_prato: 'prato',
@@ -309,6 +311,26 @@ export function EmentaSlotModal({
         .order('created_at', { ascending: true })
       const versoes = (data ?? []) as VersaoCarregada[]
 
+      // Sem versões: criar Default automaticamente e selecionar
+      if (versoes.length === 0 && pickerIdx !== null) {
+        const { data: novaV, error: vErr } = await supabase
+          .from('receita_versoes')
+          .insert({ receita_id: receita.id, nome_versao: 'Default', is_default: true, estado: 'completa' })
+          .select('id, nome_versao, is_default')
+          .single()
+        if (vErr) throw vErr
+        upd(pickerIdx, {
+          modo: 'receita',
+          receita_id: receita.id,
+          receita_nome: receita.nome,
+          receita_versao_id: novaV.id,
+          receita_versao_nome: undefined,
+        })
+        fecharPicker()
+        return
+      }
+
+      // Com exatamente 1 versão: selecionar automaticamente
       if (versoes.length === 1 && pickerIdx !== null) {
         const v = versoes[0]
         upd(pickerIdx, {
@@ -317,6 +339,20 @@ export function EmentaSlotModal({
           receita_nome: receita.nome,
           receita_versao_id: v.id,
           receita_versao_nome: v.is_default ? undefined : v.nome_versao,
+        })
+        fecharPicker()
+        return
+      }
+
+      // Versão Default entre múltiplas: selecionar automaticamente
+      const defaultV = versoes.find((v) => v.is_default)
+      if (defaultV && pickerIdx !== null) {
+        upd(pickerIdx, {
+          modo: 'receita',
+          receita_id: receita.id,
+          receita_nome: receita.nome,
+          receita_versao_id: defaultV.id,
+          receita_versao_nome: undefined,
         })
         fecharPicker()
         return

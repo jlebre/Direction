@@ -1,18 +1,17 @@
 'use client'
 
-import { useState } from 'react'
-import { Plus, Trash2, Phone, Pill, Clock, BookOpen } from 'lucide-react'
+import { useState, useMemo } from 'react'
+import { Plus, Trash2, Phone, Pill, Clock, BookOpen, Bell, Check } from 'lucide-react'
 import Link from 'next/link'
 import { createClient } from '@/lib/supabase/client'
 import { toast } from 'sonner'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
 import { Tabs, TabsList, TabsTrigger, TabsContent } from '@/components/ui/tabs'
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from '@/components/ui/dialog'
 import { Badge } from '@/components/ui/badge'
-import type { Animado, FarmaciaMedicacao, ContactoEmergencia } from '@/types/mamas'
+import type { FarmaciaMedicacao, ContactoEmergencia } from '@/types/mamas'
 import { cn } from '@/lib/utils'
 
 const CONTACTOS_PADRAO = [
@@ -23,43 +22,83 @@ const CONTACTOS_PADRAO = [
 
 interface FarmaciaViewProps {
   campoId: string
-  animados: Animado[]
   medicacoesIniciais: FarmaciaMedicacao[]
   contactosIniciais: ContactoEmergencia[]
 }
 
-export function FarmaciaView({ campoId, animados, medicacoesIniciais, contactosIniciais }: FarmaciaViewProps) {
+function getNomeCrianca(m: { crianca_nome?: string | null; animado?: { nome: string } | null }): string {
+  return m.crianca_nome ?? m.animado?.nome ?? 'Criança'
+}
+
+// Calcula o estado da próxima toma para uma medicação
+function estadoProximaToma(horarios: string[]): { label: string; cor: string } | null {
+  if (!horarios || horarios.length === 0) return null
+  const agora = new Date()
+  const hh = agora.getHours()
+  const mm = agora.getMinutes()
+  const minutosAgora = hh * 60 + mm
+
+  const todasEmMinutos = horarios
+    .map((h) => {
+      const [hStr, mStr] = h.split(':')
+      const horasNum = parseInt(hStr, 10)
+      const minsNum = parseInt(mStr, 10)
+      if (isNaN(horasNum) || isNaN(minsNum)) return null
+      return horasNum * 60 + minsNum
+    })
+    .filter((m): m is number => m !== null)
+    .sort((a, b) => a - b)
+
+  if (todasEmMinutos.length === 0) return null
+
+  // Próxima futura (ou a primeira do dia seguinte se já passaram todas)
+  const proxima = todasEmMinutos.find((m) => m >= minutosAgora) ?? todasEmMinutos[0]
+  const diff = proxima >= minutosAgora ? proxima - minutosAgora : (24 * 60 - minutosAgora) + proxima
+
+  const hProxima = Math.floor(proxima / 60).toString().padStart(2, '0')
+  const mProxima = (proxima % 60).toString().padStart(2, '0')
+  const label = `${hProxima}:${mProxima}`
+
+  if (diff <= 15) return { label: `Agora (${label})`, cor: 'bg-red-100 text-red-700 border-red-200' }
+  if (diff <= 60) return { label: `Em breve (${label})`, cor: 'bg-amber-50 text-amber-700 border-amber-200' }
+  return { label, cor: 'bg-gray-50 text-gray-500 border-gray-200' }
+}
+
+export function FarmaciaView({ campoId, medicacoesIniciais, contactosIniciais }: FarmaciaViewProps) {
   const [medicacoes, setMedicacoes] = useState<FarmaciaMedicacao[]>(medicacoesIniciais)
   const [contactos, setContactos] = useState<ContactoEmergencia[]>(contactosIniciais)
   const [modalMed, setModalMed] = useState(false)
   const [modalContact, setModalContact] = useState(false)
-  const [formMed, setFormMed] = useState({ animado_id: '', medicamento: '', horarios: '', notas: '' })
-  const [formContact, setFormContact] = useState({ animado_id: '', tipo: '', nome: '', telefone: '', notas: '' })
+  const [formMed, setFormMed] = useState({ crianca_nome: '', medicamento: '', dose: '', horarios: '', notas: '' })
+  const [formContact, setFormContact] = useState({ crianca_nome: '', tipo: '', nome: '', telefone: '', notas: '' })
   const [saving, setSaving] = useState(false)
   const supabase = createClient()
 
-  function getNomeAnimado(animadoId: string): string {
-    return animados.find((a) => a.id === animadoId)?.nome ?? 'Animado'
-  }
+  const pendentes = useMemo(
+    () => medicacoes.filter((m) => m.ativo && m.horarios && m.horarios.length > 0),
+    [medicacoes]
+  )
 
   async function adicionarMedicacao() {
-    if (!formMed.animado_id || !formMed.medicamento) return
+    if (!formMed.crianca_nome.trim() || !formMed.medicamento.trim()) return
     setSaving(true)
     try {
       const { data, error } = await supabase
         .from('farmacia_medicacoes')
         .insert({
-          animado_id: formMed.animado_id,
-          medicamento: formMed.medicamento,
+          campo_id: campoId,
+          crianca_nome: formMed.crianca_nome.trim(),
+          medicamento: formMed.medicamento.trim(),
+          dose: formMed.dose.trim() || null,
           horarios: formMed.horarios.split(',').map((h) => h.trim()).filter(Boolean),
-          notas: formMed.notas || null,
+          notas: formMed.notas.trim() || null,
           ativo: true,
         })
-        .select('*, animado:animados(id, nome)')
+        .select('*')
         .single()
       if (error) throw error
       setMedicacoes((prev) => [...prev, data as FarmaciaMedicacao])
-      setFormMed({ animado_id: '', medicamento: '', horarios: '', notas: '' })
+      setFormMed({ crianca_nome: '', medicamento: '', dose: '', horarios: '', notas: '' })
       setModalMed(false)
       toast.success('Medicação adicionada')
     } catch (e: unknown) {
@@ -75,24 +114,37 @@ export function FarmaciaView({ campoId, animados, medicacoesIniciais, contactosI
     toast.success('Removido')
   }
 
+  async function marcarAdministrado(med: FarmaciaMedicacao) {
+    const agora = new Date().toISOString()
+    const { error } = await supabase.from('tomas_medicacao').insert({
+      medicacao_id: med.id,
+      data_hora_prevista: agora,
+      data_hora_administrada: agora,
+      estado: 'administrado',
+    })
+    if (error) { toast.error('Erro ao registar toma'); return }
+    toast.success(`${med.medicamento} registado como administrado`)
+  }
+
   async function adicionarContacto() {
-    if (!formContact.animado_id || !formContact.nome || !formContact.telefone) return
+    if (!formContact.nome.trim() || !formContact.telefone.trim()) return
     setSaving(true)
     try {
       const { data, error } = await supabase
         .from('contactos_emergencia')
         .insert({
-          animado_id: formContact.animado_id,
-          tipo: formContact.tipo,
-          nome: formContact.nome,
-          telefone: formContact.telefone,
-          notas: formContact.notas || null,
+          campo_id: campoId,
+          crianca_nome: formContact.crianca_nome.trim() || null,
+          tipo: formContact.tipo.trim() || null,
+          nome: formContact.nome.trim(),
+          telefone: formContact.telefone.trim(),
+          notas: formContact.notas.trim() || null,
         })
-        .select('*, animado:animados(id, nome)')
+        .select('*')
         .single()
       if (error) throw error
       setContactos((prev) => [...prev, data as ContactoEmergencia])
-      setFormContact({ animado_id: '', tipo: '', nome: '', telefone: '', notas: '' })
+      setFormContact({ crianca_nome: '', tipo: '', nome: '', telefone: '', notas: '' })
       setModalContact(false)
       toast.success('Contacto adicionado')
     } catch (e: unknown) {
@@ -118,6 +170,19 @@ export function FarmaciaView({ campoId, animados, medicacoesIniciais, contactosI
         </div>
         <span className="text-white opacity-70 text-lg">→</span>
       </Link>
+
+      {/* Alerta de medicações pendentes */}
+      {pendentes.length > 0 && (
+        <div className="bg-amber-50 border border-amber-200 rounded-xl px-4 py-3 mb-4 flex items-center gap-3">
+          <Bell className="h-5 w-5 text-amber-600 shrink-0" />
+          <div>
+            <p className="text-sm font-bold text-amber-800">
+              {pendentes.length} medicação{pendentes.length !== 1 ? 'ões' : ''} ativa{pendentes.length !== 1 ? 's' : ''}
+            </p>
+            <p className="text-xs text-amber-600">Verifica os horários abaixo</p>
+          </div>
+        </div>
+      )}
 
       <Tabs defaultValue="medicacoes">
         <TabsList className="w-full grid grid-cols-2">
@@ -146,28 +211,47 @@ export function FarmaciaView({ campoId, animados, medicacoesIniciais, contactosI
             </div>
           ) : (
             <div className="space-y-3">
-              {medicacoes.map((med) => (
-                <div key={med.id} className="bg-white rounded-xl border border-[#E7E8D1] p-4">
-                  <div className="flex items-start justify-between gap-2">
-                    <div>
-                      <p className="font-bold text-[#36454F]">{med.animado?.nome ?? getNomeAnimado(med.animado_id)}</p>
-                      <p className="text-[#B85042] font-semibold text-sm">{med.medicamento}</p>
+              {medicacoes.map((med) => {
+                const proximaToma = estadoProximaToma(med.horarios ?? [])
+                return (
+                  <div key={med.id} className="bg-white rounded-xl border border-[#E7E8D1] p-4">
+                    <div className="flex items-start justify-between gap-2">
+                      <div className="min-w-0">
+                        <p className="font-bold text-[#36454F]">{getNomeCrianca(med)}</p>
+                        <p className="text-[#B85042] font-semibold text-sm">{med.medicamento}</p>
+                        {med.dose && (
+                          <p className="text-xs text-gray-500 mt-0.5">{med.dose}</p>
+                        )}
+                      </div>
+                      <button onClick={() => removerMedicacao(med.id)} className="text-[#F96167] hover:opacity-70 shrink-0">
+                        <Trash2 className="h-4 w-4" />
+                      </button>
                     </div>
-                    <button onClick={() => removerMedicacao(med.id)} className="text-[#F96167] hover:opacity-70">
-                      <Trash2 className="h-4 w-4" />
-                    </button>
+                    {med.horarios && med.horarios.length > 0 && (
+                      <div className="flex items-center gap-2 mt-2 flex-wrap">
+                        <Clock className="h-3.5 w-3.5 text-gray-400 shrink-0" />
+                        {med.horarios.map((h) => (
+                          <Badge key={h} variant="secondary" className="text-xs">{h}</Badge>
+                        ))}
+                      </div>
+                    )}
+                    {proximaToma && (
+                      <div className="flex items-center justify-between mt-2 gap-2">
+                        <span className={cn('text-xs border rounded-full px-2.5 py-0.5 font-medium', proximaToma.cor)}>
+                          Próxima toma: {proximaToma.label}
+                        </span>
+                        <button
+                          onClick={() => marcarAdministrado(med)}
+                          className="flex items-center gap-1 text-xs text-[#2D5016] border border-[#2D5016]/30 rounded-lg px-2 py-1 hover:bg-[#2D5016]/5 transition-colors"
+                        >
+                          <Check className="h-3 w-3" /> Administrado
+                        </button>
+                      </div>
+                    )}
+                    {med.notas && <p className="text-sm text-gray-500 mt-1 italic">{med.notas}</p>}
                   </div>
-                  {med.horarios && med.horarios.length > 0 && (
-                    <div className="flex items-center gap-2 mt-2 flex-wrap">
-                      <Clock className="h-3.5 w-3.5 text-gray-400" />
-                      {med.horarios.map((h) => (
-                        <Badge key={h} variant="secondary" className="text-xs">{h}</Badge>
-                      ))}
-                    </div>
-                  )}
-                  {med.notas && <p className="text-sm text-gray-500 mt-1 italic">{med.notas}</p>}
-                </div>
-              ))}
+                )
+              })}
             </div>
           )}
         </TabsContent>
@@ -202,24 +286,25 @@ export function FarmaciaView({ campoId, animados, medicacoesIniciais, contactosI
             ))}
           </div>
 
-          {/* Contactos por animado */}
+          {/* Contactos do campo */}
           {contactos.length > 0 && (
             <div className="bg-white rounded-xl border border-[#E7E8D1] overflow-hidden">
               <div className="bg-[#E7E8D1] px-4 py-2">
-                <h3 className="font-bold text-[#36454F] text-sm">Contactos dos Animados</h3>
+                <h3 className="font-bold text-[#36454F] text-sm">Contactos do Campo</h3>
               </div>
               {contactos.map((c, i) => (
                 <div key={c.id} className={cn('flex items-center justify-between px-4 py-3', i > 0 && 'border-t border-[#E7E8D1]')}>
-                  <div>
+                  <div className="min-w-0">
                     <p className="font-semibold text-[#36454F]">{c.nome}</p>
                     <p className="text-xs text-gray-400">
-                      {c.tipo && `${c.tipo} · `}{c.animado?.nome ?? getNomeAnimado(c.animado_id)}
+                      {c.tipo ? `${c.tipo} · ` : ''}
+                      {c.crianca_nome ?? getNomeCrianca(c)}
                     </p>
                     {c.notas && <p className="text-xs text-gray-400 italic">{c.notas}</p>}
                   </div>
                   <a
                     href={`tel:${c.telefone.replace(/\s/g, '')}`}
-                    className="flex items-center gap-2 bg-[#B85042] text-white rounded-lg px-3 py-2 text-sm font-bold"
+                    className="flex items-center gap-2 bg-[#B85042] text-white rounded-lg px-3 py-2 text-sm font-bold shrink-0"
                   >
                     <Phone className="h-4 w-4" />
                     {c.telefone}
@@ -237,32 +322,53 @@ export function FarmaciaView({ campoId, animados, medicacoesIniciais, contactosI
           <DialogHeader><DialogTitle>Adicionar medicação</DialogTitle></DialogHeader>
           <div className="space-y-3">
             <div className="space-y-1">
-              <Label>Animado</Label>
-              <Select value={formMed.animado_id} onValueChange={(v) => setFormMed((f) => ({ ...f, animado_id: v }))}>
-                <SelectTrigger><SelectValue placeholder="Selecionar animado" /></SelectTrigger>
-                <SelectContent>
-                  {animados.map((a) => (
-                    <SelectItem key={a.id} value={a.id}>{a.nome}</SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
+              <Label>Nome da criança</Label>
+              <Input
+                autoFocus
+                placeholder="Maria, João..."
+                value={formMed.crianca_nome}
+                onChange={(e) => setFormMed((f) => ({ ...f, crianca_nome: e.target.value }))}
+              />
             </div>
             <div className="space-y-1">
               <Label>Medicamento</Label>
-              <Input placeholder="Cetoprofeno 100mg" value={formMed.medicamento} onChange={(e) => setFormMed((f) => ({ ...f, medicamento: e.target.value }))} />
+              <Input
+                placeholder="Cetoprofeno 100mg"
+                value={formMed.medicamento}
+                onChange={(e) => setFormMed((f) => ({ ...f, medicamento: e.target.value }))}
+              />
+            </div>
+            <div className="space-y-1">
+              <Label>Dose</Label>
+              <Input
+                placeholder="1 comprimido, 5 ml..."
+                value={formMed.dose}
+                onChange={(e) => setFormMed((f) => ({ ...f, dose: e.target.value }))}
+              />
             </div>
             <div className="space-y-1">
               <Label>Horários (separados por vírgula)</Label>
-              <Input placeholder="08:00, 12:00, 20:00" value={formMed.horarios} onChange={(e) => setFormMed((f) => ({ ...f, horarios: e.target.value }))} />
+              <Input
+                placeholder="08:00, 14:00, 20:00"
+                value={formMed.horarios}
+                onChange={(e) => setFormMed((f) => ({ ...f, horarios: e.target.value }))}
+              />
             </div>
             <div className="space-y-1">
               <Label>Notas</Label>
-              <Input placeholder="Tomar com comida..." value={formMed.notas} onChange={(e) => setFormMed((f) => ({ ...f, notas: e.target.value }))} />
+              <Input
+                placeholder="Tomar com comida..."
+                value={formMed.notas}
+                onChange={(e) => setFormMed((f) => ({ ...f, notas: e.target.value }))}
+              />
             </div>
           </div>
           <DialogFooter>
             <Button variant="outline" onClick={() => setModalMed(false)}>Cancelar</Button>
-            <Button onClick={adicionarMedicacao} disabled={saving || !formMed.animado_id || !formMed.medicamento}>
+            <Button
+              onClick={adicionarMedicacao}
+              disabled={saving || !formMed.crianca_nome.trim() || !formMed.medicamento.trim()}
+            >
               {saving ? 'A guardar...' : 'Guardar'}
             </Button>
           </DialogFooter>
@@ -275,36 +381,52 @@ export function FarmaciaView({ campoId, animados, medicacoesIniciais, contactosI
           <DialogHeader><DialogTitle>Adicionar contacto de emergência</DialogTitle></DialogHeader>
           <div className="space-y-3">
             <div className="space-y-1">
-              <Label>Animado</Label>
-              <Select value={formContact.animado_id} onValueChange={(v) => setFormContact((f) => ({ ...f, animado_id: v }))}>
-                <SelectTrigger><SelectValue placeholder="Selecionar animado" /></SelectTrigger>
-                <SelectContent>
-                  {animados.map((a) => (
-                    <SelectItem key={a.id} value={a.id}>{a.nome}</SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
+              <Label>Nome da criança <span className="text-gray-400 font-normal text-xs">(opcional)</span></Label>
+              <Input
+                placeholder="Maria, João..."
+                value={formContact.crianca_nome}
+                onChange={(e) => setFormContact((f) => ({ ...f, crianca_nome: e.target.value }))}
+              />
             </div>
             <div className="space-y-1">
-              <Label>Tipo</Label>
-              <Input placeholder="Pai, Mãe, Tutor..." value={formContact.tipo} onChange={(e) => setFormContact((f) => ({ ...f, tipo: e.target.value }))} />
+              <Label>Tipo de contacto</Label>
+              <Input
+                placeholder="Pai, Mãe, Tutor..."
+                value={formContact.tipo}
+                onChange={(e) => setFormContact((f) => ({ ...f, tipo: e.target.value }))}
+              />
             </div>
             <div className="space-y-1">
-              <Label>Nome</Label>
-              <Input placeholder="Maria Silva" value={formContact.nome} onChange={(e) => setFormContact((f) => ({ ...f, nome: e.target.value }))} />
+              <Label>Nome do contacto</Label>
+              <Input
+                placeholder="Maria Silva"
+                value={formContact.nome}
+                onChange={(e) => setFormContact((f) => ({ ...f, nome: e.target.value }))}
+              />
             </div>
             <div className="space-y-1">
               <Label>Telefone</Label>
-              <Input placeholder="912 345 678" value={formContact.telefone} onChange={(e) => setFormContact((f) => ({ ...f, telefone: e.target.value }))} />
+              <Input
+                placeholder="912 345 678"
+                value={formContact.telefone}
+                onChange={(e) => setFormContact((f) => ({ ...f, telefone: e.target.value }))}
+              />
             </div>
             <div className="space-y-1">
               <Label>Notas</Label>
-              <Input placeholder="Disponível das 9h às 18h..." value={formContact.notas} onChange={(e) => setFormContact((f) => ({ ...f, notas: e.target.value }))} />
+              <Input
+                placeholder="Disponível das 9h às 18h..."
+                value={formContact.notas}
+                onChange={(e) => setFormContact((f) => ({ ...f, notas: e.target.value }))}
+              />
             </div>
           </div>
           <DialogFooter>
             <Button variant="outline" onClick={() => setModalContact(false)}>Cancelar</Button>
-            <Button onClick={adicionarContacto} disabled={saving || !formContact.animado_id || !formContact.nome || !formContact.telefone}>
+            <Button
+              onClick={adicionarContacto}
+              disabled={saving || !formContact.nome.trim() || !formContact.telefone.trim()}
+            >
               {saving ? 'A guardar...' : 'Guardar'}
             </Button>
           </DialogFooter>

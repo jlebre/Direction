@@ -12,7 +12,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@
 import { Badge } from '@/components/ui/badge'
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from '@/components/ui/dialog'
 import { Alert, AlertDescription } from '@/components/ui/alert'
-import type { Animado, RestricaoAlimentar, RestricaoTipo } from '@/types/mamas'
+import type { RestricaoAlimentar, RestricaoTipo } from '@/types/mamas'
 import { cn } from '@/lib/utils'
 
 const TIPO_LABELS: Record<RestricaoTipo, string> = {
@@ -29,27 +29,40 @@ const TIPO_CORES: Record<RestricaoTipo, string> = {
   outro: 'border-gray-300 bg-gray-50 text-gray-600',
 }
 
+const GRAVIDADE_LABELS = { leve: 'Leve', media: 'Média', grave: 'Grave' }
+const GRAVIDADE_CORES = {
+  leve: 'bg-yellow-50 text-yellow-700 border-yellow-200',
+  media: 'bg-orange-50 text-orange-700 border-orange-200',
+  grave: 'bg-red-100 text-red-700 border-red-300',
+}
+
 interface RestricaoFormData {
-  animado_id: string
+  crianca_nome: string
   tipo: RestricaoTipo
+  gravidade: 'leve' | 'media' | 'grave' | ''
   descricao: string
   ingredientes_proibidos: string
   notas: string
 }
 
 const formVazio: RestricaoFormData = {
-  animado_id: '',
+  crianca_nome: '',
   tipo: 'alergia',
+  gravidade: '',
   descricao: '',
   ingredientes_proibidos: '',
   notas: '',
 }
 
+function getNomeCrianca(r: RestricaoAlimentar): string {
+  return r.crianca_nome ?? r.animado?.nome ?? 'Criança'
+}
+
 export function RestricoesList({
-  animados,
+  campoId,
   restricoesIniciais,
 }: {
-  animados: Animado[]
+  campoId: string
   restricoesIniciais: RestricaoAlimentar[]
 }) {
   const [restricoes, setRestricoes] = useState<RestricaoAlimentar[]>(restricoesIniciais)
@@ -59,10 +72,6 @@ export function RestricoesList({
   const [saving, setSaving] = useState(false)
   const supabase = createClient()
 
-  function getNomeAnimado(animadoId: string): string {
-    return animados.find((a) => a.id === animadoId)?.nome ?? 'Animado'
-  }
-
   function abrirNova() {
     setForm(formVazio)
     setEditId(null)
@@ -71,8 +80,9 @@ export function RestricoesList({
 
   function abrirEditar(r: RestricaoAlimentar) {
     setForm({
-      animado_id: r.animado_id,
+      crianca_nome: r.crianca_nome ?? r.animado?.nome ?? '',
       tipo: r.tipo,
+      gravidade: r.gravidade ?? '',
       descricao: r.descricao,
       ingredientes_proibidos: (r.ingredientes_proibidos ?? []).join(', '),
       notas: r.notas ?? '',
@@ -82,11 +92,13 @@ export function RestricoesList({
   }
 
   async function guardar() {
-    if (!form.animado_id || !form.descricao) return
+    if (!form.crianca_nome.trim() || !form.descricao.trim()) return
     setSaving(true)
-    const data = {
-      animado_id: form.animado_id,
+    const payload = {
+      campo_id: campoId,
+      crianca_nome: form.crianca_nome.trim(),
       tipo: form.tipo,
+      gravidade: form.gravidade || null,
       descricao: form.descricao.trim(),
       ingredientes_proibidos: form.ingredientes_proibidos
         ? form.ingredientes_proibidos.split(',').map((s) => s.trim()).filter(Boolean)
@@ -97,17 +109,17 @@ export function RestricoesList({
       if (editId) {
         const { data: updated, error } = await supabase
           .from('restricoes_alimentares')
-          .update(data)
+          .update(payload)
           .eq('id', editId)
-          .select('*, animado:animados(id, nome)')
+          .select('*')
           .single()
         if (error) throw error
         setRestricoes((prev) => prev.map((r) => (r.id === editId ? (updated as RestricaoAlimentar) : r)))
       } else {
         const { data: nova, error } = await supabase
           .from('restricoes_alimentares')
-          .insert(data)
-          .select('*, animado:animados(id, nome)')
+          .insert(payload)
+          .select('*')
           .single()
         if (error) throw error
         setRestricoes((prev) => [...prev, nova as RestricaoAlimentar])
@@ -166,14 +178,19 @@ export function RestricoesList({
           {restricoes.map((r) => (
             <div key={r.id} className="bg-white rounded-xl border border-[#E7E8D1] p-4 space-y-2">
               <div className="flex items-start gap-2 justify-between">
-                <div className="flex items-center gap-2">
+                <div className="flex items-center gap-2 min-w-0">
                   <User className="h-4 w-4 text-gray-400 shrink-0" />
-                  <span className="font-bold text-[#36454F]">{r.animado?.nome ?? getNomeAnimado(r.animado_id)}</span>
+                  <span className="font-bold text-[#36454F] truncate">{getNomeCrianca(r)}</span>
                 </div>
-                <div className="flex items-center gap-2">
+                <div className="flex items-center gap-2 shrink-0">
                   <Badge className={cn('border text-xs', TIPO_CORES[r.tipo])}>
                     {TIPO_LABELS[r.tipo]}
                   </Badge>
+                  {r.gravidade && (
+                    <Badge className={cn('border text-xs', GRAVIDADE_CORES[r.gravidade])}>
+                      {GRAVIDADE_LABELS[r.gravidade]}
+                    </Badge>
+                  )}
                   <button onClick={() => abrirEditar(r)} className="text-xs text-gray-400 hover:text-[#B85042] transition-colors">
                     Editar
                   </button>
@@ -209,22 +226,20 @@ export function RestricoesList({
       <Dialog open={modalAberto} onOpenChange={setModalAberto}>
         <DialogContent>
           <DialogHeader>
-            <DialogTitle>{editId ? 'Editar restrição' : 'Nova restrição'}</DialogTitle>
+            <DialogTitle>{editId ? 'Editar restrição' : 'Nova restrição alimentar'}</DialogTitle>
           </DialogHeader>
           <div className="space-y-4">
+            <div className="space-y-1">
+              <Label>Nome da criança</Label>
+              <Input
+                autoFocus
+                placeholder="Maria, João..."
+                value={form.crianca_nome}
+                onChange={(e) => setForm((f) => ({ ...f, crianca_nome: e.target.value }))}
+              />
+            </div>
             <div className="grid grid-cols-2 gap-3">
-              <div className="space-y-1 col-span-2 sm:col-span-1">
-                <Label>Animado</Label>
-                <Select value={form.animado_id} onValueChange={(v) => setForm((f) => ({ ...f, animado_id: v }))}>
-                  <SelectTrigger><SelectValue placeholder="Selecionar" /></SelectTrigger>
-                  <SelectContent>
-                    {animados.map((a) => (
-                      <SelectItem key={a.id} value={a.id}>{a.nome}</SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
-              </div>
-              <div className="space-y-1 col-span-2 sm:col-span-1">
+              <div className="space-y-1">
                 <Label>Tipo</Label>
                 <Select
                   value={form.tipo}
@@ -233,6 +248,21 @@ export function RestricoesList({
                   <SelectTrigger><SelectValue /></SelectTrigger>
                   <SelectContent>
                     {(Object.entries(TIPO_LABELS) as [RestricaoTipo, string][]).map(([v, l]) => (
+                      <SelectItem key={v} value={v}>{l}</SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
+              <div className="space-y-1">
+                <Label>Gravidade <span className="text-gray-400 font-normal text-xs">(opcional)</span></Label>
+                <Select
+                  value={form.gravidade}
+                  onValueChange={(v) => setForm((f) => ({ ...f, gravidade: v as 'leve' | 'media' | 'grave' | '' }))}
+                >
+                  <SelectTrigger><SelectValue placeholder="—" /></SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="">—</SelectItem>
+                    {(Object.entries(GRAVIDADE_LABELS) as [string, string][]).map(([v, l]) => (
                       <SelectItem key={v} value={v}>{l}</SelectItem>
                     ))}
                   </SelectContent>
@@ -248,7 +278,7 @@ export function RestricoesList({
               />
             </div>
             <div className="space-y-1">
-              <Label>Ingredientes proibidos (separados por vírgula)</Label>
+              <Label>Ingredientes proibidos <span className="text-gray-400 font-normal text-xs">(separados por vírgula)</span></Label>
               <Input
                 placeholder="amendoins, nozes, cajus"
                 value={form.ingredientes_proibidos}
@@ -267,7 +297,7 @@ export function RestricoesList({
           </div>
           <DialogFooter>
             <Button variant="outline" onClick={() => setModalAberto(false)}>Cancelar</Button>
-            <Button onClick={guardar} disabled={saving || !form.animado_id || !form.descricao}>
+            <Button onClick={guardar} disabled={saving || !form.crianca_nome.trim() || !form.descricao.trim()}>
               {saving ? 'A guardar...' : 'Guardar'}
             </Button>
           </DialogFooter>
