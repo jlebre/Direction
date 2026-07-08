@@ -9,14 +9,13 @@ import { Button } from '@/components/ui/button'
 import { Tabs, TabsList, TabsTrigger, TabsContent } from '@/components/ui/tabs'
 import { Badge } from '@/components/ui/badge'
 import { Checkbox } from '@/components/ui/checkbox'
-import type { Campo, SeccaoTipo } from '@/types/shared'
+import type { Campo } from '@/types/shared'
 import {
   type ListaCompras,
   type ListaComprasItem,
   type ZonaSupermercado,
   type ArmazenamentoTipo,
   ZONA_LABELS,
-  calcularQuantidade,
 } from '@/types/mamas'
 import { cn, formatQuantidade, formatCurrency } from '@/lib/utils'
 
@@ -24,6 +23,20 @@ interface ListaComprasViewProps {
   campo: Campo | null
   listas: ListaCompras[]
   campoId: string
+}
+
+interface SelecaoItem {
+  ingrediente_id: string
+  nome: string
+  quantidade: number
+  unidade: string
+  zona: ZonaSupermercado
+  selecionado: boolean
+}
+
+interface SelecaoState {
+  items: SelecaoItem[]
+  existingListaId: string | null
 }
 
 const UNIDADES = ['un', 'kg', 'g', 'L', 'ml', 'cx', 'pç', 'emb', 'dose']
@@ -40,6 +53,8 @@ export function ListaComprasView({ campo, listas, campoId }: ListaComprasViewPro
   const [salvandoManual, setSalvandoManual] = useState(false)
 
   const supabase = createClient()
+  const [selecaoState, setSelecaoState] = useState<SelecaoState | null>(null)
+  const [inserindoSelecionados, setInserindoSelecionados] = useState(false)
 
   const listaDespensa = listasState.find((l) => l.tipo === 'despensa')
   const listaFresco = listasState.find((l) => l.tipo === 'fresco_diario')
@@ -163,16 +178,15 @@ export function ListaComprasView({ campo, listas, campoId }: ListaComprasViewPro
   async function gerarLista() {
     setGerandoLista(true)
     try {
-      const [{ data: ementa }, { data: multData }] = await Promise.all([
+      const [{ data: ementa }, { data: fatoresData }] = await Promise.all([
         supabase
           .from('ementa')
           .select('*, receita:receitas(receita_ingredientes(*, ingrediente:ingredientes(*)))')
           .eq('campo_id', campoId),
         supabase
-          .from('escalao_multiplicadores')
-          .select('multiplicador')
-          .eq('escalao', campo?.escalao ?? '')
-          .maybeSingle(),
+          .from('escalao_fatores_quantidade')
+          .select('tipo_produto, fator')
+          .eq('escalao', campo?.seccao ?? 'melgas'),
       ])
 
       if (!ementa || ementa.length === 0) {
@@ -180,16 +194,16 @@ export function ListaComprasView({ campo, listas, campoId }: ListaComprasViewPro
         return
       }
 
-      const multiplicador = (multData as { multiplicador: number } | null)?.multiplicador ?? 1.0
+      // Mapa tipo_produto → fator para este escalão
+      const fatoresMap: Record<string, number> = {}
+      for (const f of (fatoresData ?? []) as Array<{ tipo_produto: string; fator: number }>) {
+        fatoresMap[f.tipo_produto] = f.fator
+      }
 
-      const agregados: Record<string, {
-        ingrediente_id: string
-        nome: string
-        quantidade: number
-        unidade: string
-        zona: ZonaSupermercado
-        armazenamento: string
-      }> = {}
+      const pessoasCampo = campo?.num_animados ?? 58
+      const pessoasBase = 58
+
+      const agregados: Record<string, SelecaoItem> = {}
 
       for (const slot of ementa) {
         const ri = (slot.receita as unknown as { receita_ingredientes?: Array<{
@@ -198,19 +212,21 @@ export function ListaComprasView({ campo, listas, campoId }: ListaComprasViewPro
           quantidade_aranh_melgas: number | null
           quantidade_cam_trem: number | null
           unidade: string
-          ingrediente?: { nome: string; categoria_supermercado: string; tipo_armazenamento: string }
+          ingrediente?: {
+            nome: string
+            categoria_supermercado: string
+            tipo_armazenamento: string
+            tipo_produto?: string
+          }
         }> })?.receita_ingredientes ?? []
         for (const item of ri) {
+          // Usa quantidade_aranh_melgas como referência base (Melgas = 1.00 em escalao_fatores_quantidade)
+          const qtdMelgas = item.quantidade_aranh_melgas ?? item.quantidade_cam_trem ?? item.quantidade_mosquitos
+          if (!qtdMelgas) continue
+          const tipoProduto = item.ingrediente?.tipo_produto ?? 'outro'
+          const fator = fatoresMap[tipoProduto] ?? fatoresMap['outro'] ?? 1.0
+          const qty = Math.ceil((qtdMelgas * pessoasCampo * fator) / pessoasBase * 100) / 100
           const key = item.ingrediente_id
-          const qty = calcularQuantidade(
-            (campo?.seccao ?? 'aranhicos') as SeccaoTipo,
-            item.quantidade_mosquitos,
-            item.quantidade_aranh_melgas,
-            item.quantidade_cam_trem,
-            campo?.num_animados ?? 58,
-            58,
-            multiplicador
-          )
           if (agregados[key]) {
             agregados[key].quantidade += qty
           } else {
@@ -220,17 +236,42 @@ export function ListaComprasView({ campo, listas, campoId }: ListaComprasViewPro
               quantidade: qty,
               unidade: item.unidade,
               zona: (item.ingrediente?.categoria_supermercado ?? 'outro') as ZonaSupermercado,
-              armazenamento: item.ingrediente?.tipo_armazenamento ?? 'despensa',
+              selecionado: true,
             }
           }
         }
       }
 
-      // Upsert lista despensa: reuse existing or create new
+      const items = Object.values(agregados).map((item) => ({
+        ...item,
+        quantidade: Math.ceil(item.quantidade * 100) / 100,
+      }))
+
+      if (items.length === 0) {
+        toast.info('Nenhum ingrediente encontrado na ementa')
+        return
+      }
+
+      // Mostra sheet de seleção antes de inserir
+      setSelecaoState({
+        items,
+        existingListaId: listaDespensa?.id ?? null,
+      })
+    } catch (e: unknown) {
+      toast.error(e instanceof Error ? e.message : 'Erro ao gerar lista')
+    } finally {
+      setGerandoLista(false)
+    }
+  }
+
+  async function confirmarSelecao(itensSelecionados: SelecaoItem[]) {
+    if (!selecaoState) return
+    setInserindoSelecionados(true)
+    try {
       let listaId: string
-      if (listaDespensa?.id) {
-        listaId = listaDespensa.id
-        // Delete only auto-generated items, preserve manual items (ingrediente_id IS NULL)
+      if (selecaoState.existingListaId) {
+        listaId = selecaoState.existingListaId
+        // Apaga apenas items auto-gerados; preserva manuais (ingrediente_id IS NULL)
         await supabase
           .from('lista_compras_items')
           .delete()
@@ -246,7 +287,7 @@ export function ListaComprasView({ campo, listas, campoId }: ListaComprasViewPro
         listaId = lista.id
       }
 
-      const items = Object.values(agregados).map((item) => ({
+      const dbItems = itensSelecionados.map((item) => ({
         lista_id: listaId,
         ingrediente_id: item.ingrediente_id,
         quantidade: Math.ceil(item.quantidade * 100) / 100,
@@ -255,16 +296,17 @@ export function ListaComprasView({ campo, listas, campoId }: ListaComprasViewPro
         comprado: false,
       }))
 
-      if (items.length > 0) {
-        await supabase.from('lista_compras_items').insert(items)
+      if (dbItems.length > 0) {
+        await supabase.from('lista_compras_items').insert(dbItems)
       }
 
-      toast.success(`Lista gerada com ${items.length} ingredientes!`)
+      setSelecaoState(null)
+      toast.success(`${dbItems.length} ingredientes adicionados à lista!`)
       window.location.reload()
     } catch (e: unknown) {
-      toast.error(e instanceof Error ? e.message : 'Erro ao gerar lista')
+      toast.error(e instanceof Error ? e.message : 'Erro ao guardar lista')
     } finally {
-      setGerandoLista(false)
+      setInserindoSelecionados(false)
     }
   }
 
@@ -332,6 +374,14 @@ export function ListaComprasView({ campo, listas, campoId }: ListaComprasViewPro
           onClose={() => setAddSheet(null)}
           onAdd={adicionarItem}
         />
+        {selecaoState && (
+          <GerarListaSelecaoSheet
+            state={selecaoState}
+            salvando={inserindoSelecionados}
+            onConfirm={confirmarSelecao}
+            onCancel={() => setSelecaoState(null)}
+          />
+        )}
       </div>
     )
   }
@@ -418,6 +468,14 @@ export function ListaComprasView({ campo, listas, campoId }: ListaComprasViewPro
         onClose={() => setAddSheet(null)}
         onAdd={adicionarItem}
       />
+      {selecaoState && (
+        <GerarListaSelecaoSheet
+          state={selecaoState}
+          salvando={inserindoSelecionados}
+          onConfirm={confirmarSelecao}
+          onCancel={() => setSelecaoState(null)}
+        />
+      )}
     </div>
   )
 }
@@ -625,6 +683,94 @@ function PresetAddSheet({
             </div>
           </div>
           <div className="h-[calc(env(safe-area-inset-bottom)+8px)]" />
+        </div>
+      </div>
+    </>
+  )
+}
+
+function GerarListaSelecaoSheet({
+  state,
+  salvando,
+  onConfirm,
+  onCancel,
+}: {
+  state: SelecaoState
+  salvando: boolean
+  onConfirm: (items: SelecaoItem[]) => void
+  onCancel: () => void
+}) {
+  const [items, setItems] = useState<SelecaoItem[]>(() => state.items)
+  const selecionados = items.filter((i) => i.selecionado)
+  const todosAtivos = selecionados.length === items.length
+
+  function toggleItem(id: string) {
+    setItems((prev) => prev.map((i) => i.ingrediente_id === id ? { ...i, selecionado: !i.selecionado } : i))
+  }
+
+  function toggleTodos() {
+    const novoEstado = !todosAtivos
+    setItems((prev) => prev.map((i) => ({ ...i, selecionado: novoEstado })))
+  }
+
+  return (
+    <>
+      <div className="fixed inset-0 z-40 bg-black/40" onClick={onCancel} />
+      <div className="fixed bottom-0 left-0 right-0 z-50 bg-white rounded-t-2xl shadow-2xl max-h-[85vh] flex flex-col">
+        <div className="flex items-center justify-between px-4 py-3 border-b border-[#E7E8D1] shrink-0">
+          <div>
+            <span className="font-bold text-[#36454F] text-sm">Confirmar ingredientes</span>
+            <p className="text-xs text-gray-400 mt-0.5">
+              {selecionados.length} de {items.length} selecionados
+            </p>
+          </div>
+          <button onClick={onCancel} className="p-1.5 rounded-lg hover:bg-[#E7E8D1] transition-colors">
+            <X className="h-5 w-5 text-gray-500" />
+          </button>
+        </div>
+
+        <div className="px-4 py-2 border-b border-[#E7E8D1] shrink-0">
+          <button
+            onClick={toggleTodos}
+            className="text-xs font-semibold text-[#2D5016] hover:underline"
+          >
+            {todosAtivos ? 'Desselecionar tudo' : 'Selecionar tudo'}
+          </button>
+        </div>
+
+        <div className="flex-1 overflow-y-auto divide-y divide-[#E7E8D1]">
+          {items.map((item) => (
+            <label
+              key={item.ingrediente_id}
+              className="flex items-center gap-3 px-4 py-3 hover:bg-[#f8f8f4] cursor-pointer min-h-[52px]"
+            >
+              <input
+                type="checkbox"
+                checked={item.selecionado}
+                onChange={() => toggleItem(item.ingrediente_id)}
+                className="shrink-0 h-4 w-4 rounded border-gray-300 text-[#2D5016] focus:ring-[#2D5016]"
+              />
+              <span className="flex-1 text-sm text-[#36454F] font-medium">{item.nome}</span>
+              <span className="text-sm font-bold text-[#B85042] shrink-0">
+                {item.quantidade} {item.unidade}
+              </span>
+            </label>
+          ))}
+        </div>
+
+        <div className="px-4 py-3 border-t border-[#E7E8D1] shrink-0">
+          <Button
+            onClick={() => onConfirm(selecionados)}
+            disabled={selecionados.length === 0 || salvando}
+            className="w-full bg-[#2D5016] hover:bg-[#2D5016]/90 min-h-[48px]"
+          >
+            {salvando
+              ? 'A guardar...'
+              : selecionados.length === 0
+                ? 'Seleciona pelo menos um item'
+                : `Adicionar ${selecionados.length} ingrediente${selecionados.length !== 1 ? 's' : ''} à lista`}
+          </Button>
+          <div className="h-[calc(env(safe-area-inset-bottom)+4px)]" />
         </div>
       </div>
     </>

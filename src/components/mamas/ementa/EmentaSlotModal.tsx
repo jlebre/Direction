@@ -213,9 +213,6 @@ export function EmentaSlotModal({
   }
 
   async function selecionarReceita(receita: { id: string; nome: string }) {
-    setPickerReceita(receita)
-    setPickerEtapa('versao')
-    setPickerVersoes([])
     setCarregandoVersoes(true)
     try {
       const { data } = await supabase
@@ -224,7 +221,25 @@ export function EmentaSlotModal({
         .eq('receita_id', receita.id)
         .order('is_default', { ascending: false })
         .order('created_at', { ascending: true })
-      setPickerVersoes((data ?? []) as VersaoCarregada[])
+      const versoes = (data ?? []) as VersaoCarregada[]
+
+      // Quando só existe uma versão, seleciona automaticamente sem mostrar picker
+      if (versoes.length === 1 && pickerIdx !== null) {
+        const v = versoes[0]
+        upd(pickerIdx, {
+          modo: 'receita',
+          receita_id: receita.id,
+          receita_nome: receita.nome,
+          receita_versao_id: v.id,
+          receita_versao_nome: v.is_default ? undefined : v.nome_versao,
+        })
+        fecharPicker()
+        return
+      }
+
+      setPickerReceita(receita)
+      setPickerEtapa('versao')
+      setPickerVersoes(versoes)
     } catch {
       toast.error('Erro ao carregar versões')
     } finally {
@@ -688,10 +703,15 @@ export function EmentaSlotModal({
                       upd(idx, { modo: 'custom', receita_id: undefined, receita_nome: undefined, receita_versao_id: undefined, receita_versao_nome: undefined })
                     }
                   }}
-                  title={prato.modo === 'custom' ? 'Ligar a receita' : 'Escrever nome'}
-                  className="shrink-0 p-2 rounded-lg hover:bg-gray-100 transition-colors text-gray-400 hover:text-[#2D5016]"
+                  title={prato.modo === 'custom' ? 'Ligar a receita' : 'Escrever nome livre'}
+                  className={cnUtil(
+                    'shrink-0 px-2 py-1.5 rounded-lg border text-xs font-semibold transition-colors',
+                    prato.modo === 'receita'
+                      ? 'border-[#2D5016]/30 text-[#2D5016] bg-[#2D5016]/5 hover:bg-[#2D5016]/10'
+                      : 'border-[#E7E8D1] text-gray-400 hover:border-[#2D5016]/30 hover:text-[#2D5016]'
+                  )}
                 >
-                  <Star className={cnUtil('h-4 w-4', prato.modo === 'receita' && 'text-[#2D5016] fill-[#2D5016]/20')} />
+                  {prato.modo === 'custom' ? 'Receita' : 'Texto'}
                 </button>
 
                 {/* Remover */}

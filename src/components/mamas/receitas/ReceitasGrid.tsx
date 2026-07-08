@@ -27,6 +27,7 @@ const CATEGORIAS: { value: CategoriaReceita | 'all'; label: string }[] = [
   { value: 'salada', label: 'Saladas' },
   { value: 'doce', label: 'Doces' },
   { value: 'pequeno_almoco', label: 'Pequeno-almoço' },
+  { value: 'lanche', label: 'Lanche' },
 ]
 
 const TAGS_RAPIDAS = [
@@ -59,7 +60,9 @@ export function ReceitasGrid({ receitas, campo, campoId }: ReceitasGridProps) {
   }, [receitas, pesquisa, categoriaFiltro, tagFiltro])
 
   const receitasOficiais = receitasFiltradas.filter((r) => r.is_oficial)
-  const receitasCustom = receitasFiltradas.filter((r) => !r.is_oficial)
+  const receitasCustomTodas = receitasFiltradas.filter((r) => !r.is_oficial)
+  const receitasIncompletas = receitasCustomTodas.filter((r) => !r.instrucoes?.trim())
+  const receitasCustom = receitasCustomTodas.filter((r) => !!r.instrucoes?.trim())
 
   return (
     <div className="p-4 space-y-4">
@@ -123,6 +126,24 @@ export function ReceitasGrid({ receitas, campo, campoId }: ReceitasGridProps) {
         {receitasFiltradas.length} receita{receitasFiltradas.length !== 1 ? 's' : ''}
       </p>
 
+      {/* Por completar (rascunhos sem instruções — aparecem primeiro) */}
+      {receitasIncompletas.length > 0 && (
+        <div>
+          <div className="flex items-center gap-2 mb-3">
+            <span className="h-4 w-4 text-amber-500 text-sm">✏️</span>
+            <h2 className="text-sm font-bold text-amber-700">Por completar</h2>
+            <span className="text-xs text-amber-500 bg-amber-50 border border-amber-200 rounded-full px-2 py-0.5">
+              {receitasIncompletas.length}
+            </span>
+          </div>
+          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
+            {receitasIncompletas.map((receita) => (
+              <ReceitaCard key={receita.id} receita={receita} campoId={campoId} incompleta />
+            ))}
+          </div>
+        </div>
+      )}
+
       {/* Official recipes */}
       {receitasOficiais.length > 0 && (
         <div>
@@ -159,12 +180,15 @@ export function ReceitasGrid({ receitas, campo, campoId }: ReceitasGridProps) {
   )
 }
 
-function ReceitaCard({ receita, campoId }: { receita: Receita; campoId: string }) {
+function ReceitaCard({ receita, campoId, incompleta }: { receita: Receita; campoId: string; incompleta?: boolean }) {
   const corCat = CATEGORIA_CORES[receita.categoria]
 
   return (
     <Link href={`/campo/${campoId}/mamas/receitas/${receita.id}`}>
-      <Card className="hover:shadow-md transition-shadow cursor-pointer group h-full">
+      <Card className={cn(
+        'hover:shadow-md transition-shadow cursor-pointer group h-full',
+        incompleta && 'border-amber-200'
+      )}>
         <CardHeader className="pb-2">
           <div className="flex items-start justify-between gap-2">
             <CardTitle className="text-sm leading-tight group-hover:text-[#B85042] transition-colors">
@@ -172,6 +196,11 @@ function ReceitaCard({ receita, campoId }: { receita: Receita; campoId: string }
             </CardTitle>
             {receita.is_oficial && (
               <Star className="h-4 w-4 text-[#B85042] shrink-0 mt-0.5" fill="currentColor" />
+            )}
+            {incompleta && (
+              <span className="shrink-0 text-[10px] text-amber-600 bg-amber-50 border border-amber-200 rounded px-1.5 py-0.5 font-medium">
+                Rascunho
+              </span>
             )}
           </div>
         </CardHeader>

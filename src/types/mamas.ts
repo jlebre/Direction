@@ -8,7 +8,7 @@ export type CategoriaReceita =
   | 'massa' | 'arroz_pure' | 'salada' | 'fruta' | 'doce'
   | 'molho' | 'pequeno_almoco' | 'lanche' | 'outro'
 export type ZonaSupermercado =
-  | 'mercearia' | 'enlatados' | 'massas_arroz' | 'bebidas_leite'
+  | 'mercearia' | 'enlatados' | 'massas_arroz' | 'bebidas_leite' | 'bebidas'
   | 'congelados' | 'limpeza' | 'padaria' | 'talho' | 'peixaria'
   | 'frutas_legumes' | 'lacticinios' | 'charcutaria' | 'temperos' | 'outro'
 
@@ -33,6 +33,7 @@ export interface Ingrediente {
   categoria_supermercado: ZonaSupermercado
   unidade_base: string
   tipo_armazenamento: ArmazenamentoTipo
+  tipo_produto: string
   created_at: string
 }
 
@@ -234,8 +235,8 @@ export const CATEGORIA_CORES: Record<CategoriaReceita, string> = {
 
 export const ZONA_LABELS: Record<ZonaSupermercado, string> = {
   mercearia: 'Mercearia', enlatados: 'Enlatados', massas_arroz: 'Massas e Arroz',
-  bebidas_leite: 'Bebidas e Leite', congelados: 'Congelados', limpeza: 'Limpeza',
-  padaria: 'Padaria', talho: 'Talho', peixaria: 'Peixaria',
+  bebidas_leite: 'Bebidas e Leite', bebidas: 'Bebidas', congelados: 'Congelados',
+  limpeza: 'Limpeza', padaria: 'Padaria', talho: 'Talho', peixaria: 'Peixaria',
   frutas_legumes: 'Frutas e Legumes', lacticinios: 'Lacticínios',
   charcutaria: 'Charcutaria', temperos: 'Temperos', outro: 'Outro',
 }
