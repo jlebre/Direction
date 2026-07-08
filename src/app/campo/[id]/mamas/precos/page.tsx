@@ -1,8 +1,7 @@
 import { createClient } from '@/lib/supabase/server'
 import { notFound } from 'next/navigation'
-import { PrecosView } from '@/components/mamas/precos/PrecosView'
+import { PrecosComunitariosView } from '@/components/mamas/precos/PrecosComunitariosView'
 import { Header } from '@/components/mamas/Header'
-import type { CampoPreco } from '@/types/mamas'
 
 export const dynamic = 'force-dynamic'
 
@@ -10,21 +9,20 @@ export default async function PrecosPage({ params }: { params: Promise<{ id: str
   const { id } = await params
   const supabase = createClient()
 
-  const [{ data: campo }, { data: precos }, { data: precosRef }] = await Promise.all([
+  const [{ data: campo }, { data: precosData }, { data: supermercadosData }] = await Promise.all([
     supabase.from('campos').select('id, nome').eq('id', id).single(),
-    supabase.from('campo_precos').select('*, campo:campos(nome)').order('categoria').order('item'),
-    supabase.from('campo_precos').select('*, campo:campos(nome)').is('campo_id', null).order('categoria').order('item'),
+    supabase.from('precos').select('*, supermercado:supermercados(*)').order('produto'),
+    supabase.from('supermercados').select('*').order('nome'),
   ])
 
   if (!campo) notFound()
 
   return (
     <>
-      <Header title="Preços" backHref={`/campo/${id}`} />
-      <PrecosView
-        campoId={id}
-        precosIniciais={(precos ?? []) as CampoPreco[]}
-        precosReferencia={(precosRef ?? []) as CampoPreco[]}
+      <Header title="Preços" backHref={`/campo/${id}/mamas`} />
+      <PrecosComunitariosView
+        precosIniciais={(precosData ?? []) as Parameters<typeof PrecosComunitariosView>[0]['precosIniciais']}
+        supermercadosIniciais={(supermercadosData ?? []) as Parameters<typeof PrecosComunitariosView>[0]['supermercadosIniciais']}
       />
     </>
   )
