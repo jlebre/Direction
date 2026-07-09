@@ -47,6 +47,7 @@ export interface Receita {
   tags: string[]
   pessoas_base: number
   is_oficial: boolean
+  deleted_at?: string | null
   created_at: string
   updated_at: string
   ingredientes?: ReceitaIngrediente[]

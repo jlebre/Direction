@@ -13,6 +13,10 @@ import { Header } from '@/components/mamas/Header'
 import { CATEGORIA_LABELS } from '@/types/mamas'
 import type { CategoriaReceita } from '@/types/mamas'
 
+const DICAS_SOPA = `- Usar a água de cozer a massa para fazer a sopa.
+- Dissolver os pacotes de sopa em menos água primeiro e aos pouquinhos, para evitar grumos.
+- Dá para fazer a sopa na sorna; aguenta a temperatura até ao jantar.`
+
 export default function NovaReceitaPage() {
   const router = useRouter()
   const params = useParams<{ id: string }>()
@@ -21,11 +25,19 @@ export default function NovaReceitaPage() {
     categoria: 'sopa' as CategoriaReceita,
     descricao: '',
     instrucoes: '',
-    dicas_campo: '',
+    dicas_campo: DICAS_SOPA,
     tags: '',
   })
   const [saving, setSaving] = useState(false)
   const supabase = createClient()
+
+  function handleCategoria(v: CategoriaReceita) {
+    setForm((f) => ({
+      ...f,
+      categoria: v,
+      dicas_campo: v === 'sopa' && !f.dicas_campo.trim() ? DICAS_SOPA : f.dicas_campo,
+    }))
+  }
 
   async function guardar() {
     if (!form.nome.trim()) return
@@ -60,7 +72,7 @@ export default function NovaReceitaPage() {
         </div>
         <div className="space-y-1">
           <Label>Categoria</Label>
-          <Select value={form.categoria} onValueChange={(v) => setForm((f) => ({ ...f, categoria: v as CategoriaReceita }))}>
+          <Select value={form.categoria} onValueChange={(v) => handleCategoria(v as CategoriaReceita)}>
             <SelectTrigger><SelectValue /></SelectTrigger>
             <SelectContent>
               {(Object.entries(CATEGORIA_LABELS) as [CategoriaReceita, string][]).map(([v, l]) => (

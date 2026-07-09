@@ -13,7 +13,7 @@ export default async function ReceitasPage({ params }: { params: Promise<{ id: s
 
   const [{ data: campo }, { data: receitas }] = await Promise.all([
     supabase.from('campos').select('*').eq('id', id).single(),
-    supabase.from('receitas').select('*').order('nome'),
+    supabase.from('receitas').select('*').is('deleted_at', null).order('nome'),
   ])
 
   if (!campo) notFound()

@@ -21,6 +21,7 @@ export default async function ReceitaDetailPage({
       .from('receitas')
       .select('*, ingredientes:receita_ingredientes(*, ingrediente:ingredientes(*))')
       .eq('id', receitaId)
+      .is('deleted_at', null)
       .single(),
   ])
 
