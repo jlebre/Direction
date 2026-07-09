@@ -25,7 +25,7 @@ export function ExportarPlanoButton({ campo, diasList }: Props) {
         .eq('campo_id', campo.id)
         .order('ordem')
       if (error) throw error
-      exportPlanoRefeicoes(campo, (data ?? []) as EmentaItem[], diasList)
+      await exportPlanoRefeicoes(campo, (data ?? []) as EmentaItem[], diasList)
     } catch (e: unknown) {
       toast.error(e instanceof Error ? e.message : 'Erro ao exportar')
     } finally {

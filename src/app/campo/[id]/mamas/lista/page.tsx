@@ -7,8 +7,15 @@ import type { ListaCompras } from '@/types/mamas'
 
 export const dynamic = 'force-dynamic'
 
-export default async function ListaPage({ params }: { params: Promise<{ id: string }> }) {
+export default async function ListaPage({
+  params,
+  searchParams,
+}: {
+  params: Promise<{ id: string }>
+  searchParams: Promise<{ gerar_dia?: string; gerar_refeicao?: string }>
+}) {
   const { id } = await params
+  const sp = await searchParams
   const supabase = createClient()
 
   const [{ data: campo }, { data: listas }] = await Promise.all([
@@ -22,6 +29,9 @@ export default async function ListaPage({ params }: { params: Promise<{ id: stri
 
   if (!campo) notFound()
 
+  const gerarDia = sp.gerar_dia ? parseInt(sp.gerar_dia) : undefined
+  const gerarRefeicao = sp.gerar_refeicao ?? undefined
+
   return (
     <>
       <Header title="Lista de Compras" backHref={`/campo/${id}`} />
@@ -29,6 +39,8 @@ export default async function ListaPage({ params }: { params: Promise<{ id: stri
         campo={campo as Campo}
         listas={(listas ?? []) as ListaCompras[]}
         campoId={id}
+        gerarDia={gerarDia}
+        gerarRefeicao={gerarRefeicao}
       />
     </>
   )

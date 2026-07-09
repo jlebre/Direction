@@ -1,6 +1,7 @@
 'use client'
 
 import { useState, useMemo } from 'react'
+import Link from 'next/link'
 import { Search, Trash2, Plus, X, ChevronLeft, Copy } from 'lucide-react'
 import { createClient } from '@/lib/supabase/client'
 import { toast } from 'sonner'
@@ -1011,6 +1012,13 @@ export function EmentaSlotModal({
               Remover refeição
             </Button>
           )}
+          <Link
+            href={`/campo/${campoId}/mamas/lista?gerar_dia=${dia}&gerar_refeicao=${refeicao}`}
+            className="flex items-center gap-1.5 text-xs font-medium text-[#2D5016] border border-[#2D5016]/30 rounded-lg px-3 py-2 hover:bg-[#2D5016]/5 transition-colors"
+            onClick={onClose}
+          >
+            🛒 Lista desta refeição
+          </Link>
           <Button variant="outline" onClick={onClose}>Cancelar</Button>
           <Button onClick={handleSave} disabled={!canSave || saving} className="bg-[#2D5016] hover:bg-[#2D5016]/90">
             {saving ? 'A guardar...' : 'Guardar'}

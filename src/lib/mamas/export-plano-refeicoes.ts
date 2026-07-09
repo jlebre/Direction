@@ -2,13 +2,14 @@ import * as XLSX from 'xlsx'
 import type { Campo } from '@/types/shared'
 import { getDiaLabel } from '@/types/shared'
 import { REFEICAO_LABELS, TIPO_PRATO_LABELS, type EmentaItem } from '@/types/mamas'
+import { exportOrShareFile } from '@/lib/export-share'
 
 function formatDatePT(dateStr: string): string {
   const d = new Date(dateStr + 'T00:00:00')
   return `${String(d.getDate()).padStart(2, '0')}/${String(d.getMonth() + 1).padStart(2, '0')}/${d.getFullYear()}`
 }
 
-export function exportPlanoRefeicoes(campo: Campo, ementa: EmentaItem[], diasList: number[]): void {
+export async function exportPlanoRefeicoes(campo: Campo, ementa: EmentaItem[], diasList: number[]): Promise<void> {
   const wb = XLSX.utils.book_new()
 
   // ── Sheet 1: Plano de Refeições ────────────────────────────────────────────
@@ -125,18 +126,12 @@ export function exportPlanoRefeicoes(campo: Campo, ementa: EmentaItem[], diasLis
   ws2['!cols'] = [{ wch: 22 }, { wch: 32 }]
   XLSX.utils.book_append_sheet(wb, ws2, 'Resumo')
 
-  // ── Download ──────────────────────────────────────────────────────────────
+  // ── Export / Share ────────────────────────────────────────────────────────
   const u8 = XLSX.write(wb, { type: 'array', bookType: 'xlsx' }) as Uint8Array
   const buffer = u8.buffer.slice(u8.byteOffset, u8.byteOffset + u8.byteLength) as ArrayBuffer
   const blob = new Blob([buffer], {
     type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
   })
-  const url = URL.createObjectURL(blob)
-  const a = document.createElement('a')
-  a.href = url
-  a.download = `plano-refeicoes-${campo.nome.replace(/\s+/g, '-').toLowerCase()}.xlsx`
-  document.body.appendChild(a)
-  a.click()
-  document.body.removeChild(a)
-  URL.revokeObjectURL(url)
+  const filename = `plano-refeicoes-${campo.nome.replace(/\s+/g, '-').toLowerCase()}.xlsx`
+  await exportOrShareFile(blob, filename)
 }

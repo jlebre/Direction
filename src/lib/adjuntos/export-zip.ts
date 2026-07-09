@@ -45,12 +45,7 @@ export async function generateZip(
     compressionOptions: { level: 6 },
   })
 
-  const url = URL.createObjectURL(zipBlob)
-  const a = document.createElement('a')
-  a.href = url
-  a.download = `CAMTIL_${campo.nome.replace(/\s/g, '_')}_Exportacao.zip`
-  document.body.appendChild(a)
-  a.click()
-  document.body.removeChild(a)
-  URL.revokeObjectURL(url)
+  const { exportOrShareFile } = await import('@/lib/export-share')
+  const filename = `CAMTIL_${campo.nome.replace(/\s/g, '_')}_Exportacao.zip`
+  await exportOrShareFile(zipBlob, filename)
 }

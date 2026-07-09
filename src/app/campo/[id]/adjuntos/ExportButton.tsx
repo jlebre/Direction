@@ -57,7 +57,7 @@ export default function ExportButton({ campo }: { campo: Campo }) {
     setLoading('excel')
     try {
       const { despesas, regularizacoes, linhas } = await fetchData()
-      generateExcel(campo, despesas, regularizacoes, linhas)
+      await generateExcel(campo, despesas, regularizacoes, linhas)
     } finally {
       setLoading(null)
     }

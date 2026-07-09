@@ -91,6 +91,12 @@ export default async function EmentaDiaPage({
       />
 
       <div className="max-w-lg mx-auto p-4 pb-10 space-y-4">
+        <Link
+          href={`/campo/${id}/mamas/lista?gerar_dia=${dia}`}
+          className="flex items-center gap-2 w-full py-2.5 px-4 rounded-xl border border-[#E7E8D1] text-sm font-medium text-[#2D5016] bg-[#2D5016]/5 hover:bg-[#2D5016]/10 transition-colors"
+        >
+          🛒 Gerar lista de compras para este dia
+        </Link>
         {REFEICOES.map((refeicao) => {
           const refSlots = getSlots(refeicao)
           const allAlertas = refSlots.flatMap((s) => getAlertas(s))

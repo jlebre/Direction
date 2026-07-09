@@ -221,22 +221,17 @@ export function generateExcelBuffer(
   return u8.buffer.slice(u8.byteOffset, u8.byteOffset + u8.byteLength) as ArrayBuffer
 }
 
-export function generateExcel(
+export async function generateExcel(
   campo: Campo,
   despesas: Despesa[],
   regularizacoes: RegularizacaoNif[] = [],
   despesaLinhas: DespesaLinha[] = []
-): void {
+): Promise<void> {
   const buffer = generateExcelBuffer(campo, despesas, regularizacoes, despesaLinhas)
   const blob = new Blob([buffer], {
     type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
   })
-  const url = URL.createObjectURL(blob)
-  const a = document.createElement('a')
-  a.href = url
-  a.download = `CAMTIL_${campo.nome.replace(/\s/g, '_')}_Contas.xlsx`
-  document.body.appendChild(a)
-  a.click()
-  document.body.removeChild(a)
-  URL.revokeObjectURL(url)
+  const { exportOrShareFile } = await import('@/lib/export-share')
+  const filename = `CAMTIL_${campo.nome.replace(/\s/g, '_')}_Contas.xlsx`
+  await exportOrShareFile(blob, filename)
 }

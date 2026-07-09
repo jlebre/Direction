@@ -212,6 +212,13 @@ export function EmentaCalendario({ campo, ementaInicial, receitas, restricoes, c
     ? getSlots(slotSelecionado.dia, slotSelecionado.refeicao)
     : []
 
+  // Receitas oficiais de PA/Lanche — usadas para exibição virtual
+  const receitasTyped = receitas as Array<{ id: string; nome: string; categoria: string; is_oficial: boolean }>
+  const receitaPaDefault = receitasTyped.find((r) => r.is_oficial && r.nome === 'Pequeno-almoço')
+    ?? receitasTyped.find((r) => r.is_oficial && r.categoria === 'pequeno_almoco')
+  const receitaLancheDefault = receitasTyped.find((r) => r.is_oficial && r.nome === 'Bolachas')
+    ?? receitasTyped.find((r) => r.is_oficial && r.categoria === 'lanche')
+
   // ── Slot card: mostra lista de pratos ─────────────────────────────────────
   function renderSlotCard(dia: number, refeicao: RefeicaoTipo, compact = false) {
     const slots = getSlots(dia, refeicao)
@@ -249,6 +256,31 @@ export function EmentaCalendario({ campo, ementaInicial, receitas, restricoes, c
               <span className="text-[10px] truncate">{alertas[0]}{alertas.length > 1 ? ` +${alertas.length - 1}` : ''}</span>
             </div>
           )}
+        </button>
+      )
+    }
+
+    // PA/Lanche: exibição virtual com receita oficial como default
+    const defaultVirtual =
+      refeicao === 'pequeno_almoco' ? receitaPaDefault :
+      refeicao === 'lanche' ? receitaLancheDefault :
+      null
+
+    if (defaultVirtual) {
+      return (
+        <button
+          onClick={() => abrirSlot(dia, refeicao)}
+          className={cnUtil(
+            'w-full text-left rounded-xl border p-3 min-h-[56px] transition-all active:scale-[0.98] hover:shadow-md bg-[#f8f8f4] border-[#E7E8D1] border-dashed',
+            compact && 'p-2 rounded-lg min-h-[64px]'
+          )}
+        >
+          <div className="flex items-baseline gap-1.5 min-w-0">
+            <span className="text-xs font-medium text-gray-400 truncate italic">
+              {defaultVirtual.nome}
+            </span>
+            <span className="text-[10px] text-gray-300 shrink-0">— default</span>
+          </div>
         </button>
       )
     }

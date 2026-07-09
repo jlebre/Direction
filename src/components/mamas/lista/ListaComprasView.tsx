@@ -1,6 +1,6 @@
 'use client'
 
-import { useState, useEffect, useMemo } from 'react'
+import { useState, useEffect, useMemo, useRef } from 'react'
 import { ShoppingCart, Plus, X, Copy } from 'lucide-react'
 import { createClient } from '@/lib/supabase/client'
 import { toast } from 'sonner'
@@ -21,6 +21,8 @@ interface ListaComprasViewProps {
   campo: Campo | null
   listas: ListaCompras[]
   campoId: string
+  gerarDia?: number
+  gerarRefeicao?: string
 }
 
 interface SelecaoItem {
@@ -42,7 +44,7 @@ const ZONAS: { value: ZonaSupermercado; label: string }[] = Object.entries(ZONA_
   ([value, label]) => ({ value: value as ZonaSupermercado, label })
 )
 
-export function ListaComprasView({ campo, listas, campoId }: ListaComprasViewProps) {
+export function ListaComprasView({ campo, listas, campoId, gerarDia, gerarRefeicao }: ListaComprasViewProps) {
   const [listasState, setListasState] = useState(listas)
   const [gerandoLista, setGerandoLista] = useState(false)
 
@@ -54,6 +56,7 @@ export function ListaComprasView({ campo, listas, campoId }: ListaComprasViewPro
   const [selecaoState, setSelecaoState] = useState<SelecaoState | null>(null)
   const [inserindoSelecionados, setInserindoSelecionados] = useState(false)
   const [ordenacao, setOrdenacao] = useState<'zona' | 'alfabetica'>('zona')
+  const autoGerarRef = useRef(false)
 
   const listaDespensa = listasState.find((l) => l.tipo === 'despensa')
   const listaFresco = listasState.find((l) => l.tipo === 'fresco_diario')
@@ -65,6 +68,14 @@ export function ListaComprasView({ campo, listas, campoId }: ListaComprasViewPro
     ...((listaFresco?.items ?? []) as ListaComprasItem[]),
     ...((listaCasaApoio?.items ?? []) as ListaComprasItem[]),
   ]
+
+  // Auto-gerar lista filtrada quando chegam via query params
+  useEffect(() => {
+    if (gerarDia === undefined || autoGerarRef.current) return
+    autoGerarRef.current = true
+    gerarLista({ dia: gerarDia, refeicao: gerarRefeicao })
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [])
 
   // Realtime subscription
   useEffect(() => {
@@ -172,8 +183,10 @@ export function ListaComprasView({ campo, listas, campoId }: ListaComprasViewPro
             : lista
         )
       )
-      setAddSheet(null)
-      toast.success('✅ Item adicionado à lista')
+      // Não fechar a sheet — deixar o utilizador adicionar mais itens
+      // Atualizar listaId no addSheet para evitar criar nova lista na próxima adição
+      setAddSheet((prev) => prev ? { ...prev, listaId: listaId! } : null)
+      toast.success('✅ Adicionado')
     } catch (e: unknown) {
       toast.error(e instanceof Error ? e.message : 'Erro ao adicionar item')
     } finally {
@@ -181,14 +194,18 @@ export function ListaComprasView({ campo, listas, campoId }: ListaComprasViewPro
     }
   }
 
-  async function gerarLista() {
+  async function gerarLista(filter?: { dia?: number; refeicao?: string }) {
     setGerandoLista(true)
     try {
+      let ementaQuery = supabase
+        .from('ementa')
+        .select('*, receita:receitas(receita_ingredientes(*, ingrediente:ingredientes(*)))')
+        .eq('campo_id', campoId)
+      if (filter?.dia !== undefined) ementaQuery = ementaQuery.eq('dia', filter.dia)
+      if (filter?.refeicao) ementaQuery = ementaQuery.eq('refeicao', filter.refeicao)
+
       const [{ data: ementa }, { data: fatoresData }] = await Promise.all([
-        supabase
-          .from('ementa')
-          .select('*, receita:receitas(receita_ingredientes(*, ingrediente:ingredientes(*)))')
-          .eq('campo_id', campoId),
+        ementaQuery,
         supabase
           .from('escalao_fatores_quantidade')
           .select('tipo_produto, fator')
@@ -364,7 +381,7 @@ export function ListaComprasView({ campo, listas, campoId }: ListaComprasViewPro
         <p className="text-gray-500 max-w-xs">
           Gera a lista automaticamente a partir da ementa, ou adiciona itens manualmente.
         </p>
-        <Button onClick={gerarLista} disabled={gerandoLista} className="gap-2">
+        <Button onClick={() => gerarLista()} disabled={gerandoLista} className="gap-2">
           <ShoppingCart className="h-4 w-4" />
           {gerandoLista ? 'A gerar...' : 'Gerar lista de compras'}
         </Button>
@@ -407,7 +424,7 @@ export function ListaComprasView({ campo, listas, campoId }: ListaComprasViewPro
             <Copy className="h-3.5 w-3.5" />
             Copiar
           </button>
-          <Button variant="outline" size="sm" onClick={gerarLista} disabled={gerandoLista}>
+          <Button variant="outline" size="sm" onClick={() => gerarLista()} disabled={gerandoLista}>
             {gerandoLista ? 'A gerar...' : 'Atualizar lista'}
           </Button>
         </div>
@@ -553,6 +570,7 @@ function PresetAddSheet({
   const [libreQtd, setLibreQtd] = useState('1')
   const [libreUnidade, setLibreUnidade] = useState('un')
   const [libreZona, setLibreZona] = useState<ZonaSupermercado>('outro')
+  const [adicionados, setAdicionados] = useState<string[]>([])
 
   if (!aberto) return null
 
@@ -564,11 +582,13 @@ function PresetAddSheet({
 
   function addPreset(item: { nome: string; unidade: string; zona: ZonaSupermercado; qtd: number }) {
     onAdd(item.nome, item.qtd, item.unidade, item.zona)
+    setAdicionados((prev) => [...prev, item.nome])
   }
 
   function addLibre() {
     if (!libreNome.trim()) return
     onAdd(libreNome.trim(), parseFloat(libreQtd) || 1, libreUnidade, libreZona)
+    setAdicionados((prev) => [...prev, libreNome.trim()])
     setLibreNome('')
     setLibreQtd('1')
   }
@@ -578,9 +598,19 @@ function PresetAddSheet({
       <div className="fixed inset-0 z-40 bg-black/30" onClick={onClose} />
       <div className="fixed bottom-0 left-0 right-0 z-50 bg-white rounded-t-2xl shadow-2xl max-h-[90vh] flex flex-col">
         <div className="flex items-center justify-between px-4 py-3 border-b border-[#E7E8D1] shrink-0">
-          <span className="font-bold text-[#36454F] text-sm">+ Adicionar à lista</span>
-          <button onClick={onClose} className="p-1.5 rounded-lg hover:bg-[#E7E8D1] transition-colors">
-            <X className="h-5 w-5 text-gray-500" />
+          <div>
+            <span className="font-bold text-[#36454F] text-sm">+ Adicionar à lista</span>
+            {adicionados.length > 0 && (
+              <p className="text-xs text-[#2D5016] font-medium mt-0.5">
+                {adicionados.length} {adicionados.length === 1 ? 'item adicionado' : 'itens adicionados'}
+              </p>
+            )}
+          </div>
+          <button
+            onClick={onClose}
+            className="flex items-center gap-1.5 text-sm font-semibold text-white bg-[#2D5016] rounded-lg px-3 py-1.5 hover:bg-[#2D5016]/90 transition-colors"
+          >
+            {adicionados.length > 0 ? 'Concluir' : <X className="h-4 w-4" />}
           </button>
         </div>
         <div className="px-4 py-2 border-b border-[#E7E8D1] shrink-0">
@@ -601,7 +631,10 @@ function PresetAddSheet({
               <div className="divide-y divide-[#E7E8D1]">
                 {cat.items.map((item) => (
                   <div key={item.nome} className="flex items-center gap-3 px-4 py-2.5">
-                    <span className="flex-1 text-sm text-[#36454F]">{item.nome}</span>
+                    <span className={cn('flex-1 text-sm', adicionados.includes(item.nome) ? 'text-[#2D5016] font-medium' : 'text-[#36454F]')}>
+                      {adicionados.includes(item.nome) && <span className="mr-1">✓</span>}
+                      {item.nome}
+                    </span>
                     <span className="text-xs text-gray-400 shrink-0">{item.qtd} {item.unidade}</span>
                     <button
                       onClick={() => addPreset(item)}
