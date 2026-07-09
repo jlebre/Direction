@@ -2,7 +2,7 @@
 
 import { useState, useMemo } from 'react'
 import Link from 'next/link'
-import { Search, Star, Plus } from 'lucide-react'
+import { Search, Plus, CheckCircle2, AlertTriangle, Pencil } from 'lucide-react'
 import { Input } from '@/components/ui/input'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
@@ -32,7 +32,7 @@ const CATEGORIAS: { value: CategoriaReceita | 'all'; label: string }[] = [
 
 const TAGS_RAPIDAS = ['vegetariano', 'sem lactose', 'sem glúten', 'rápido', 'económico']
 
-type EstadoFiltro = 'all' | 'por_verificar' | 'verificadas'
+type EstadoFiltro = 'all' | 'incompleta' | 'por_verificar' | 'verificadas'
 
 interface ReceitasGridProps {
   receitas: Receita[]
@@ -46,26 +46,44 @@ export function ReceitasGrid({ receitas, campo, campoId }: ReceitasGridProps) {
   const [tagFiltro, setTagFiltro] = useState<string | null>(null)
   const [estadoFiltro, setEstadoFiltro] = useState<EstadoFiltro>('all')
 
+  // Definição de estado de cada receita
+  function getEstado(r: Receita): 'incompleta' | 'por_verificar' | 'verificada' {
+    if (r.quantidades_verificadas ?? false) return 'verificada'
+    if (!r.instrucoes?.trim()) return 'incompleta'
+    return 'por_verificar'
+  }
+
   const receitasFiltradas = useMemo(() => {
     const q = pesquisa.toLowerCase()
     return receitas.filter((r) => {
       const matchPesquisa = !q || r.nome.toLowerCase().includes(q) || r.descricao?.toLowerCase().includes(q)
       const matchCat = categoriaFiltro === 'all' || r.categoria === categoriaFiltro
       const matchTag = !tagFiltro || r.tags?.includes(tagFiltro)
-      const verificada = r.quantidades_verificadas ?? false
+      const estado = getEstado(r)
       const matchEstado =
         estadoFiltro === 'all' ||
-        (estadoFiltro === 'por_verificar' && !verificada) ||
-        (estadoFiltro === 'verificadas' && verificada)
+        (estadoFiltro === 'incompleta' && estado === 'incompleta') ||
+        (estadoFiltro === 'por_verificar' && estado === 'por_verificar') ||
+        (estadoFiltro === 'verificadas' && estado === 'verificada')
       return matchPesquisa && matchCat && matchTag && matchEstado
     })
+  // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [receitas, pesquisa, categoriaFiltro, tagFiltro, estadoFiltro])
 
-  const porVerificar = receitasFiltradas.filter((r) => !(r.quantidades_verificadas ?? false))
-  const verificadasOficiais = receitasFiltradas.filter((r) => (r.quantidades_verificadas ?? false) && r.is_oficial)
-  const verificadasCustom = receitasFiltradas.filter((r) => (r.quantidades_verificadas ?? false) && !r.is_oficial)
+  const incompletas = receitasFiltradas.filter((r) => getEstado(r) === 'incompleta')
+  const porVerificar = receitasFiltradas.filter((r) => getEstado(r) === 'por_verificar')
+  const verificadas = receitasFiltradas.filter((r) => getEstado(r) === 'verificada')
 
-  const totalPorVerificar = receitas.filter((r) => !(r.quantidades_verificadas ?? false)).length
+  // Contagens para os chips de estado
+  const nIncompletas = receitas.filter((r) => getEstado(r) === 'incompleta').length
+  const nPorVerif = receitas.filter((r) => getEstado(r) === 'por_verificar').length
+
+  const ESTADOS: { value: EstadoFiltro; label: string }[] = [
+    { value: 'all', label: 'Todas' },
+    { value: 'incompleta', label: `Incompletas${nIncompletas > 0 ? ` (${nIncompletas})` : ''}` },
+    { value: 'por_verificar', label: `Por verificar${nPorVerif > 0 ? ` (${nPorVerif})` : ''}` },
+    { value: 'verificadas', label: 'Verificadas' },
+  ]
 
   return (
     <div className="p-4 space-y-4">
@@ -89,21 +107,21 @@ export function ReceitasGrid({ receitas, campo, campoId }: ReceitasGridProps) {
       </div>
 
       {/* Estado filter */}
-      <div className="flex gap-1.5">
-        {([
-          { value: 'all', label: 'Todas' },
-          { value: 'por_verificar', label: `Por verificar${totalPorVerificar > 0 ? ` (${totalPorVerificar})` : ''}` },
-          { value: 'verificadas', label: 'Verificadas' },
-        ] as { value: EstadoFiltro; label: string }[]).map((op) => (
+      <div className="flex gap-1.5 overflow-x-auto pb-1">
+        {ESTADOS.map((op) => (
           <button
             key={op.value}
             onClick={() => setEstadoFiltro(op.value)}
             className={cn(
               'shrink-0 px-3 py-1.5 rounded-full text-xs font-semibold border transition-colors',
               estadoFiltro === op.value
-                ? op.value === 'por_verificar'
-                  ? 'bg-amber-500 text-white border-amber-500'
-                  : 'bg-[#2D5016] text-white border-[#2D5016]'
+                ? op.value === 'incompleta'
+                  ? 'bg-gray-500 text-white border-gray-500'
+                  : op.value === 'por_verificar'
+                    ? 'bg-amber-500 text-white border-amber-500'
+                    : op.value === 'verificadas'
+                      ? 'bg-[#2D5016] text-white border-[#2D5016]'
+                      : 'bg-gray-700 text-white border-gray-700'
                 : 'bg-white border-gray-200 text-gray-600 hover:border-gray-300'
             )}
           >
@@ -153,11 +171,29 @@ export function ReceitasGrid({ receitas, campo, campoId }: ReceitasGridProps) {
         {receitasFiltradas.length} receita{receitasFiltradas.length !== 1 ? 's' : ''}
       </p>
 
-      {/* Por verificar — aparecem primeiro, com destaque */}
+      {/* ── Incompletas ── */}
+      {incompletas.length > 0 && (
+        <div>
+          <div className="flex items-center gap-2 mb-3">
+            <Pencil className="h-4 w-4 text-gray-400" />
+            <h2 className="text-sm font-bold text-gray-600">Incompletas</h2>
+            <span className="text-xs text-gray-500 bg-gray-100 border border-gray-200 rounded-full px-2 py-0.5">
+              {incompletas.length}
+            </span>
+          </div>
+          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
+            {incompletas.map((receita) => (
+              <ReceitaCard key={receita.id} receita={receita} campoId={campoId} estado="incompleta" />
+            ))}
+          </div>
+        </div>
+      )}
+
+      {/* ── Por verificar ── */}
       {porVerificar.length > 0 && (
         <div>
           <div className="flex items-center gap-2 mb-3">
-            <span className="text-amber-500 text-sm">⚠</span>
+            <AlertTriangle className="h-4 w-4 text-amber-500" />
             <h2 className="text-sm font-bold text-amber-700">Por verificar</h2>
             <span className="text-xs text-amber-600 bg-amber-50 border border-amber-200 rounded-full px-2 py-0.5">
               {porVerificar.length}
@@ -165,34 +201,22 @@ export function ReceitasGrid({ receitas, campo, campoId }: ReceitasGridProps) {
           </div>
           <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
             {porVerificar.map((receita) => (
-              <ReceitaCard key={receita.id} receita={receita} campoId={campoId} porVerificar />
+              <ReceitaCard key={receita.id} receita={receita} campoId={campoId} estado="por_verificar" />
             ))}
           </div>
         </div>
       )}
 
-      {/* Livrinho da Mamã — verificadas e oficiais */}
-      {verificadasOficiais.length > 0 && (
+      {/* ── Verificadas ── */}
+      {verificadas.length > 0 && (
         <div>
           <div className="flex items-center gap-2 mb-3">
-            <Star className="h-4 w-4 text-[#B85042]" fill="currentColor" />
-            <h2 className="text-sm font-bold text-[#36454F]">Livrinho da Mamã</h2>
+            <CheckCircle2 className="h-4 w-4 text-green-600" />
+            <h2 className="text-sm font-bold text-[#36454F]">Verificadas</h2>
           </div>
           <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
-            {verificadasOficiais.map((receita) => (
-              <ReceitaCard key={receita.id} receita={receita} campoId={campoId} />
-            ))}
-          </div>
-        </div>
-      )}
-
-      {/* Receitas personalizadas — verificadas e custom */}
-      {verificadasCustom.length > 0 && (
-        <div>
-          <h2 className="text-sm font-bold text-[#36454F] mb-3">Receitas personalizadas</h2>
-          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
-            {verificadasCustom.map((receita) => (
-              <ReceitaCard key={receita.id} receita={receita} campoId={campoId} />
+            {verificadas.map((receita) => (
+              <ReceitaCard key={receita.id} receita={receita} campoId={campoId} estado="verificada" />
             ))}
           </div>
         </div>
@@ -210,11 +234,11 @@ export function ReceitasGrid({ receitas, campo, campoId }: ReceitasGridProps) {
 function ReceitaCard({
   receita,
   campoId,
-  porVerificar,
+  estado,
 }: {
   receita: Receita
   campoId: string
-  porVerificar?: boolean
+  estado: 'incompleta' | 'por_verificar' | 'verificada'
 }) {
   const corCat = CATEGORIA_CORES[receita.categoria]
 
@@ -223,7 +247,8 @@ function ReceitaCard({
       <Card
         className={cn(
           'hover:shadow-md transition-shadow cursor-pointer group h-full',
-          porVerificar && 'border-amber-200 bg-amber-50/30'
+          estado === 'incompleta' && 'border-gray-300 bg-gray-50/50',
+          estado === 'por_verificar' && 'border-amber-200',
         )}
       >
         <CardHeader className="pb-2">
@@ -231,16 +256,16 @@ function ReceitaCard({
             <CardTitle className="text-sm leading-tight group-hover:text-[#B85042] transition-colors">
               {receita.nome}
             </CardTitle>
-            <div className="flex items-center gap-1 shrink-0">
-              {receita.is_oficial && (
-                <Star className="h-4 w-4 text-[#B85042]" fill="currentColor" />
-              )}
-              {porVerificar && (
-                <span className="text-[10px] text-amber-700 bg-amber-100 border border-amber-300 rounded px-1.5 py-0.5 font-medium">
-                  Por verificar
-                </span>
-              )}
-            </div>
+            {estado === 'incompleta' && (
+              <span className="shrink-0 text-[10px] text-gray-500 bg-gray-100 border border-gray-200 rounded px-1.5 py-0.5 font-medium whitespace-nowrap">
+                Incompleta
+              </span>
+            )}
+            {estado === 'por_verificar' && (
+              <span className="shrink-0 text-[10px] text-amber-700 bg-amber-50 border border-amber-200 rounded px-1.5 py-0.5 font-medium whitespace-nowrap">
+                Por verificar
+              </span>
+            )}
           </div>
         </CardHeader>
         <CardContent className="pt-0 space-y-2">

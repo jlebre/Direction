@@ -4,7 +4,7 @@ import { useState, useRef } from 'react'
 import { useRouter } from 'next/navigation'
 import { createClient } from '@/lib/supabase/client'
 import { toast } from 'sonner'
-import { Star, Pencil, Trash2, Plus, X, AlertTriangle, CheckCircle2, Search } from 'lucide-react'
+import { Pencil, Trash2, Plus, X, AlertTriangle, CheckCircle2, Search } from 'lucide-react'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
@@ -54,7 +54,6 @@ type IngResultado = { id: string; nome: string; unidade_base: string; tipo_produ
 
 export function ReceitaDetail({ receita, campo }: Props) {
   const [modo, setModo] = useState<'ver' | 'editar'>('ver')
-  const [showWarnOficial, setShowWarnOficial] = useState(false)
   const [showDelete, setShowDelete] = useState(false)
   const [saving, setSaving] = useState(false)
   const [deleting, setDeleting] = useState(false)
@@ -92,11 +91,6 @@ export function ReceitaDetail({ receita, campo }: Props) {
   const supabase = createClient()
   const campoId = campo.id
   const corCat = CATEGORIA_CORES[form.categoria]
-
-  function iniciarEditar() {
-    if (receita.is_oficial) { setShowWarnOficial(true); return }
-    setModo('editar')
-  }
 
   function handleCategoria(v: CategoriaReceita) {
     setForm((f) => ({
@@ -306,8 +300,7 @@ export function ReceitaDetail({ receita, campo }: Props) {
         )
         if (errI) throw errI
       }
-      toast.success('Nova versão criada!')
-      setShowWarnOficial(false)
+      toast.success('Versão criada!')
       router.push(`/campo/${campoId}/mamas/receitas/${novaReceita.id}`)
     } catch (e: unknown) {
       toast.error(e instanceof Error ? e.message : 'Erro ao criar versão')
@@ -326,18 +319,24 @@ export function ReceitaDetail({ receita, campo }: Props) {
         <div className="bg-amber-50 border border-amber-200 rounded-xl p-3 flex items-start gap-2.5">
           <AlertTriangle className="h-4 w-4 text-amber-500 shrink-0 mt-0.5" />
           <div className="flex-1 min-w-0">
-            <p className="text-xs font-semibold text-amber-800">Receita por verificar</p>
+            <p className="text-xs font-semibold text-amber-800">
+              {receita.instrucoes?.trim() ? 'Quantidades por verificar' : 'Receita incompleta'}
+            </p>
             <p className="text-xs text-amber-600 mt-0.5">
-              Revê os ingredientes e quantidades, corrige se necessário e marca como verificada.
+              {receita.instrucoes?.trim()
+                ? 'Revê os ingredientes e quantidades, corrige se necessário e marca como verificada.'
+                : 'Esta receita ainda não tem preparação. Edita para completar.'}
             </p>
           </div>
-          <button
-            onClick={() => marcarVerificada(true)}
-            disabled={markingVerif}
-            className="text-xs font-semibold text-amber-800 bg-white border border-amber-300 rounded-lg px-2.5 py-1.5 shrink-0 hover:bg-amber-50 disabled:opacity-50 transition-colors whitespace-nowrap"
-          >
-            {markingVerif ? '...' : '✓ Marcar verificada'}
-          </button>
+          {receita.instrucoes?.trim() && (
+            <button
+              onClick={() => marcarVerificada(true)}
+              disabled={markingVerif}
+              className="text-xs font-semibold text-amber-800 bg-white border border-amber-300 rounded-lg px-2.5 py-1.5 shrink-0 hover:bg-amber-50 disabled:opacity-50 transition-colors whitespace-nowrap"
+            >
+              {markingVerif ? '...' : '✓ Verificada'}
+            </button>
+          )}
         </div>
       )}
 
@@ -356,56 +355,23 @@ export function ReceitaDetail({ receita, campo }: Props) {
         </div>
       )}
 
-      {/* ── Aviso receita oficial ── */}
-      {showWarnOficial && (
-        <div className="bg-amber-50 border border-amber-200 rounded-xl p-4 space-y-3">
-          <div className="flex items-start gap-3">
-            <AlertTriangle className="h-5 w-5 text-amber-600 shrink-0 mt-0.5" />
-            <div>
-              <p className="font-semibold text-amber-900 text-sm">Esta é uma receita oficial</p>
-              <p className="text-amber-700 text-xs mt-0.5">
-                As receitas do Livrinho da Mamã não podem ser editadas diretamente. Podes criar uma versão personalizada para este campo.
-              </p>
-            </div>
-          </div>
-          <div className="flex gap-2">
-            <Button size="sm" onClick={criarNovaVersao} disabled={forking} className="bg-[#2D5016] hover:bg-[#2D5016]/90 text-white text-xs">
-              {forking ? 'A criar...' : '+ Criar versão para este campo'}
-            </Button>
-            <Button size="sm" variant="ghost" onClick={() => setShowWarnOficial(false)} className="text-xs">Fechar</Button>
-          </div>
-        </div>
-      )}
-
       {/* ── Confirmação apagar ── */}
       {showDelete && (
         <div className="bg-red-50 border border-red-200 rounded-xl p-4 space-y-3">
           <div className="flex items-start gap-3">
             <AlertTriangle className="h-5 w-5 text-red-600 shrink-0 mt-0.5" />
             <div>
-              {receita.is_oficial ? (
-                <>
-                  <p className="font-semibold text-red-900 text-sm">Estás a apagar uma receita base.</p>
-                  <p className="text-red-700 text-xs mt-1">
-                    Esta receita pode estar disponível para todos os campos e pode estar a ser usada por outras Mamãs.
-                    Apagar pode afetar planos de refeições, listas de compras e orçamentos.
-                  </p>
-                  <p className="text-red-700 text-xs font-semibold mt-1">Tens mesmo a certeza?</p>
-                </>
-              ) : (
-                <>
-                  <p className="font-semibold text-red-900 text-sm">Tens a certeza que queres apagar esta receita?</p>
-                  <p className="text-red-700 text-xs mt-1">
-                    Esta ação vai remover a receita do sistema.
-                    Se a receita estiver usada num plano de refeições, isso pode afetar esse plano.
-                  </p>
-                </>
-              )}
+              <p className="font-semibold text-red-900 text-sm">Tens a certeza que queres apagar esta receita?</p>
+              <p className="text-red-700 text-xs mt-1">
+                {receita.is_oficial
+                  ? 'Esta receita pode estar a ser usada em planos de outros campos. Apagar afeta todos os planos que a referenciam.'
+                  : 'Se esta receita estiver usada em planos antigos, esses planos podem ficar sem referência.'}
+              </p>
             </div>
           </div>
           <div className="flex gap-2">
             <Button size="sm" onClick={handleDelete} disabled={deleting} className="bg-red-600 hover:bg-red-700 text-white text-xs">
-              {deleting ? 'A apagar...' : (receita.is_oficial ? 'Apagar receita base' : 'Apagar receita')}
+              {deleting ? 'A apagar...' : 'Apagar receita'}
             </Button>
             <Button size="sm" variant="ghost" onClick={() => setShowDelete(false)} className="text-xs">Cancelar</Button>
           </div>
@@ -418,12 +384,6 @@ export function ReceitaDetail({ receita, campo }: Props) {
           {modo === 'ver' && (
             <Badge className={cn('border', corCat)}>{CATEGORIA_LABELS[form.categoria]}</Badge>
           )}
-          {receita.is_oficial && (
-            <Badge className="bg-amber-50 text-amber-800 border-amber-300 gap-1">
-              <Star className="h-3 w-3" fill="currentColor" />
-              Livrinho da Mamã
-            </Badge>
-          )}
           {modo === 'ver' && form.tags && form.tags.split(',').map((t) => t.trim()).filter(Boolean).map((tag) => (
             <span key={tag} className="text-xs bg-gray-100 text-gray-500 rounded-full px-2 py-0.5">#{tag}</span>
           ))}
@@ -431,14 +391,14 @@ export function ReceitaDetail({ receita, campo }: Props) {
         {modo === 'ver' && (
           <div className="flex flex-col items-end gap-1 shrink-0">
             <button
-              onClick={iniciarEditar}
+              onClick={() => setModo('editar')}
               className="flex items-center gap-1.5 text-xs font-medium text-[#2D5016] bg-[#2D5016]/10 hover:bg-[#2D5016]/20 rounded-lg px-3 py-1.5 transition-colors"
             >
               <Pencil className="h-3.5 w-3.5" />
               Editar
             </button>
             <button
-              onClick={() => { setShowDelete(true); setShowWarnOficial(false) }}
+              onClick={() => setShowDelete(true)}
               className="flex items-center gap-1.5 text-xs font-medium text-[#B85042] bg-[#B85042]/10 hover:bg-[#B85042]/20 rounded-lg px-3 py-1.5 transition-colors"
             >
               <Trash2 className="h-3.5 w-3.5" />
@@ -469,12 +429,13 @@ export function ReceitaDetail({ receita, campo }: Props) {
                 }))}
                 seccao={(campo.seccao ?? 'aranhicos') as SeccaoTipo}
                 totalPessoas={totalPessoas}
+                naoVerificada={!verificada}
               />
             </div>
           )}
           {receita.instrucoes && (
             <div>
-              <h2 className="font-bold text-[#36454F] mb-2">Instruções</h2>
+              <h2 className="font-bold text-[#36454F] mb-2">Preparação</h2>
               <p className="text-sm text-gray-600 whitespace-pre-wrap leading-relaxed">{receita.instrucoes}</p>
             </div>
           )}
@@ -490,6 +451,23 @@ export function ReceitaDetail({ receita, campo }: Props) {
       {/* ── Modo editar ── */}
       {modo === 'editar' && (
         <div className="space-y-4">
+          {/* Nota discreta se for receita base */}
+          {receita.is_oficial && (
+            <div className="bg-sky-50 border border-sky-200 rounded-xl p-3 space-y-1.5">
+              <p className="text-xs text-sky-700">
+                Esta é uma receita base. As alterações ficam guardadas diretamente nesta receita.
+              </p>
+              <button
+                type="button"
+                onClick={criarNovaVersao}
+                disabled={forking}
+                className="text-xs font-medium text-sky-700 underline hover:text-sky-900 disabled:opacity-50"
+              >
+                {forking ? 'A criar...' : 'Preferir criar uma versão separada para este campo'}
+              </button>
+            </div>
+          )}
+
           <div className="space-y-1">
             <Label>Nome *</Label>
             <Input value={form.nome} onChange={(e) => setForm((f) => ({ ...f, nome: e.target.value }))} />
@@ -510,7 +488,7 @@ export function ReceitaDetail({ receita, campo }: Props) {
             <Input value={form.descricao} onChange={(e) => setForm((f) => ({ ...f, descricao: e.target.value }))} />
           </div>
           <div className="space-y-1">
-            <Label>Instruções</Label>
+            <Label>Preparação</Label>
             <Textarea rows={5} value={form.instrucoes} onChange={(e) => setForm((f) => ({ ...f, instrucoes: e.target.value }))} />
           </div>
           <div className="space-y-1">
@@ -712,31 +690,42 @@ export function ReceitaDetail({ receita, campo }: Props) {
             </div>
           </div>
 
-          {/* Botões guardar/cancelar */}
-          <div className="flex gap-2 pt-2">
-            <Button
-              onClick={guardar}
-              disabled={saving || !form.nome.trim()}
-              className="flex-1 bg-[#2D5016] hover:bg-[#2D5016]/90"
-            >
-              {saving ? 'A guardar...' : 'Guardar alterações'}
-            </Button>
-            <button
-              onClick={() => {
-                setModo('ver')
-                setForm({
-                  nome: receita.nome,
-                  categoria: receita.categoria,
-                  descricao: receita.descricao ?? '',
-                  instrucoes: receita.instrucoes ?? '',
-                  dicas_campo: receita.dicas_campo ?? '',
-                  tags: receita.tags?.join(', ') ?? '',
-                })
-              }}
-              className="px-4 py-2 text-sm text-gray-500 hover:text-gray-700 border border-gray-200 rounded-lg transition-colors"
-            >
-              <X className="h-4 w-4" />
-            </button>
+          {/* Guardar + Marcar verificada */}
+          <div className="space-y-2 pt-2">
+            <div className="flex gap-2">
+              <Button
+                onClick={guardar}
+                disabled={saving || !form.nome.trim()}
+                className="flex-1 bg-[#2D5016] hover:bg-[#2D5016]/90"
+              >
+                {saving ? 'A guardar...' : 'Guardar alterações'}
+              </Button>
+              <button
+                onClick={() => {
+                  setModo('ver')
+                  setForm({
+                    nome: receita.nome,
+                    categoria: receita.categoria,
+                    descricao: receita.descricao ?? '',
+                    instrucoes: receita.instrucoes ?? '',
+                    dicas_campo: receita.dicas_campo ?? '',
+                    tags: receita.tags?.join(', ') ?? '',
+                  })
+                }}
+                className="px-4 py-2 text-sm text-gray-500 hover:text-gray-700 border border-gray-200 rounded-lg transition-colors"
+              >
+                <X className="h-4 w-4" />
+              </button>
+            </div>
+            {!verificada && (
+              <button
+                onClick={() => marcarVerificada(true)}
+                disabled={markingVerif}
+                className="w-full text-xs font-medium text-green-700 border border-green-200 bg-green-50 hover:bg-green-100 rounded-lg py-2 transition-colors disabled:opacity-50"
+              >
+                {markingVerif ? 'A marcar...' : '✓ Guardar e marcar como verificada'}
+              </button>
+            )}
           </div>
         </div>
       )}
