@@ -3,12 +3,13 @@
 import { useState } from 'react'
 import { useRouter } from 'next/navigation'
 import { supabase } from '@/lib/supabase/client'
-import type { Campo } from '@/types/shared'
+import type { CampoPublico } from '@/types/shared'
+import { validatePin } from '@/actions/validatePin'
 import type { Despesa } from '@/types/adjuntos'
 import PinDialog from '@/components/shared/PinDialog'
 import Toast from '@/components/shared/Toast'
 
-export default function DespesaActions({ despesa, campo }: { despesa: Despesa; campo: Campo }) {
+export default function DespesaActions({ despesa, campo, hasPin }: { despesa: Despesa; campo: CampoPublico; hasPin: boolean }) {
   const router = useRouter()
   const [showConfirm, setShowConfirm] = useState(false)
   const [showPin, setShowPin] = useState(false)
@@ -17,12 +18,13 @@ export default function DespesaActions({ despesa, campo }: { despesa: Despesa; c
   const [toast, setToast] = useState<string | null>(null)
 
   function handleDeleteClick() {
-    if (campo.pin) setShowPin(true)
+    if (hasPin) setShowPin(true)
     else setShowConfirm(true)
   }
 
-  function handlePinConfirm(pin: string) {
-    if (pin === campo.pin) { setShowPin(false); setPinError(false); setShowConfirm(true) }
+  async function handlePinConfirm(pin: string) {
+    const valid = await validatePin(campo.id, pin)
+    if (valid) { setShowPin(false); setPinError(false); setShowConfirm(true) }
     else { setPinError(true); setTimeout(() => setPinError(false), 1200) }
   }
 

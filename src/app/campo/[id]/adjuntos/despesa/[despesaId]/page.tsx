@@ -1,7 +1,7 @@
 import { createClient } from '@/lib/supabase/server'
 import { notFound } from 'next/navigation'
 import Link from 'next/link'
-import type { Campo } from '@/types/shared'
+import type { CampoPublico } from '@/types/shared'
 import type { Despesa, DespesaLinha } from '@/types/adjuntos'
 import { getCodeColor } from '@/lib/adjuntos/codes'
 import { getPhotoUrl } from '@/lib/adjuntos/supabase-storage'
@@ -20,7 +20,7 @@ export default async function DespesaDetailPage({
 
   const [{ data: campo }, { data: despesa }, { data: linhas }] = await Promise.all([
     supabase.from('campos').select('*').eq('id', id).single(),
-    supabase.from('despesas').select('*').eq('id', despesaId).single(),
+    supabase.from('despesas').select('*').eq('id', despesaId).eq('campo_id', id).single(),
     supabase
       .from('despesa_linhas')
       .select('*')
@@ -31,7 +31,8 @@ export default async function DespesaDetailPage({
 
   if (!campo || !despesa) notFound()
 
-  const c = campo as Campo
+  const { pin, ...campoPublico } = campo
+  const c = campoPublico as CampoPublico
   const d = despesa as Despesa
   const dl = (linhas ?? []) as DespesaLinha[]
   const codeColor = getCodeColor(d.codigo)
@@ -146,7 +147,7 @@ export default async function DespesaDetailPage({
         >
           Editar Despesa
         </Link>
-        <DespesaActions despesa={d} campo={c} />
+        <DespesaActions despesa={d} campo={c} hasPin={!!pin} />
       </div>
     </main>
   )

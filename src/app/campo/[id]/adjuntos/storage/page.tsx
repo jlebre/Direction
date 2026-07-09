@@ -1,6 +1,6 @@
 import { createClient } from '@/lib/supabase/server'
 import { notFound } from 'next/navigation'
-import type { Campo } from '@/types/shared'
+import type { CampoPublico } from '@/types/shared'
 import StorageClient from './StorageClient'
 import type { MatchItem, OrphanItem, MissingItem } from './types'
 
@@ -39,7 +39,8 @@ export default async function StoragePage({
 
   if (!campo) notFound()
 
-  const c = campo as Campo
+  const { pin, ...campoPublico } = campo
+  const c = campoPublico as CampoPublico
   const slug = campoSlug(c.nome)
 
   // Listar ficheiros no bucket para este campo
@@ -103,6 +104,7 @@ export default async function StoragePage({
   return (
     <StorageClient
       campo={c}
+      hasPin={!!pin}
       matches={matches}
       orphans={orphans}
       missing={missing}

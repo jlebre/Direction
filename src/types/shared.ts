@@ -32,6 +32,9 @@ export interface Campo {
   periodo?: number
 }
 
+/** Campo sem o campo pin — tipo seguro para passar a componentes client */
+export type CampoPublico = Omit<Campo, 'pin'>
+
 export const SECCAO_LABELS: Record<SeccaoTipo, string> = {
   mosquitos: 'Mosquitos',
   aranhicos: 'Aranhiços',

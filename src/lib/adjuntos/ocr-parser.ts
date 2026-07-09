@@ -434,12 +434,19 @@ export function parsearFatura(textoBruto: string): OcrResultado {
     }
   }
 
-  // Remove duplicados por nome_produto_bruto
+  // Remove duplicados apenas quando o texto original E o preço total são exatamente iguais
+  // (duplicado real de OCR). Produtos iguais com preços ou quantidades diferentes são mantidos.
   const semDuplicados = linhasParsed.filter(
-    (l, i, arr) => arr.findIndex(x => x.nome_produto_bruto === l.nome_produto_bruto) === i
+    (l, i, arr) => arr.findIndex(
+      x => x.texto_linha_original === l.texto_linha_original &&
+           x.preco_total === l.preco_total
+    ) === i
   )
   const especiaisSemDup = linhasEspeciais.filter(
-    (l, i, arr) => arr.findIndex(x => x.nome_produto_bruto === l.nome_produto_bruto) === i
+    (l, i, arr) => arr.findIndex(
+      x => x.texto_linha_original === l.texto_linha_original &&
+           x.preco_total === l.preco_total
+    ) === i
   )
 
   return {

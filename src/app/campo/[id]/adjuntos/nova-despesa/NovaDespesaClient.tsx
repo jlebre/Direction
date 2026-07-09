@@ -5,7 +5,8 @@ import { useRouter } from 'next/navigation'
 import { supabase } from '@/lib/supabase/client'
 import { compressImage } from '@/lib/adjuntos/image-utils'
 import { getCampoSlug, getPhotoFilename } from '@/lib/adjuntos/supabase-storage'
-import type { Campo } from '@/types/shared'
+import type { CampoPublico } from '@/types/shared'
+import { validatePin } from '@/actions/validatePin'
 import PhotoCapture from '@/components/adjuntos/PhotoCapture'
 import CodeSelector from '@/components/adjuntos/CodeSelector'
 import PinDialog from '@/components/shared/PinDialog'
@@ -38,7 +39,7 @@ function today() {
   return new Date().toISOString().split('T')[0]
 }
 
-export default function NovaDespesaClient({ campo }: { campo: Campo }) {
+export default function NovaDespesaClient({ campo, hasPin }: { campo: CampoPublico; hasPin: boolean }) {
   const router = useRouter()
   const [step, setStep] = useState<Step>(1)
   const [form, setForm] = useState<FormState>({
@@ -48,9 +49,9 @@ export default function NovaDespesaClient({ campo }: { campo: Campo }) {
   })
   const [submitting, setSubmitting] = useState(false)
   const [toast, setToast] = useState<{ msg: string; type: 'success' | 'error' } | null>(null)
-  const [showPin, setShowPin] = useState(!!campo.pin)
+  const [showPin, setShowPin] = useState(hasPin)
   const [pinError, setPinError] = useState(false)
-  const [pinUnlocked, setPinUnlocked] = useState(!campo.pin)
+  const [pinUnlocked, setPinUnlocked] = useState(!hasPin)
   const [linhasOcrEditadas, setLinhasOcrEditadas] = useState<LinhaParsed[] | null>(null)
   // QR Code
   const [mostrarQrScanner, setMostrarQrScanner] = useState(false)
@@ -59,8 +60,9 @@ export default function NovaDespesaClient({ campo }: { campo: Campo }) {
 
   const ocr = useOcr()
 
-  function handlePinConfirm(pin: string) {
-    if (pin === campo.pin) { setPinUnlocked(true); setShowPin(false); setPinError(false) }
+  async function handlePinConfirm(pin: string) {
+    const valid = await validatePin(campo.id, pin)
+    if (valid) { setPinUnlocked(true); setShowPin(false); setPinError(false) }
     else { setPinError(true); setTimeout(() => setPinError(false), 1200) }
   }
 
@@ -127,14 +129,16 @@ export default function NovaDespesaClient({ campo }: { campo: Campo }) {
   async function handleSubmit() {
     setSubmitting(true)
     try {
-      const { data: lastDespesa } = await supabase
-        .from('despesas').select('numero_recibo').eq('campo_id', campo.id)
-        .order('numero_recibo', { ascending: false }).limit(1).single()
-      const numeroRecibo = (lastDespesa?.numero_recibo ?? 0) + 1
-
+      // Fazer upload da foto antes do loop de retry
       let fotoPath: string | null = null
       if (form.photoFile) {
-        const filename = getPhotoFilename(campo.nome, numeroRecibo)
+        // Número provisório para o filename (pode ficar ligeiramente errado se houver race condition,
+        // mas o foto_path no DB aponta sempre para o ficheiro real, que existe)
+        const { data: lastForPhoto } = await supabase
+          .from('despesas').select('numero_recibo').eq('campo_id', campo.id)
+          .order('numero_recibo', { ascending: false }).limit(1).single()
+        const provNum = (lastForPhoto?.numero_recibo ?? 0) + 1
+        const filename = getPhotoFilename(campo.nome, provNum)
         const slug = getCampoSlug(campo.nome)
         const path = `${slug}/${filename}`
         const compressed = await compressImage(form.photoFile)
@@ -145,30 +149,44 @@ export default function NovaDespesaClient({ campo }: { campo: Campo }) {
 
       const ocrStatus = ocr.resultado ? 'processado' : (ocr.status === 'error' ? 'falhou' : 'nenhum')
 
-      const { data: novaDespesa, error: insertError } = await supabase.from('despesas').insert({
-        campo_id: campo.id, numero_recibo: numeroRecibo, data: form.data,
-        valor: parseFloat(form.valor), descricao: form.descricao.trim() || null,
-        codigo: form.codigo!, codigo_descricao: form.codigoDescricao!,
-        tipo: 'despesa', nif_confirmado: form.nifConfirmado, foto_path: fotoPath,
-        ocr_status: ocrStatus,
-        ocr_texto: ocr.resultado?.texto_bruto ?? null,
-        ocr_fornecedor: ocr.resultado?.fornecedor ?? null,
-        ocr_total: ocr.resultado?.total_detectado ?? null,
-        ocr_data: ocr.resultado?.data_detectada ?? null,
-        // QR Code + origem (migration 013)
-        origem_dados: origemDados,
-        nif_visivel: form.nifVisivel,
-        qr_raw: qrParsed?.qr_raw ?? null,
-        qr_total: qrParsed?.qr_total ?? null,
-        qr_data: qrParsed?.qr_data ?? null,
-        qr_nif_emitente: qrParsed?.qr_nif_emitente ?? null,
-        qr_nif_adquirente: qrParsed?.qr_nif_adquirente ?? null,
-        qr_numero_documento: qrParsed?.qr_numero_documento ?? null,
-        qr_atcud: qrParsed?.qr_atcud ?? null,
-        qr_tipo_documento: qrParsed?.qr_tipo_documento ?? null,
-      }).select('id').single()
+      // Retry loop — em caso de conflito de numero_recibo (único por campo), tenta 3 vezes
+      let novaDespesa: { id: string } | null = null
+      let numeroRecibo = 0
+      for (let attempt = 0; attempt < 3; attempt++) {
+        const { data: lastDespesa } = await supabase
+          .from('despesas').select('numero_recibo').eq('campo_id', campo.id)
+          .order('numero_recibo', { ascending: false }).limit(1).single()
+        numeroRecibo = (lastDespesa?.numero_recibo ?? 0) + 1
 
-      if (insertError) throw insertError
+        const { data, error: insertError } = await supabase.from('despesas').insert({
+          campo_id: campo.id, numero_recibo: numeroRecibo, data: form.data,
+          valor: parseFloat(form.valor), descricao: form.descricao.trim() || null,
+          codigo: form.codigo!, codigo_descricao: form.codigoDescricao!,
+          tipo: 'despesa', nif_confirmado: form.nifConfirmado, foto_path: fotoPath,
+          ocr_status: ocrStatus,
+          ocr_texto: ocr.resultado?.texto_bruto ?? null,
+          ocr_fornecedor: ocr.resultado?.fornecedor ?? null,
+          ocr_total: ocr.resultado?.total_detectado ?? null,
+          ocr_data: ocr.resultado?.data_detectada ?? null,
+          origem_dados: origemDados,
+          nif_visivel: form.nifVisivel,
+          qr_raw: qrParsed?.qr_raw ?? null,
+          qr_total: qrParsed?.qr_total ?? null,
+          qr_data: qrParsed?.qr_data ?? null,
+          qr_nif_emitente: qrParsed?.qr_nif_emitente ?? null,
+          qr_nif_adquirente: qrParsed?.qr_nif_adquirente ?? null,
+          qr_numero_documento: qrParsed?.qr_numero_documento ?? null,
+          qr_atcud: qrParsed?.qr_atcud ?? null,
+          qr_tipo_documento: qrParsed?.qr_tipo_documento ?? null,
+        }).select('id').single()
+
+        if (!insertError) { novaDespesa = data; break }
+        // Código 23505 = unique_violation — aguarda e retenta com número actualizado
+        if (insertError.code !== '23505' || attempt === 2) throw insertError
+        await new Promise((r) => setTimeout(r, 100 * (attempt + 1)))
+      }
+
+      if (!novaDespesa) throw new Error('Falha ao obter ID da despesa')
 
       const linhasParaGuardar = linhasOcrEditadas ?? ocr.resultado?.linhas ?? []
       if (novaDespesa?.id && linhasParaGuardar.length > 0) {

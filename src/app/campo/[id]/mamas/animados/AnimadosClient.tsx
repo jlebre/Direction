@@ -14,7 +14,7 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from '
 import { Badge } from '@/components/ui/badge'
 import type { Animado } from '@/types/mamas'
 import { SECCAO_LABELS } from '@/types/shared'
-import * as XLSX from 'xlsx'
+// xlsx é importado dinamicamente em handleExcelFile para não entrar no bundle inicial
 
 interface AnimadoComContagens extends Omit<Animado, 'restricoes' | 'medicacoes' | 'contactos'> {
   restricoes?: { id: string; tipo: string }[]
@@ -47,8 +47,9 @@ export default function AnimadosClient({
     const file = e.target.files?.[0]
     if (!file) return
     const reader = new FileReader()
-    reader.onload = (ev) => {
+    reader.onload = async (ev) => {
       try {
+        const XLSX = await import('xlsx')
         const data = new Uint8Array(ev.target?.result as ArrayBuffer)
         const wb = XLSX.read(data, { type: 'array' })
         const sheet = wb.Sheets[wb.SheetNames[0]]

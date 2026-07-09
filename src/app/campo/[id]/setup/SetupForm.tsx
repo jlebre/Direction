@@ -8,7 +8,8 @@ import { toast } from 'sonner'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
-import type { Campo } from '@/types/shared'
+import type { CampoPublico } from '@/types/shared'
+import { validatePin } from '@/actions/validatePin'
 import Link from 'next/link'
 
 interface DryRunResult {
@@ -17,7 +18,7 @@ interface DryRunResult {
   fotoPaths: string[]
 }
 
-export default function SetupForm({ campo }: { campo: Campo }) {
+export default function SetupForm({ campo, hasPin }: { campo: CampoPublico; hasPin: boolean }) {
   const router = useRouter()
   const supabase = createClient()
 
@@ -29,7 +30,8 @@ export default function SetupForm({ campo }: { campo: Campo }) {
     num_animados: campo.num_animados ?? 0,
     num_animadores: campo.num_animadores ?? 0,
     saldo_inicial: campo.saldo_inicial ?? 0,
-    pin: campo.pin ?? '',
+    pin: '',         // nunca pré-preenchido — o pin não é enviado ao cliente
+    pinEditing: false, // true quando o utilizador tocou no campo
   })
   const [saving, setSaving] = useState(false)
 
@@ -42,9 +44,9 @@ export default function SetupForm({ campo }: { campo: Campo }) {
   const [deleting, setDeleting] = useState(false)
 
   const CONFIRMACAO_TEXTO = 'LIMPAR FATURAS'
+  // PIN validado async em handleLimparFaturas; aqui só checamos texto e dry-run
   const dangerReady =
     dangerConfirm === CONFIRMACAO_TEXTO &&
-    (!campo.pin || dangerPin === campo.pin) &&
     dryRun !== null
 
   function upd(key: string, value: unknown) {
@@ -76,6 +78,10 @@ export default function SetupForm({ campo }: { campo: Campo }) {
 
   async function handleLimparFaturas() {
     if (!dangerReady || !dryRun) return
+    if (hasPin) {
+      const valid = await validatePin(campo.id, dangerPin)
+      if (!valid) { toast.error('PIN incorreto'); return }
+    }
     setDeleting(true)
     try {
       // 1. Apagar despesas (CASCADE elimina regularizacoes_nif associadas automaticamente)
@@ -123,7 +129,8 @@ export default function SetupForm({ campo }: { campo: Campo }) {
           num_animados: Number(form.num_animados) || 0,
           num_animadores: Number(form.num_animadores) || 0,
           saldo_inicial: Number(form.saldo_inicial) || 0,
-          pin: form.pin.trim() || null,
+          // Só atualiza PIN se o utilizador tocou no campo — nunca sobrescreve silenciosamente
+          ...(form.pinEditing ? { pin: form.pin.trim() || null } : {}),
           setup_completo: true,
         })
         .eq('id', campo.id)
@@ -255,9 +262,9 @@ export default function SetupForm({ campo }: { campo: Campo }) {
               type="password"
               inputMode="numeric"
               maxLength={4}
-              placeholder="• • • •"
+              placeholder={hasPin ? '(mantém atual)' : '• • • •'}
               value={form.pin}
-              onChange={(e) => upd('pin', e.target.value.replace(/\D/g, ''))}
+              onChange={(e) => { upd('pin', e.target.value.replace(/\D/g, '')); upd('pinEditing', true) }}
               className="max-w-32"
             />
           </div>
@@ -332,7 +339,7 @@ export default function SetupForm({ campo }: { campo: Campo }) {
 
                 {/* Confirmação */}
                 <div className="space-y-3">
-                  {campo.pin && (
+                  {hasPin && (
                     <div className="space-y-1">
                       <Label className="text-xs text-red-700">PIN do campo</Label>
                       <Input

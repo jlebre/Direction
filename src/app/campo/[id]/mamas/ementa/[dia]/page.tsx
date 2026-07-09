@@ -21,7 +21,7 @@ export default async function EmentaDiaPage({
   const dia = parseInt(diaStr)
   const supabase = createClient()
 
-  const [{ data: campo }, { data: slots }, { data: animados }] = await Promise.all([
+  const [{ data: campo }, { data: slots }, { data: animados }, { data: restricoesCampo }] = await Promise.all([
     supabase.from('campos').select('*').eq('id', id).single(),
     supabase
       .from('ementa')
@@ -33,6 +33,12 @@ export default async function EmentaDiaPage({
       .from('animados')
       .select('id, nome, restricoes:restricoes_alimentares(*)')
       .eq('campo_id', id),
+    // Restricoes criadas diretamente por campo (após migration 014, sem animado_id)
+    supabase
+      .from('restricoes_alimentares')
+      .select('*')
+      .eq('campo_id', id)
+      .is('animado_id', null),
   ])
 
   if (!campo) notFound()
@@ -42,28 +48,38 @@ export default async function EmentaDiaPage({
   const diasValidos = [-2, -1, ...Array.from({ length: numDias }, (_, i) => i + 1)]
   if (!diasValidos.includes(dia)) notFound()
 
-  const restricoes: RestricaoAlimentar[] = (animados ?? []).flatMap(
+  // Unir restricoes via animado + restricoes directas por campo
+  const restricoesViaAnimado: RestricaoAlimentar[] = (animados ?? []).flatMap(
     (a: { restricoes?: RestricaoAlimentar[] }) => a.restricoes ?? []
   )
+  const restricoes: RestricaoAlimentar[] = [
+    ...restricoesViaAnimado,
+    ...((restricoesCampo ?? []) as RestricaoAlimentar[]),
+  ]
 
   function getSlots(refeicao: string): EmentaItem[] {
     return (slots ?? []).filter((s: EmentaItem) => s.refeicao === refeicao) as EmentaItem[]
   }
 
-  function getAlertas(slot: EmentaItem): { animadoNome: string; descricao: string }[] {
+  function getAlertas(slot: EmentaItem): { criancaNome: string; descricao: string; gravidade?: string | null }[] {
     if (!slot?.receita) return []
-    const alertas: { animadoNome: string; descricao: string }[] = []
+    const alertas: { criancaNome: string; descricao: string; gravidade?: string | null }[] = []
     const ingredientesReceita: string[] = (slot.receita as unknown as {
       receita_ingredientes?: { ingrediente?: { nome: string } }[]
     })?.receita_ingredientes?.map((ri) => ri.ingrediente?.nome?.toLowerCase() ?? '') ?? []
+
+    if (ingredientesReceita.length === 0) return []
 
     restricoes.forEach((r) => {
       const proibidos = r.ingredientes_proibidos ?? []
       if (proibidos.length === 0) return
       const match = proibidos.some((p) => ingredientesReceita.some((i) => i.includes(p.toLowerCase())))
       if (match) {
-        const animadoNome = animados?.find((a: { id: string; nome: string }) => a.id === r.animado_id)?.nome ?? 'Animado'
-        alertas.push({ animadoNome, descricao: r.descricao })
+        const criancaNome =
+          r.crianca_nome ??
+          animados?.find((a: { id: string; nome: string }) => a.id === r.animado_id)?.nome ??
+          'Criança'
+        alertas.push({ criancaNome, descricao: r.descricao, gravidade: r.gravidade })
       }
     })
     return alertas
@@ -127,9 +143,21 @@ export default async function EmentaDiaPage({
                   {allAlertas.length > 0 && (
                     <div className="mt-2 space-y-1 border-t border-[#E7E8D1] pt-2">
                       {allAlertas.map((a, i) => (
-                        <div key={i} className="flex items-start gap-1.5 text-red-600 bg-red-50 rounded-lg px-2 py-1">
+                        <div
+                          key={i}
+                          className={`flex items-start gap-1.5 rounded-lg px-2 py-1 ${
+                            a.gravidade === 'grave'
+                              ? 'text-red-700 bg-red-50'
+                              : a.gravidade === 'media'
+                              ? 'text-orange-700 bg-orange-50'
+                              : 'text-amber-700 bg-amber-50'
+                          }`}
+                        >
                           <AlertTriangle className="h-3.5 w-3.5 shrink-0 mt-0.5" />
-                          <span className="text-xs"><strong>{a.animadoNome}</strong>: {a.descricao}</span>
+                          <span className="text-xs">
+                            <strong>{a.criancaNome}</strong>: {a.descricao}
+                            {a.gravidade === 'grave' && <span className="ml-1 font-bold">(grave)</span>}
+                          </span>
                         </div>
                       ))}
                     </div>

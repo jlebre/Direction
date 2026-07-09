@@ -81,19 +81,38 @@ export function ListaComprasView({ campo, listas, campoId, gerarDia, gerarRefeic
   useEffect(() => {
     if (!listaDespensa?.id) return
     const channel = supabase
-      .channel('lista-realtime')
+      .channel(`lista-realtime-${campoId}`)
       .on(
         'postgres_changes',
-        { event: 'UPDATE', schema: 'public', table: 'lista_compras_items' },
+        { event: '*', schema: 'public', table: 'lista_compras_items' },
         (payload) => {
-          setListasState((prev) =>
-            prev.map((lista) => ({
-              ...lista,
-              items: lista.items?.map((item) =>
-                item.id === payload.new.id ? { ...item, ...payload.new } : item
-              ),
-            }))
-          )
+          if (payload.eventType === 'INSERT') {
+            const newItem = payload.new as ListaComprasItem
+            setListasState((prev) =>
+              prev.map((lista) =>
+                lista.id === newItem.lista_id
+                  ? { ...lista, items: [...(lista.items ?? []), newItem] }
+                  : lista
+              )
+            )
+          } else if (payload.eventType === 'UPDATE') {
+            setListasState((prev) =>
+              prev.map((lista) => ({
+                ...lista,
+                items: lista.items?.map((item) =>
+                  item.id === payload.new.id ? { ...item, ...payload.new } : item
+                ),
+              }))
+            )
+          } else if (payload.eventType === 'DELETE') {
+            const deletedId = (payload.old as { id: string }).id
+            setListasState((prev) =>
+              prev.map((lista) => ({
+                ...lista,
+                items: lista.items?.filter((item) => item.id !== deletedId),
+              }))
+            )
+          }
         }
       )
       .subscribe()

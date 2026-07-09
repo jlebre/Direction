@@ -3,7 +3,7 @@ import { notFound, redirect } from 'next/navigation'
 import Link from 'next/link'
 import type { Campo } from '@/types/shared'
 import { ESCALAO_COR } from '@/types/shared'
-import type { Despesa, RegularizacaoNif } from '@/types/adjuntos'
+import type { Despesa, RegularizacaoNif, Devolucao } from '@/types/adjuntos'
 import DespesaItem from '@/components/adjuntos/DespesaItem'
 import BudgetBar from '@/components/adjuntos/BudgetBar'
 import BolsaNIF from '@/components/adjuntos/BolsaNIF'
@@ -15,10 +15,11 @@ export default async function AdjuntosDashboard({ params }: { params: Promise<{ 
   const { id } = await params
   const supabase = createClient()
 
-  const [{ data: campo }, { data: despesas }, { data: regularizacoes }] = await Promise.all([
+  const [{ data: campo }, { data: despesas }, { data: regularizacoes }, { data: devolucoes }] = await Promise.all([
     supabase.from('campos').select('*').eq('id', id).single(),
     supabase.from('despesas').select('*').eq('campo_id', id).order('numero_recibo', { ascending: false }),
     supabase.from('regularizacoes_nif').select('*').eq('campo_id', id),
+    supabase.from('devolucoes').select('*').eq('campo_id', id).order('numero_devolucao', { ascending: false }),
   ])
 
   if (!campo) notFound()
@@ -28,18 +29,27 @@ export default async function AdjuntosDashboard({ params }: { params: Promise<{ 
   const cor = ESCALAO_COR[c.escalao] ?? { bg: '#B85042', text: '#5c1f15', light: '#FDECEA', border: '#F4A090' }
   const ds = (despesas ?? []) as Despesa[]
   const regs = (regularizacoes ?? []) as RegularizacaoNif[]
+  const devs = (devolucoes ?? []) as Devolucao[]
 
   // Faturas de regularização não contam para o saldo (são documentos NIF, não novos custos)
   const dsFinanceiras = ds.filter((d) => !d.is_regularizacao_nif)
 
   const totalDespesas = dsFinanceiras.filter((d) => d.tipo === 'despesa').reduce((s, d) => s + Number(d.valor), 0)
   const totalReceitas = dsFinanceiras.filter((d) => d.tipo === 'receita').reduce((s, d) => s + Number(d.valor), 0)
-  const saldoDisponivel = c.saldo_inicial + totalReceitas - totalDespesas
+  const totalDevolucoes = devs.reduce((s, d) => s + Number(d.valor), 0)
+  // Devoluções abatidas às despesas para saldo líquido
+  const saldoDisponivel = c.saldo_inicial + totalReceitas - totalDespesas + totalDevolucoes
   const pctGasto = c.saldo_inicial > 0 ? Math.min((totalDespesas / c.saldo_inicial) * 100, 100) : 0
 
   const porCodigo: Record<string, number> = {}
   for (const d of dsFinanceiras.filter((d) => d.tipo === 'despesa')) {
     porCodigo[d.codigo] = (porCodigo[d.codigo] ?? 0) + Number(d.valor)
+  }
+  // Abater devoluções com código ao gasto por categoria (gasto líquido)
+  for (const d of devs) {
+    if (d.codigo) {
+      porCodigo[d.codigo] = Math.max(0, (porCodigo[d.codigo] ?? 0) - Number(d.valor))
+    }
   }
 
   // Faturas sem NIF: despesas originais (não regularizações) sem nif_confirmado
@@ -131,6 +141,33 @@ export default async function AdjuntosDashboard({ params }: { params: Promise<{ 
           )}
         </section>
 
+        {/* Devoluções */}
+        {devs.length > 0 && (
+          <section>
+            <h2 className="text-xs font-bold text-gray-500 uppercase tracking-wider mb-3">
+              Devoluções / Notas de crédito
+            </h2>
+            <div className="space-y-2">
+              {devs.map((d) => (
+                <div key={d.id} className="bg-white rounded-xl border border-green-100 px-4 py-3 flex items-center justify-between">
+                  <div className="min-w-0">
+                    <p className="text-sm font-medium text-gray-800 truncate">
+                      #{d.numero_devolucao} — {d.descricao ?? d.codigo_descricao ?? 'Devolução'}
+                    </p>
+                    <p className="text-xs text-gray-400">{new Date(d.data + 'T00:00:00').toLocaleDateString('pt-PT')}</p>
+                  </div>
+                  <span className="text-green-600 font-bold text-sm shrink-0 ml-3">+€{Number(d.valor).toFixed(2)}</span>
+                </div>
+              ))}
+            </div>
+            {totalDevolucoes > 0 && (
+              <p className="text-xs text-green-600 font-medium mt-2 text-right">
+                Total devoluções: +€{totalDevolucoes.toFixed(2)}
+              </p>
+            )}
+          </section>
+        )}
+
         {/* Link admin storage */}
         <div className="text-center pb-2">
           <Link href={`/campo/${id}/adjuntos/storage`} className="text-xs text-gray-300">
@@ -139,8 +176,15 @@ export default async function AdjuntosDashboard({ params }: { params: Promise<{ 
         </div>
       </div>
 
-      {/* FAB */}
-      <div className="fixed bottom-6 right-4 z-40">
+      {/* FABs */}
+      <div className="fixed bottom-6 right-4 z-40 flex flex-col items-end gap-3">
+        <Link
+          href={`/campo/${id}/adjuntos/nova-devolucao`}
+          className="flex items-center gap-2 text-white px-4 py-3 rounded-xl shadow-lg font-medium text-sm active:scale-95 transition-transform bg-green-600 hover:bg-green-700"
+        >
+          <span className="text-base font-light">+</span>
+          Nova Devolução
+        </Link>
         <Link
           href={`/campo/${id}/adjuntos/nova-despesa`}
           className="flex items-center gap-2 text-white px-5 py-4 rounded-2xl shadow-2xl font-semibold text-base active:scale-95 transition-transform"

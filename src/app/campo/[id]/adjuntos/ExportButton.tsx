@@ -5,7 +5,7 @@ import { supabase } from '@/lib/supabase/client'
 import { generateExcel } from '@/lib/adjuntos/export-excel'
 import { generateZip } from '@/lib/adjuntos/export-zip'
 import type { Campo } from '@/types/shared'
-import type { Despesa, RegularizacaoNif, DespesaLinha } from '@/types/adjuntos'
+import type { Despesa, RegularizacaoNif, DespesaLinha, Devolucao } from '@/types/adjuntos'
 
 export default function ExportButton({ campo }: { campo: Campo }) {
   const [loading, setLoading] = useState<'excel' | 'zip' | null>(null)
@@ -23,7 +23,7 @@ export default function ExportButton({ campo }: { campo: Campo }) {
   }, [])
 
   async function fetchData() {
-    const [{ data: despesas }, { data: regularizacoes }] = await Promise.all([
+    const [{ data: despesas }, { data: regularizacoes }, { data: devolucoes }] = await Promise.all([
       supabase
         .from('despesas')
         .select('*')
@@ -33,6 +33,11 @@ export default function ExportButton({ campo }: { campo: Campo }) {
         .from('regularizacoes_nif')
         .select('*')
         .eq('campo_id', campo.id),
+      supabase
+        .from('devolucoes')
+        .select('*')
+        .eq('campo_id', campo.id)
+        .order('numero_devolucao', { ascending: true }),
     ])
 
     // Busca linhas de produto confirmadas/corrigidas para o sheet "Produtos OCR"
@@ -49,6 +54,7 @@ export default function ExportButton({ campo }: { campo: Campo }) {
       despesas: (despesas ?? []) as Despesa[],
       regularizacoes: (regularizacoes ?? []) as RegularizacaoNif[],
       linhas: (linhas ?? []) as DespesaLinha[],
+      devolucoes: (devolucoes ?? []) as Devolucao[],
     }
   }
 
@@ -56,8 +62,8 @@ export default function ExportButton({ campo }: { campo: Campo }) {
     setOpen(false)
     setLoading('excel')
     try {
-      const { despesas, regularizacoes, linhas } = await fetchData()
-      await generateExcel(campo, despesas, regularizacoes, linhas)
+      const { despesas, regularizacoes, linhas, devolucoes } = await fetchData()
+      await generateExcel(campo, despesas, regularizacoes, linhas, devolucoes)
     } finally {
       setLoading(null)
     }
@@ -67,8 +73,8 @@ export default function ExportButton({ campo }: { campo: Campo }) {
     setOpen(false)
     setLoading('zip')
     try {
-      const { despesas, regularizacoes, linhas } = await fetchData()
-      await generateZip(campo, despesas, regularizacoes, linhas)
+      const { despesas, regularizacoes, linhas, devolucoes } = await fetchData()
+      await generateZip(campo, despesas, regularizacoes, linhas, devolucoes)
     } finally {
       setLoading(null)
     }

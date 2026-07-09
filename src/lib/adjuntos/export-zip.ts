@@ -1,6 +1,6 @@
 import JSZip from 'jszip'
 import type { Campo } from '@/types/shared'
-import type { Despesa, RegularizacaoNif, DespesaLinha } from '@/types/adjuntos'
+import type { Despesa, RegularizacaoNif, DespesaLinha, Devolucao } from '@/types/adjuntos'
 import { getPhotoUrl } from './supabase-storage'
 import { generateExcelBuffer } from './export-excel'
 
@@ -27,7 +27,8 @@ export async function generateZip(
   campo: Campo,
   despesas: Despesa[],
   regularizacoes: RegularizacaoNif[] = [],
-  despesaLinhas: DespesaLinha[] = []
+  despesaLinhas: DespesaLinha[] = [],
+  devolucoes: Devolucao[] = []
 ): Promise<void> {
   const zip = new JSZip()
 
@@ -36,7 +37,7 @@ export async function generateZip(
   const excelFilename = `relatorio-contas-${safeName}-${dateStr}.xlsx`
 
   // Excel dentro do ZIP
-  const excelU8 = generateExcelBuffer(campo, despesas, regularizacoes, despesaLinhas)
+  const excelU8 = generateExcelBuffer(campo, despesas, regularizacoes, despesaLinhas, devolucoes)
   zip.file(excelFilename, excelU8)
 
   // Imagens — nome baseado na referência da fatura

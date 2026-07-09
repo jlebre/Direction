@@ -127,11 +127,12 @@ export async function exportPlanoRefeicoes(campo: Campo, ementa: EmentaItem[], d
   XLSX.utils.book_append_sheet(wb, ws2, 'Resumo')
 
   // ── Export / Share ────────────────────────────────────────────────────────
-  const u8 = XLSX.write(wb, { type: 'array', bookType: 'xlsx' }) as Uint8Array
-  const buffer = u8.buffer.slice(u8.byteOffset, u8.byteOffset + u8.byteLength) as ArrayBuffer
-  const blob = new Blob([buffer], {
+  // Não usar .buffer.slice — falha em iOS Safari quando XLSX.write devolve Array<number>.
+  const raw = XLSX.write(wb, { type: 'array', bookType: 'xlsx' }) as number[]
+  const blob = new Blob([new Uint8Array(raw)], {
     type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
   })
-  const filename = `plano-refeicoes-${campo.nome.replace(/\s+/g, '-').toLowerCase()}.xlsx`
-  await exportOrShareFile(blob, filename)
+  const safeName = campo.nome.normalize('NFD').replace(/[̀-ͯ]/g, '').replace(/[^a-zA-Z0-9]/g, '-').replace(/-+/g, '-').toLowerCase()
+  const dateStr = new Date().toISOString().split('T')[0]
+  await exportOrShareFile(blob, `plano-refeicoes-${safeName}-${dateStr}.xlsx`)
 }

@@ -1,6 +1,6 @@
 import { createClient } from '@/lib/supabase/server'
 import { notFound } from 'next/navigation'
-import type { Campo } from '@/types/shared'
+import type { CampoPublico } from '@/types/shared'
 import type { Despesa, RegularizacaoNif } from '@/types/adjuntos'
 import RegularizarClient from './RegularizarClient'
 
@@ -29,9 +29,11 @@ export default async function RegularizarPage({
 
   if (!campo) notFound()
 
+  const { pin, ...campoPublico } = campo
   return (
     <RegularizarClient
-      campo={campo as Campo}
+      campo={campoPublico as CampoPublico}
+      hasPin={!!pin}
       faturasSemNIF={(despesas ?? []) as Despesa[]}
       regularizacoes={(regularizacoes ?? []) as RegularizacaoNif[]}
     />

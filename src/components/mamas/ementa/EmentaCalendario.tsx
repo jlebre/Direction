@@ -40,7 +40,7 @@ export function EmentaCalendario({ campo, ementaInicial, receitas, restricoes, c
   const [modalAberto, setModalAberto] = useState(false)
   const [slotSelecionado, setSlotSelecionado] = useState<{ dia: number; refeicao: RefeicaoTipo } | null>(null)
   const [cloneModalAberto, setCloneModalAberto] = useState(false)
-  const [camposDisponiveis, setCamposDisponiveis] = useState<{ id: string; nome: string }[]>([])
+  const [camposDisponiveis, setCamposDisponiveis] = useState<{ id: string; nome: string; ano?: number | null }[]>([])
   const [campoFonte, setCampoFonte] = useState<string>('')
   const [clonando, setClonando] = useState(false)
   const [vista, setVista] = useState<'periodo' | 'dia' | 'semana'>('periodo')
@@ -173,7 +173,11 @@ export function EmentaCalendario({ campo, ementaInicial, receitas, restricoes, c
   }
 
   async function abrirCloneModal() {
-    const { data } = await supabase.from('campos').select('id, nome').neq('id', campo.id).order('nome')
+    // Filtrar por mesmo ano se disponível, senão mostrar todos por ordem descendente de nome
+    let query = supabase.from('campos').select('id, nome, ano').neq('id', campo.id)
+    if (campo.ano) query = query.eq('ano', campo.ano)
+    query = query.order('nome')
+    const { data } = await query
     setCamposDisponiveis((data ?? []).filter((c) => c.id !== campo.id))
     setCampoFonte('')
     setCloneModalAberto(true)

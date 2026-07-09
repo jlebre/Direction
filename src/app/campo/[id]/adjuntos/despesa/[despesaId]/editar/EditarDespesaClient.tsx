@@ -6,7 +6,8 @@ import Link from 'next/link'
 import { supabase } from '@/lib/supabase/client'
 import { compressImage } from '@/lib/adjuntos/image-utils'
 import { getCampoSlug, getPhotoFilename } from '@/lib/adjuntos/supabase-storage'
-import type { Campo } from '@/types/shared'
+import type { CampoPublico } from '@/types/shared'
+import { validatePin } from '@/actions/validatePin'
 import type { Despesa } from '@/types/adjuntos'
 import CodeSelector from '@/components/adjuntos/CodeSelector'
 import PinDialog from '@/components/shared/PinDialog'
@@ -19,19 +20,20 @@ type PhotoState =
   | { mode: 'none' }
 
 interface Props {
-  campo: Campo
+  campo: CampoPublico
+  hasPin: boolean
   despesa: Despesa
   existingPhotoUrl: string | null
 }
 
-export default function EditarDespesaClient({ campo, despesa, existingPhotoUrl }: Props) {
+export default function EditarDespesaClient({ campo, hasPin, despesa, existingPhotoUrl }: Props) {
   const router = useRouter()
   const cameraInputRef = useRef<HTMLInputElement>(null)
   const galleryInputRef = useRef<HTMLInputElement>(null)
 
-  const [showPin, setShowPin] = useState(!!campo.pin)
+  const [showPin, setShowPin] = useState(hasPin)
   const [pinError, setPinError] = useState(false)
-  const [pinUnlocked, setPinUnlocked] = useState(!campo.pin)
+  const [pinUnlocked, setPinUnlocked] = useState(!hasPin)
 
   const [valor, setValor] = useState(Number(despesa.valor).toFixed(2))
   const [descricao, setDescricao] = useState(despesa.descricao ?? '')
@@ -49,8 +51,9 @@ export default function EditarDespesaClient({ campo, despesa, existingPhotoUrl }
   const [submitting, setSubmitting] = useState(false)
   const [toast, setToast] = useState<{ msg: string; type: 'success' | 'error' } | null>(null)
 
-  function handlePinConfirm(pin: string) {
-    if (pin === campo.pin) { setPinUnlocked(true); setShowPin(false); setPinError(false) }
+  async function handlePinConfirm(pin: string) {
+    const valid = await validatePin(campo.id, pin)
+    if (valid) { setPinUnlocked(true); setShowPin(false); setPinError(false) }
     else { setPinError(true); setTimeout(() => setPinError(false), 1200) }
   }
 

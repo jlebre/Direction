@@ -3,13 +3,15 @@
 import { useState } from 'react'
 import { useRouter } from 'next/navigation'
 import Link from 'next/link'
-import type { Campo } from '@/types/shared'
+import type { CampoPublico } from '@/types/shared'
+import { validatePin } from '@/actions/validatePin'
 import { formatBytes } from '@/lib/adjuntos/image-utils'
 import PinDialog from '@/components/shared/PinDialog'
 import type { MatchItem, OrphanItem, MissingItem } from './types'
 
 interface Props {
-  campo: Campo
+  campo: CampoPublico
+  hasPin: boolean
   matches: MatchItem[]
   orphans: OrphanItem[]
   missing: MissingItem[]
@@ -19,6 +21,7 @@ interface Props {
 
 export default function StorageClient({
   campo,
+  hasPin,
   matches,
   orphans,
   missing,
@@ -26,13 +29,14 @@ export default function StorageClient({
   storageError,
 }: Props) {
   const router = useRouter()
-  const [showPin, setShowPin] = useState(!!campo.pin)
+  const [showPin, setShowPin] = useState(hasPin)
   const [pinError, setPinError] = useState(false)
-  const [pinUnlocked, setPinUnlocked] = useState(!campo.pin)
+  const [pinUnlocked, setPinUnlocked] = useState(!hasPin)
   const [refreshing, setRefreshing] = useState(false)
 
-  function handlePinConfirm(pin: string) {
-    if (pin === campo.pin) { setPinUnlocked(true); setShowPin(false); setPinError(false) }
+  async function handlePinConfirm(pin: string) {
+    const valid = await validatePin(campo.id, pin)
+    if (valid) { setPinUnlocked(true); setShowPin(false); setPinError(false) }
     else { setPinError(true); setTimeout(() => setPinError(false), 1200) }
   }
 

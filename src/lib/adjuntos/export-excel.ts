@@ -1,6 +1,6 @@
 import * as XLSX from 'xlsx'
 import type { Campo } from '@/types/shared'
-import type { Despesa, RegularizacaoNif, DespesaLinha } from '@/types/adjuntos'
+import type { Despesa, RegularizacaoNif, DespesaLinha, Devolucao } from '@/types/adjuntos'
 import { CODE_CATEGORIES } from './codes'
 import { VALORES_REF_VERAO } from './valores-referencia'
 
@@ -40,10 +40,12 @@ export function generateExcelBuffer(
   campo: Campo,
   despesas: Despesa[],
   regularizacoes: RegularizacaoNif[] = [],
-  despesaLinhas: DespesaLinha[] = []
+  despesaLinhas: DespesaLinha[] = [],
+  devolucoes: Devolucao[] = []
 ): Uint8Array<ArrayBuffer> {
   const wb = XLSX.utils.book_new()
   const sorted = [...despesas].sort((a, b) => a.numero_recibo - b.numero_recibo)
+  const devsSorted = [...devolucoes].sort((a, b) => a.numero_devolucao - b.numero_devolucao)
 
   const despesasFinanceiras = sorted.filter((d) => !d.is_regularizacao_nif)
   const despesasList = despesasFinanceiras.filter((d) => d.tipo === 'despesa')
@@ -51,13 +53,14 @@ export function generateExcelBuffer(
 
   const totalDespesas = despesasList.reduce((s, d) => s + Number(d.valor), 0)
   const totalReceitas = receitasList.reduce((s, d) => s + Number(d.valor), 0)
+  const totalDevolucoes = devsSorted.reduce((s, d) => s + Number(d.valor), 0)
 
   const faturasSemNIF = despesasList.filter((d) => !d.nif_confirmado)
   const totalSemNIF = faturasSemNIF.reduce((s, d) => s + Number(d.valor), 0)
   const totalRegularizado = regularizacoes.reduce((s, r) => s + Number(r.valor), 0)
   const emAberto = Math.max(0, totalSemNIF - totalRegularizado)
   const totalComNIF = despesasList.filter((d) => d.nif_confirmado).reduce((s, d) => s + Number(d.valor), 0)
-  const saldoDisponivel = campo.saldo_inicial + totalReceitas - totalDespesas
+  const saldoDisponivel = campo.saldo_inicial + totalReceitas - totalDespesas + totalDevolucoes
 
   const now = new Date()
   const dataExport = formatDatePT(now.toISOString().split('T')[0])
@@ -79,7 +82,9 @@ export function generateExcelBuffer(
     ['FINANCEIRO'],
     ['Orçamento inicial', campo.saldo_inicial],
     ['Receitas extra', totalReceitas],
-    ['Total despesas', totalDespesas],
+    ['Total despesas (bruto)', totalDespesas],
+    ['Devoluções / notas crédito', totalDevolucoes],
+    ['Gasto líquido', totalDespesas - totalDevolucoes],
     ['Saldo disponível', saldoDisponivel],
     [],
     ['FATURAS'],
@@ -89,23 +94,33 @@ export function generateExcelBuffer(
     ['Com imagem', despesasList.filter((d) => d.foto_path).length],
     ['Sem imagem', despesasList.filter((d) => !d.foto_path).length],
     [],
+    ['DEVOLUÇÕES'],
+    ['Total devoluções', devsSorted.length],
+    ['Valor total (€)', totalDevolucoes],
+    [],
     ['BOLSA NIF'],
     ['Total sem NIF (€)', totalSemNIF],
     ['Regularizado (€)', totalRegularizado],
     ['Por regularizar (€)', emAberto],
   ]
   const ws1 = XLSX.utils.aoa_to_sheet(resumoRows)
-  ws1['!cols'] = [{ wch: 24 }, { wch: 30 }]
-  for (const rowIdx of [13, 14, 15, 16, 26, 27, 28]) {
+  ws1['!cols'] = [{ wch: 26 }, { wch: 30 }]
+  for (const rowIdx of [13, 14, 15, 16, 17, 18, 30, 33, 34, 35]) {
     const addr = XLSX.utils.encode_cell({ r: rowIdx, c: 1 })
     if (ws1[addr] && ws1[addr].t === 'n') ws1[addr].z = '#,##0.00'
   }
   XLSX.utils.book_append_sheet(wb, ws1, 'Resumo')
 
   // ── Sheet 2: Orçamento ───────────────────────────────────────────────────
-  const porCodigo: Record<string, number> = {}
-  for (const d of despesasList.filter((d) => !d.is_regularizacao_nif)) {
-    porCodigo[d.codigo] = (porCodigo[d.codigo] ?? 0) + Number(d.valor)
+  const gastoBrutoPorCodigo: Record<string, number> = {}
+  for (const d of despesasList) {
+    gastoBrutoPorCodigo[d.codigo] = (gastoBrutoPorCodigo[d.codigo] ?? 0) + Number(d.valor)
+  }
+  const devolucaoPorCodigo: Record<string, number> = {}
+  for (const d of devsSorted) {
+    if (d.codigo) {
+      devolucaoPorCodigo[d.codigo] = (devolucaoPorCodigo[d.codigo] ?? 0) + Number(d.valor)
+    }
   }
   const allCodes = CODE_CATEGORIES.flatMap((cat) => cat.codes)
   const refTable = VALORES_REF_VERAO[campo.escalao] ?? {}
@@ -120,18 +135,22 @@ export function generateExcelBuffer(
     ['Adjunto/a', campo.adjunto ?? ''],
     ['Mamã', campo.mama ?? ''],
     [],
-    ['Código', 'Descrição', 'Gasto (€)', 'Referência (€)', 'Diferença (€)'],
+    ['Código', 'Descrição', 'Gasto bruto (€)', 'Devoluções (€)', 'Gasto líquido (€)', 'Referência (€)', 'Diferença (€)'],
   ]
   for (const c of allCodes) {
-    const gasto = porCodigo[c.code] ?? 0
+    const bruto = gastoBrutoPorCodigo[c.code] ?? 0
+    const dev = devolucaoPorCodigo[c.code] ?? 0
+    const liquido = bruto - dev
     const ref = refTable[c.code] ?? 0
-    orcRows.push([c.code, c.full, gasto, ref, gasto - ref])
+    orcRows.push([c.code, c.full, bruto, dev > 0 ? dev : null, liquido, ref, liquido - ref])
   }
   const ws2 = XLSX.utils.aoa_to_sheet(orcRows)
-  ws2['!cols'] = [{ wch: 10 }, { wch: 45 }, { wch: 14 }, { wch: 16 }, { wch: 16 }]
+  ws2['!cols'] = [{ wch: 10 }, { wch: 45 }, { wch: 15 }, { wch: 14 }, { wch: 15 }, { wch: 16 }, { wch: 16 }]
   applyNumFmt(ws2, 2, 10, orcRows.length - 1, '#,##0.00')
   applyNumFmt(ws2, 3, 10, orcRows.length - 1, '#,##0.00')
   applyNumFmt(ws2, 4, 10, orcRows.length - 1, '#,##0.00')
+  applyNumFmt(ws2, 5, 10, orcRows.length - 1, '#,##0.00')
+  applyNumFmt(ws2, 6, 10, orcRows.length - 1, '#,##0.00')
   XLSX.utils.book_append_sheet(wb, ws2, 'Orçamento')
 
   // ── Sheet 3: Faturas / Despesas ──────────────────────────────────────────
@@ -216,7 +235,38 @@ export function generateExcelBuffer(
     XLSX.utils.book_append_sheet(wb, ws4, 'Bolsa NIF')
   }
 
-  // ── Sheet 5: Produtos OCR ────────────────────────────────────────────────
+  // ── Sheet 5: Devoluções ──────────────────────────────────────────────────
+  if (devsSorted.length > 0) {
+    const devRows: (string | number | null)[][] = [
+      ['Nº', 'Data', 'Descrição', 'Código', 'Categoria', 'Valor (€)', 'Fatura associada', 'Origem', 'Notas'],
+    ]
+    for (const d of devsSorted) {
+      const faturaOriginal = sorted.find((f) => f.id === d.fatura_original_id)
+      devRows.push([
+        d.numero_devolucao,
+        formatDatePT(d.data),
+        d.descricao ?? '',
+        d.codigo ?? '',
+        d.codigo_descricao ?? '',
+        Number(d.valor),
+        faturaOriginal ? `#${faturaOriginal.numero_recibo}` : '',
+        d.origem_dados ?? 'manual',
+        d.notas ?? '',
+      ])
+    }
+    devRows.push([])
+    devRows.push(['', '', '', '', 'Total devoluções', totalDevolucoes])
+
+    const wsDev = XLSX.utils.aoa_to_sheet(devRows)
+    wsDev['!cols'] = [
+      { wch: 6 }, { wch: 11 }, { wch: 30 }, { wch: 8 }, { wch: 28 },
+      { wch: 12 }, { wch: 16 }, { wch: 10 }, { wch: 24 },
+    ]
+    applyNumFmt(wsDev, 5, 1, devRows.length - 1, '#,##0.00')
+    XLSX.utils.book_append_sheet(wb, wsDev, 'Devoluções')
+  }
+
+  // ── Sheet 6: Produtos OCR ────────────────────────────────────────────────
   const linhasValidadas = despesaLinhas.filter(
     (l) => l.estado === 'confirmado' || l.estado === 'corrigido'
   )
@@ -263,9 +313,10 @@ export async function generateExcel(
   campo: Campo,
   despesas: Despesa[],
   regularizacoes: RegularizacaoNif[] = [],
-  despesaLinhas: DespesaLinha[] = []
+  despesaLinhas: DespesaLinha[] = [],
+  devolucoes: Devolucao[] = []
 ): Promise<void> {
-  const u8 = generateExcelBuffer(campo, despesas, regularizacoes, despesaLinhas)
+  const u8 = generateExcelBuffer(campo, despesas, regularizacoes, despesaLinhas, devolucoes)
   const blob = new Blob([u8], {
     type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
   })

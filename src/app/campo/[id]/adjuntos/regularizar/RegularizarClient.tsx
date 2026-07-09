@@ -6,7 +6,8 @@ import Link from 'next/link'
 import { supabase } from '@/lib/supabase/client'
 import { compressImage } from '@/lib/adjuntos/image-utils'
 import { getCampoSlug, getPhotoFilename } from '@/lib/adjuntos/supabase-storage'
-import type { Campo } from '@/types/shared'
+import type { CampoPublico } from '@/types/shared'
+import { validatePin } from '@/actions/validatePin'
 import type { Despesa, RegularizacaoNif } from '@/types/adjuntos'
 import CodeSelector from '@/components/adjuntos/CodeSelector'
 import PinDialog from '@/components/shared/PinDialog'
@@ -21,7 +22,8 @@ interface FaturaInfo extends Despesa {
 }
 
 interface Props {
-  campo: Campo
+  campo: CampoPublico
+  hasPin: boolean
   faturasSemNIF: Despesa[]
   regularizacoes: RegularizacaoNif[]
 }
@@ -65,14 +67,14 @@ function computeAllocations(
   return result
 }
 
-export default function RegularizarClient({ campo, faturasSemNIF, regularizacoes }: Props) {
+export default function RegularizarClient({ campo, hasPin, faturasSemNIF, regularizacoes }: Props) {
   const router = useRouter()
   const cameraRef = useRef<HTMLInputElement>(null)
   const galleryRef = useRef<HTMLInputElement>(null)
 
-  const [showPin, setShowPin] = useState(!!campo.pin)
+  const [showPin, setShowPin] = useState(hasPin)
   const [pinError, setPinError] = useState(false)
-  const [pinUnlocked, setPinUnlocked] = useState(!campo.pin)
+  const [pinUnlocked, setPinUnlocked] = useState(!hasPin)
 
   const [step, setStep] = useState<Step>('select')
   const [selected, setSelected] = useState<Set<string>>(new Set())
@@ -88,8 +90,9 @@ export default function RegularizarClient({ campo, faturasSemNIF, regularizacoes
   const [submitting, setSubmitting] = useState(false)
   const [toast, setToast] = useState<{ msg: string; type: 'success' | 'error' } | null>(null)
 
-  function handlePinConfirm(pin: string) {
-    if (pin === campo.pin) { setPinUnlocked(true); setShowPin(false); setPinError(false) }
+  async function handlePinConfirm(pin: string) {
+    const valid = await validatePin(campo.id, pin)
+    if (valid) { setPinUnlocked(true); setShowPin(false); setPinError(false) }
     else { setPinError(true); setTimeout(() => setPinError(false), 1200) }
   }
 
