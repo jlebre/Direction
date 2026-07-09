@@ -1,10 +1,10 @@
 'use client'
 
-import { useState } from 'react'
+import { useState, useRef } from 'react'
 import { useRouter } from 'next/navigation'
 import { createClient } from '@/lib/supabase/client'
 import { toast } from 'sonner'
-import { Star, Pencil, Trash2, Plus, X, AlertTriangle } from 'lucide-react'
+import { Star, Pencil, Trash2, Plus, X, AlertTriangle, CheckCircle2, Search } from 'lucide-react'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
@@ -16,7 +16,7 @@ import { CATEGORIA_LABELS, CATEGORIA_CORES } from '@/types/mamas'
 import type { Receita, ReceitaIngrediente, CategoriaReceita } from '@/types/mamas'
 import type { Campo, SeccaoTipo } from '@/types/shared'
 import { cn } from '@/lib/utils'
-import { calcularBandas } from '@/lib/mamas/fatores-escalao'
+import { calcularBandas, arredondarPratico } from '@/lib/mamas/fatores-escalao'
 import type { TipoProduto, EscalaoFator } from '@/lib/mamas/fatores-escalao'
 
 interface Props {
@@ -50,6 +50,8 @@ const DICAS_SOPA = `- Usar a água de cozer a massa para fazer a sopa.
 - Dissolver os pacotes de sopa em menos água primeiro e aos pouquinhos, para evitar grumos.
 - Dá para fazer a sopa na sorna; aguenta a temperatura até ao jantar.`
 
+type IngResultado = { id: string; nome: string; unidade_base: string; tipo_produto: string }
+
 export function ReceitaDetail({ receita, campo }: Props) {
   const [modo, setModo] = useState<'ver' | 'editar'>('ver')
   const [showWarnOficial, setShowWarnOficial] = useState(false)
@@ -57,6 +59,8 @@ export function ReceitaDetail({ receita, campo }: Props) {
   const [saving, setSaving] = useState(false)
   const [deleting, setDeleting] = useState(false)
   const [forking, setForking] = useState(false)
+  const [verificada, setVerificada] = useState(receita.quantidades_verificadas ?? false)
+  const [markingVerif, setMarkingVerif] = useState(false)
   const [form, setForm] = useState({
     nome: receita.nome,
     categoria: receita.categoria,
@@ -67,7 +71,7 @@ export function ReceitaDetail({ receita, campo }: Props) {
   })
   const [ingredientes, setIngredientes] = useState<ReceitaIngrediente[]>(receita.ingredientes ?? [])
   const [novoIng, setNovoIng] = useState({
-    nome: '', unidade: 'g', notas: '',
+    unidade: 'g', notas: '',
     qtd_mosquitos: '', qtd_aranh_melgas: '', qtd_cam_trem: '',
   })
   const [novoIngTipo, setNovoIngTipo] = useState<TipoProduto>('outro')
@@ -75,6 +79,14 @@ export function ReceitaDetail({ receita, campo }: Props) {
   const [refQtd, setRefQtd] = useState('')
   const [autoCalcado, setAutoCalcado] = useState(false)
   const [addingIng, setAddingIng] = useState(false)
+
+  // Pesquisa de ingredientes
+  const [ingPesquisa, setIngPesquisa] = useState('')
+  const [ingResultados, setIngResultados] = useState<IngResultado[]>([])
+  const [ingSelecionado, setIngSelecionado] = useState<{ id: string; nome: string } | null>(null)
+  const [ingDropdownOpen, setIngDropdownOpen] = useState(false)
+  const [ingBuscando, setIngBuscando] = useState(false)
+  const searchTimeout = useRef<ReturnType<typeof setTimeout> | null>(null)
 
   const router = useRouter()
   const supabase = createClient()
@@ -92,6 +104,24 @@ export function ReceitaDetail({ receita, campo }: Props) {
       categoria: v,
       dicas_campo: v === 'sopa' && !f.dicas_campo.trim() ? DICAS_SOPA : f.dicas_campo,
     }))
+  }
+
+  async function marcarVerificada(v: boolean) {
+    setMarkingVerif(true)
+    try {
+      const { error } = await supabase
+        .from('receitas')
+        .update({ quantidades_verificadas: v })
+        .eq('id', receita.id)
+      if (error) throw error
+      setVerificada(v)
+      toast.success(v ? 'Receita marcada como verificada!' : 'Marcada como por verificar')
+      router.refresh()
+    } catch (e: unknown) {
+      toast.error(e instanceof Error ? e.message : 'Erro')
+    } finally {
+      setMarkingVerif(false)
+    }
   }
 
   async function guardar() {
@@ -137,14 +167,50 @@ export function ReceitaDetail({ receita, campo }: Props) {
     const qty = parseFloat(refQtd)
     if (!qty || qty <= 0) { toast.error('Introduz uma quantidade válida'); return }
     const { mosquitos, aranh_melgas, cam_trem, fallback } = calcularBandas(qty, refEscalao, novoIngTipo)
+    const u = novoIng.unidade
     setNovoIng((n) => ({
       ...n,
-      qtd_mosquitos: String(mosquitos),
-      qtd_aranh_melgas: String(aranh_melgas),
-      qtd_cam_trem: String(cam_trem),
+      qtd_mosquitos: String(arredondarPratico(mosquitos, u)),
+      qtd_aranh_melgas: String(arredondarPratico(aranh_melgas, u)),
+      qtd_cam_trem: String(arredondarPratico(cam_trem, u)),
     }))
     setAutoCalcado(true)
     if (fallback) toast.info('Sem fator específico para este tipo. Foi usado 1.00.')
+  }
+
+  function pesquisarIngredientes(q: string) {
+    setIngPesquisa(q)
+    setIngSelecionado(null)
+    if (searchTimeout.current) clearTimeout(searchTimeout.current)
+    if (q.length < 2) { setIngResultados([]); setIngDropdownOpen(false); return }
+    setIngBuscando(true)
+    searchTimeout.current = setTimeout(async () => {
+      const { data } = await supabase
+        .from('ingredientes')
+        .select('id, nome, unidade_base, tipo_produto')
+        .ilike('nome', `%${q}%`)
+        .order('nome')
+        .limit(8)
+      setIngResultados(data ?? [])
+      setIngDropdownOpen(true)
+      setIngBuscando(false)
+    }, 200)
+  }
+
+  function selecionarIngrediente(ing: IngResultado) {
+    setIngSelecionado({ id: ing.id, nome: ing.nome })
+    setIngPesquisa(ing.nome)
+    setNovoIngTipo((ing.tipo_produto as TipoProduto) || 'outro')
+    setNovoIng((n) => ({ ...n, unidade: ing.unidade_base }))
+    setIngResultados([])
+    setIngDropdownOpen(false)
+  }
+
+  function limparSeleccaoIng() {
+    setIngSelecionado(null)
+    setIngPesquisa('')
+    setIngResultados([])
+    setIngDropdownOpen(false)
   }
 
   async function removerIngrediente(id: string) {
@@ -154,25 +220,29 @@ export function ReceitaDetail({ receita, campo }: Props) {
   }
 
   async function adicionarIngrediente() {
-    const nome = novoIng.nome.trim()
+    const nome = ingSelecionado?.nome || ingPesquisa.trim()
     if (!nome) return
     setAddingIng(true)
     try {
       let ingredienteId: string
-      const { data: existing } = await supabase
-        .from('ingredientes').select('id').ilike('nome', nome).maybeSingle()
-      if (existing) {
-        ingredienteId = existing.id
+      if (ingSelecionado) {
+        ingredienteId = ingSelecionado.id
       } else {
-        const { data: novo, error } = await supabase.from('ingredientes').insert({
-          nome,
-          categoria_supermercado: 'outro',
-          unidade_base: novoIng.unidade,
-          tipo_armazenamento: 'despensa',
-          tipo_produto: novoIngTipo,
-        }).select('id').single()
-        if (error || !novo) throw error
-        ingredienteId = novo.id
+        const { data: existing } = await supabase
+          .from('ingredientes').select('id').ilike('nome', nome).maybeSingle()
+        if (existing) {
+          ingredienteId = existing.id
+        } else {
+          const { data: novo, error } = await supabase.from('ingredientes').insert({
+            nome,
+            categoria_supermercado: 'outro',
+            unidade_base: novoIng.unidade,
+            tipo_armazenamento: 'despensa',
+            tipo_produto: novoIngTipo,
+          }).select('id').single()
+          if (error || !novo) throw error
+          ingredienteId = novo.id
+        }
       }
       const { data: criado, error: errI } = await supabase
         .from('receita_ingredientes')
@@ -189,7 +259,11 @@ export function ReceitaDetail({ receita, campo }: Props) {
         .single()
       if (errI || !criado) throw errI
       setIngredientes((prev) => [...prev, criado as ReceitaIngrediente])
-      setNovoIng({ nome: '', unidade: 'g', notas: '', qtd_mosquitos: '', qtd_aranh_melgas: '', qtd_cam_trem: '' })
+      setIngPesquisa('')
+      setIngSelecionado(null)
+      setIngResultados([])
+      setIngDropdownOpen(false)
+      setNovoIng({ unidade: 'g', notas: '', qtd_mosquitos: '', qtd_aranh_melgas: '', qtd_cam_trem: '' })
       setNovoIngTipo('outro')
       setRefQtd('')
       setAutoCalcado(false)
@@ -247,6 +321,41 @@ export function ReceitaDetail({ receita, campo }: Props) {
   return (
     <div className="max-w-2xl mx-auto p-4 space-y-5 pb-10">
 
+      {/* ── Banner: por verificar ── */}
+      {modo === 'ver' && !verificada && (
+        <div className="bg-amber-50 border border-amber-200 rounded-xl p-3 flex items-start gap-2.5">
+          <AlertTriangle className="h-4 w-4 text-amber-500 shrink-0 mt-0.5" />
+          <div className="flex-1 min-w-0">
+            <p className="text-xs font-semibold text-amber-800">Receita por verificar</p>
+            <p className="text-xs text-amber-600 mt-0.5">
+              Revê os ingredientes e quantidades, corrige se necessário e marca como verificada.
+            </p>
+          </div>
+          <button
+            onClick={() => marcarVerificada(true)}
+            disabled={markingVerif}
+            className="text-xs font-semibold text-amber-800 bg-white border border-amber-300 rounded-lg px-2.5 py-1.5 shrink-0 hover:bg-amber-50 disabled:opacity-50 transition-colors whitespace-nowrap"
+          >
+            {markingVerif ? '...' : '✓ Marcar verificada'}
+          </button>
+        </div>
+      )}
+
+      {/* ── Badge: verificada ── */}
+      {modo === 'ver' && verificada && (
+        <div className="flex items-center gap-1.5">
+          <CheckCircle2 className="h-3.5 w-3.5 text-green-600" />
+          <span className="text-xs font-medium text-green-700">Verificada</span>
+          <button
+            onClick={() => marcarVerificada(false)}
+            disabled={markingVerif}
+            className="ml-1 text-[10px] text-gray-400 hover:text-gray-600 underline disabled:opacity-50"
+          >
+            reverter
+          </button>
+        </div>
+      )}
+
       {/* ── Aviso receita oficial ── */}
       {showWarnOficial && (
         <div className="bg-amber-50 border border-amber-200 rounded-xl p-4 space-y-3">
@@ -279,7 +388,7 @@ export function ReceitaDetail({ receita, campo }: Props) {
                   <p className="font-semibold text-red-900 text-sm">Estás a apagar uma receita base.</p>
                   <p className="text-red-700 text-xs mt-1">
                     Esta receita pode estar disponível para todos os campos e pode estar a ser usada por outras Mamãs.
-                    Apagar esta receita pode afetar planos de refeições, listas de compras e orçamentos.
+                    Apagar pode afetar planos de refeições, listas de compras e orçamentos.
                   </p>
                   <p className="text-red-700 text-xs font-semibold mt-1">Tens mesmo a certeza?</p>
                 </>
@@ -295,12 +404,7 @@ export function ReceitaDetail({ receita, campo }: Props) {
             </div>
           </div>
           <div className="flex gap-2">
-            <Button
-              size="sm"
-              onClick={handleDelete}
-              disabled={deleting}
-              className="bg-red-600 hover:bg-red-700 text-white text-xs"
-            >
+            <Button size="sm" onClick={handleDelete} disabled={deleting} className="bg-red-600 hover:bg-red-700 text-white text-xs">
               {deleting ? 'A apagar...' : (receita.is_oficial ? 'Apagar receita base' : 'Apagar receita')}
             </Button>
             <Button size="sm" variant="ghost" onClick={() => setShowDelete(false)} className="text-xs">Cancelar</Button>
@@ -449,12 +553,65 @@ export function ReceitaDetail({ receita, campo }: Props) {
               <p className="text-xs font-semibold text-gray-500 flex items-center gap-1">
                 <Plus className="h-3.5 w-3.5" />Adicionar ingrediente
               </p>
-              <Input
-                placeholder="Nome do ingrediente"
-                value={novoIng.nome}
-                onChange={(e) => setNovoIng((n) => ({ ...n, nome: e.target.value }))}
-                className="text-sm"
-              />
+
+              {/* Pesquisa / seleção de ingrediente */}
+              {!ingSelecionado ? (
+                <div className="relative">
+                  <div className="relative">
+                    <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-gray-400 pointer-events-none" />
+                    <Input
+                      placeholder="Pesquisar ingrediente..."
+                      value={ingPesquisa}
+                      onChange={(e) => pesquisarIngredientes(e.target.value)}
+                      onBlur={() => setTimeout(() => setIngDropdownOpen(false), 150)}
+                      onFocus={() => ingResultados.length > 0 && setIngDropdownOpen(true)}
+                      className="text-sm pl-8"
+                    />
+                  </div>
+                  {ingBuscando && (
+                    <p className="text-[10px] text-gray-400 mt-1 pl-1">A pesquisar...</p>
+                  )}
+                  {ingDropdownOpen && (
+                    <div className="absolute z-20 w-full bg-white border border-gray-200 rounded-lg shadow-lg mt-1 overflow-hidden">
+                      {ingResultados.map((ing) => (
+                        <button
+                          key={ing.id}
+                          type="button"
+                          onMouseDown={(e) => { e.preventDefault(); selecionarIngrediente(ing) }}
+                          className="w-full flex items-center justify-between px-3 py-2.5 hover:bg-gray-50 text-left border-b border-gray-50 last:border-0"
+                        >
+                          <span className="text-sm font-medium text-gray-800">{ing.nome}</span>
+                          <span className="text-[10px] text-gray-400 shrink-0 ml-2">
+                            {ing.unidade_base} · {ing.tipo_produto}
+                          </span>
+                        </button>
+                      ))}
+                      {ingResultados.length === 0 && ingPesquisa.length >= 2 && !ingBuscando && (
+                        <div className="px-3 py-2.5">
+                          <p className="text-xs text-gray-500">Nenhum resultado.</p>
+                          <p className="text-xs text-[#2D5016] font-medium mt-0.5">
+                            Clica &quot;+ Adicionar&quot; para criar &quot;{ingPesquisa}&quot;.
+                          </p>
+                        </div>
+                      )}
+                    </div>
+                  )}
+                </div>
+              ) : (
+                <div className="flex items-center justify-between bg-[#2D5016]/5 border border-[#2D5016]/20 rounded-lg px-3 py-2">
+                  <div className="flex items-center gap-1.5 min-w-0">
+                    <CheckCircle2 className="h-3.5 w-3.5 text-[#2D5016] shrink-0" />
+                    <span className="text-sm font-medium text-[#2D5016] truncate">{ingSelecionado.nome}</span>
+                  </div>
+                  <button
+                    type="button"
+                    onClick={limparSeleccaoIng}
+                    className="text-xs text-gray-400 hover:text-gray-600 shrink-0 ml-2"
+                  >
+                    × trocar
+                  </button>
+                </div>
+              )}
 
               {/* Tipo de produto */}
               <div className="flex items-center gap-2">
@@ -472,7 +629,7 @@ export function ReceitaDetail({ receita, campo }: Props) {
                 </Select>
               </div>
 
-              {/* Cálculo automático */}
+              {/* Cálculo automático por escalão */}
               <div className="bg-white rounded-lg p-2 space-y-1.5 border border-[#E7E8D1]">
                 <p className="text-[10px] font-semibold text-gray-400 uppercase tracking-wider">Calcular por escalão</p>
                 <div className="flex items-center gap-1.5">
@@ -547,7 +704,7 @@ export function ReceitaDetail({ receita, campo }: Props) {
               />
               <button
                 onClick={adicionarIngrediente}
-                disabled={!novoIng.nome.trim() || addingIng}
+                disabled={(!ingSelecionado && !ingPesquisa.trim()) || addingIng}
                 className="text-xs font-medium text-[#2D5016] bg-[#2D5016]/10 hover:bg-[#2D5016]/20 disabled:opacity-40 rounded-lg px-3 py-1.5 transition-colors"
               >
                 {addingIng ? 'A adicionar...' : '+ Adicionar'}

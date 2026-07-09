@@ -47,3 +47,29 @@ export function calcularBandas(
 function round2(n: number): number {
   return Math.round(n * 100) / 100
 }
+
+/**
+ * Arredonda uma quantidade calculada para um valor prático de compra.
+ * Unidades discretas (lata, pacote, un, etc.) → Math.ceil
+ * kg / L / dl → 0.5 mais próximo
+ * g / ml → 50 mais próximo (por cima)
+ */
+export function arredondarPratico(valor: number, unidade: string): number {
+  if (valor <= 0) return valor
+  const u = unidade.toLowerCase().trim()
+  const discretas = ['un', 'unidade', 'lata', 'pacote', 'garrafa', 'caixa', 'saco', 'rolo',
+    'frasco', 'embalagem', 'fatia', 'dente', 'colher', 'chávena', 'galão']
+  if (discretas.some((d) => u === d || u.startsWith(d))) {
+    return Math.ceil(valor)
+  }
+  if (u === 'kg' || u === 'l') {
+    return Math.round(valor * 2) / 2
+  }
+  if (u === 'dl') {
+    return Math.round(valor * 2) / 2
+  }
+  if (u === 'g' || u === 'ml') {
+    return Math.ceil(valor / 50) * 50
+  }
+  return round2(valor)
+}
