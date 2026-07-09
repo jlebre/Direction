@@ -1,6 +1,9 @@
+import { toast } from 'sonner'
+
 /**
  * Tenta partilhar o ficheiro via Web Share API (mobile).
- * Fallback para download normal se a API não estiver disponível.
+ * Fallback para download normal se a API não estiver disponível ou falhar.
+ * Deve ser chamada directamente dentro de um event handler do utilizador.
  */
 export async function exportOrShareFile(blob: Blob, filename: string): Promise<void> {
   const file = new File([blob], filename, { type: blob.type })
@@ -12,9 +15,11 @@ export async function exportOrShareFile(blob: Blob, filename: string): Promise<v
         return
       }
     } catch (err) {
-      // AbortError = utilizador cancelou — não é um erro real
-      if (err instanceof Error && err.name === 'AbortError') return
-      // Outros erros: fall through para download
+      if (err instanceof Error && err.name === 'AbortError') {
+        toast.info('Partilha cancelada')
+        return
+      }
+      // Outros erros (NotAllowedError, gesto expirado, etc.) → fallback para download
     }
   }
 
