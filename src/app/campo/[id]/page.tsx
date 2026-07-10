@@ -4,7 +4,7 @@ import Link from 'next/link'
 import {
   ChevronLeft, Settings, UtensilsCrossed, Receipt,
   Pill, DollarSign, AlertTriangle,
-  CalendarDays, MapPin,
+  CalendarDays, MapPin, BookOpen,
 } from 'lucide-react'
 import { ESCALAO_COR } from '@/types/shared'
 import { CampoTracker } from '@/components/CampoTracker'
@@ -25,9 +25,10 @@ export default async function CampoHub({ params }: { params: Promise<{ id: strin
   const cor = ESCALAO_COR[c.escalao]
 
   const ferramentasCampo = [
-    { href: `/campo/${id}/mamas/farmacia`,   label: 'Farmácia',               icon: Pill,          cor: '#36454F' },
-    { href: `/campo/${id}/mamas/precos`,     label: 'Preços',                 icon: DollarSign,    cor: '#2D5016' },
-    { href: `/campo/${id}/mamas/restricoes`, label: 'Restrições Alimentares', icon: AlertTriangle, cor: '#D97706' },
+    { href: `/campo/${id}/receitas`,          label: 'Receitas',               icon: BookOpen,      cor: '#B85042' },
+    { href: `/campo/${id}/mamas/farmacia`,    label: 'Farmácia',               icon: Pill,          cor: '#36454F' },
+    { href: `/campo/${id}/mamas/precos`,      label: 'Preços',                 icon: DollarSign,    cor: '#2D5016' },
+    { href: `/campo/${id}/mamas/restricoes`,  label: 'Restrições Alimentares', icon: AlertTriangle, cor: '#D97706' },
   ]
 
   return (

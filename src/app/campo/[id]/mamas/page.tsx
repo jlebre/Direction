@@ -51,7 +51,7 @@ export default async function MamasPage({ params }: { params: Promise<{ id: stri
           <h1 className="text-2xl font-bold">Olá, {primeiroNome}</h1>
           <div className="flex gap-2 mt-3 flex-wrap">
             <Link
-              href={`/campo/${id}/mamas/receitas`}
+              href={`/campo/${id}/receitas`}
               className="flex items-center gap-1.5 bg-white/20 hover:bg-white/30 text-white text-sm font-semibold rounded-xl px-3 py-2 transition-colors"
             >
               <UtensilsCrossed className="h-4 w-4" />

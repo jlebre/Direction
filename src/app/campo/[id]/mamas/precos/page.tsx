@@ -11,7 +11,7 @@ export default async function PrecosPage({ params }: { params: Promise<{ id: str
 
   const [{ data: campo }, { data: precosData }, { data: supermercadosData }] = await Promise.all([
     supabase.from('campos').select('id, nome').eq('id', id).single(),
-    supabase.from('precos').select('*, supermercado:supermercados(*)').order('produto'),
+    supabase.from('precos').select('*, supermercado:supermercados(*)').is('deleted_at', null).order('produto'),
     supabase.from('supermercados').select('*').order('nome'),
   ])
 

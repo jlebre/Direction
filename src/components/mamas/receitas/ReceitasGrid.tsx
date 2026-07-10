@@ -98,7 +98,7 @@ export function ReceitasGrid({ receitas, campo, campoId }: ReceitasGridProps) {
             onChange={(e) => setPesquisa(e.target.value)}
           />
         </div>
-        <Link href={`/campo/${campoId}/mamas/receitas/nova`}>
+        <Link href={`/campo/${campoId}/receitas/nova`}>
           <Button size="default" className="gap-1 shrink-0">
             <Plus className="h-4 w-4" />
             <span className="hidden sm:inline">Nova receita</span>
@@ -243,7 +243,7 @@ function ReceitaCard({
   const corCat = CATEGORIA_CORES[receita.categoria]
 
   return (
-    <Link href={`/campo/${campoId}/mamas/receitas/${receita.id}`}>
+    <Link href={`/campo/${campoId}/receitas/${receita.id}`}>
       <Card
         className={cn(
           'hover:shadow-md transition-shadow cursor-pointer group h-full',

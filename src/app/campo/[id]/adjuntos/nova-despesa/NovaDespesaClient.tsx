@@ -127,6 +127,10 @@ export default function NovaDespesaClient({ campo, hasPin }: { campo: CampoPubli
   }
 
   async function handleSubmit() {
+    if (!form.photoFile) {
+      setToast({ msg: 'É obrigatório incluir uma fotografia da fatura.', type: 'error' })
+      return
+    }
     setSubmitting(true)
     try {
       // Fazer upload da foto antes do loop de retry
@@ -255,11 +259,10 @@ export default function NovaDespesaClient({ campo, hasPin }: { campo: CampoPubli
 
       <div className="flex-1 max-w-lg mx-auto w-full px-4 py-6">
         {step === 1 && (
-          <StepWrapper title="Foto da Fatura" subtitle="Fotografia a fatura ou lê o QR Code">
+          <StepWrapper title="Foto da Fatura" subtitle="Tira uma fotografia à fatura para continuar">
             <PhotoCapture
               onPhoto={(file, preview) => { handlePhoto(file, preview) }}
-              onSkip={() => setStep(2)}
-              onQrCode={() => setMostrarQrScanner(true)}
+              onQrCode={form.photoPreview ? () => setMostrarQrScanner(true) : undefined}
               currentPreview={form.photoPreview}
             />
 
@@ -503,7 +506,7 @@ export default function NovaDespesaClient({ campo, hasPin }: { campo: CampoPubli
                   ['Data', new Date(form.data + 'T00:00:00').toLocaleDateString('pt-PT')],
                   ['Código', form.codigo ?? ''],
                   ['Categoria', form.codigoDescricao ?? ''],
-                  ['Foto', form.photoFile ? '✓ Incluída' : 'Sem foto'],
+                  ['Foto', form.photoFile ? '✓ Incluída' : '⚠ Em falta (obrigatória)'],
                   ...(origemDados !== 'manual' ? [['Origem', origemDados === 'qr_code' ? '📱 QR Code' : '🔍 OCR']] : []),
                   ...((linhasOcrEditadas ?? ocr.resultado?.linhas ?? []).length > 0
                     ? [['OCR', `${(linhasOcrEditadas ?? ocr.resultado!.linhas).length} produtos`]]

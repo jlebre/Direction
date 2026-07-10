@@ -69,6 +69,8 @@ export function ReceitaDetail({ receita, campo }: Props) {
     tags: receita.tags?.join(', ') ?? '',
   })
   const [ingredientes, setIngredientes] = useState<ReceitaIngrediente[]>(receita.ingredientes ?? [])
+
+  // ── Adicionar ingrediente ──────────────────────────────────────────────────
   const [novoIng, setNovoIng] = useState({
     unidade: 'g', notas: '',
     qtd_mosquitos: '', qtd_aranh_melgas: '', qtd_cam_trem: '',
@@ -78,14 +80,30 @@ export function ReceitaDetail({ receita, campo }: Props) {
   const [refQtd, setRefQtd] = useState('')
   const [autoCalcado, setAutoCalcado] = useState(false)
   const [addingIng, setAddingIng] = useState(false)
-
-  // Pesquisa de ingredientes
   const [ingPesquisa, setIngPesquisa] = useState('')
   const [ingResultados, setIngResultados] = useState<IngResultado[]>([])
   const [ingSelecionado, setIngSelecionado] = useState<{ id: string; nome: string } | null>(null)
   const [ingDropdownOpen, setIngDropdownOpen] = useState(false)
   const [ingBuscando, setIngBuscando] = useState(false)
   const searchTimeout = useRef<ReturnType<typeof setTimeout> | null>(null)
+
+  // ── Editar ingrediente inline ──────────────────────────────────────────────
+  const [editIngId, setEditIngId] = useState<string | null>(null)
+  const [editIngForm, setEditIngForm] = useState({
+    ingPesquisa: '',
+    ingSelecionado: null as { id: string; nome: string } | null,
+    qtd_mosquitos: '', qtd_aranh_melgas: '', qtd_cam_trem: '',
+    unidade: 'g', notas: '',
+    tipoProduto: 'outro' as TipoProduto,
+    refEscalao: 'melgas' as EscalaoFator,
+    refQtd: '',
+    autoCalcado: false,
+  })
+  const [editIngResultados, setEditIngResultados] = useState<IngResultado[]>([])
+  const [editIngDropdown, setEditIngDropdown] = useState(false)
+  const [editIngBuscando, setEditIngBuscando] = useState(false)
+  const [savingEdit, setSavingEdit] = useState(false)
+  const editSearchTimeout = useRef<ReturnType<typeof setTimeout> | null>(null)
 
   const router = useRouter()
   const supabase = createClient()
@@ -149,7 +167,7 @@ export function ReceitaDetail({ receita, campo }: Props) {
         .eq('id', receita.id)
       if (error) throw error
       toast.success('Receita apagada')
-      router.push(`/campo/${campoId}/mamas/receitas`)
+      router.push(`/campo/${campoId}/receitas`)
       router.refresh()
     } catch (e: unknown) {
       toast.error(e instanceof Error ? e.message : 'Erro ao apagar')
@@ -172,6 +190,21 @@ export function ReceitaDetail({ receita, campo }: Props) {
     if (fallback) toast.info('Sem fator específico para este tipo. Foi usado 1.00.')
   }
 
+  function handleCalcularEdit() {
+    const qty = parseFloat(editIngForm.refQtd)
+    if (!qty || qty <= 0) { toast.error('Introduz uma quantidade válida'); return }
+    const { mosquitos, aranh_melgas, cam_trem, fallback } = calcularBandas(qty, editIngForm.refEscalao, editIngForm.tipoProduto)
+    const u = editIngForm.unidade
+    setEditIngForm((f) => ({
+      ...f,
+      qtd_mosquitos: String(arredondarPratico(mosquitos, u)),
+      qtd_aranh_melgas: String(arredondarPratico(aranh_melgas, u)),
+      qtd_cam_trem: String(arredondarPratico(cam_trem, u)),
+      autoCalcado: true,
+    }))
+    if (fallback) toast.info('Sem fator específico para este tipo. Foi usado 1.00.')
+  }
+
   function pesquisarIngredientes(q: string) {
     setIngPesquisa(q)
     setIngSelecionado(null)
@@ -191,6 +224,24 @@ export function ReceitaDetail({ receita, campo }: Props) {
     }, 200)
   }
 
+  function pesquisarEditIng(q: string) {
+    setEditIngForm((f) => ({ ...f, ingPesquisa: q, ingSelecionado: null, autoCalcado: false }))
+    if (editSearchTimeout.current) clearTimeout(editSearchTimeout.current)
+    if (q.length < 2) { setEditIngResultados([]); setEditIngDropdown(false); return }
+    setEditIngBuscando(true)
+    editSearchTimeout.current = setTimeout(async () => {
+      const { data } = await supabase
+        .from('ingredientes')
+        .select('id, nome, unidade_base, tipo_produto')
+        .ilike('nome', `%${q}%`)
+        .order('nome')
+        .limit(8)
+      setEditIngResultados(data ?? [])
+      setEditIngDropdown(true)
+      setEditIngBuscando(false)
+    }, 200)
+  }
+
   function selecionarIngrediente(ing: IngResultado) {
     setIngSelecionado({ id: ing.id, nome: ing.nome })
     setIngPesquisa(ing.nome)
@@ -200,11 +251,49 @@ export function ReceitaDetail({ receita, campo }: Props) {
     setIngDropdownOpen(false)
   }
 
+  function selecionarEditIng(ing: IngResultado) {
+    setEditIngForm((f) => ({
+      ...f,
+      ingPesquisa: ing.nome,
+      ingSelecionado: { id: ing.id, nome: ing.nome },
+      tipoProduto: (ing.tipo_produto as TipoProduto) || 'outro',
+      unidade: ing.unidade_base,
+      autoCalcado: false,
+    }))
+    setEditIngResultados([])
+    setEditIngDropdown(false)
+  }
+
   function limparSeleccaoIng() {
     setIngSelecionado(null)
     setIngPesquisa('')
     setIngResultados([])
     setIngDropdownOpen(false)
+  }
+
+  function iniciarEditIng(ing: ReceitaIngrediente) {
+    setEditIngId(ing.id)
+    setEditIngForm({
+      ingPesquisa: ing.ingrediente?.nome ?? '',
+      ingSelecionado: ing.ingrediente ? { id: ing.ingrediente_id, nome: ing.ingrediente.nome } : null,
+      qtd_mosquitos: ing.quantidade_mosquitos != null ? String(ing.quantidade_mosquitos) : '',
+      qtd_aranh_melgas: ing.quantidade_aranh_melgas != null ? String(ing.quantidade_aranh_melgas) : '',
+      qtd_cam_trem: ing.quantidade_cam_trem != null ? String(ing.quantidade_cam_trem) : '',
+      unidade: ing.unidade,
+      notas: ing.notas ?? '',
+      tipoProduto: 'outro',
+      refEscalao: 'melgas',
+      refQtd: '',
+      autoCalcado: false,
+    })
+    setEditIngResultados([])
+    setEditIngDropdown(false)
+  }
+
+  function cancelarEditIng() {
+    setEditIngId(null)
+    setEditIngResultados([])
+    setEditIngDropdown(false)
   }
 
   async function removerIngrediente(id: string) {
@@ -213,12 +302,53 @@ export function ReceitaDetail({ receita, campo }: Props) {
     setIngredientes((prev) => prev.filter((i) => i.id !== id))
   }
 
+  async function guardarEditIng() {
+    if (!editIngId) return
+    setSavingEdit(true)
+    try {
+      let ingredienteId: string | undefined
+      if (editIngForm.ingSelecionado) {
+        ingredienteId = editIngForm.ingSelecionado.id
+      } else if (editIngForm.ingPesquisa.trim()) {
+        const { data } = await supabase
+          .from('ingredientes').select('id')
+          .ilike('nome', editIngForm.ingPesquisa.trim())
+          .maybeSingle()
+        if (data) ingredienteId = data.id
+      }
+
+      const { data: updated, error } = await supabase
+        .from('receita_ingredientes')
+        .update({
+          ...(ingredienteId ? { ingrediente_id: ingredienteId } : {}),
+          quantidade_mosquitos: parseFloat(editIngForm.qtd_mosquitos) || null,
+          quantidade_aranh_melgas: parseFloat(editIngForm.qtd_aranh_melgas) || null,
+          quantidade_cam_trem: parseFloat(editIngForm.qtd_cam_trem) || null,
+          unidade: editIngForm.unidade,
+          notas: editIngForm.notas.trim() || null,
+        })
+        .eq('id', editIngId)
+        .select('*, ingrediente:ingredientes(*)')
+        .single()
+
+      if (error) throw error
+      setIngredientes((prev) => prev.map((i) => i.id === editIngId ? updated as ReceitaIngrediente : i))
+      setEditIngId(null)
+      toast.success('Ingrediente atualizado')
+    } catch (e: unknown) {
+      toast.error(e instanceof Error ? e.message : 'Erro ao atualizar ingrediente')
+    } finally {
+      setSavingEdit(false)
+    }
+  }
+
   async function adicionarIngrediente() {
     const nome = ingSelecionado?.nome || ingPesquisa.trim()
     if (!nome) return
     setAddingIng(true)
     try {
       let ingredienteId: string
+      let isNovo = false
       if (ingSelecionado) {
         ingredienteId = ingSelecionado.id
       } else {
@@ -236,8 +366,22 @@ export function ReceitaDetail({ receita, campo }: Props) {
           }).select('id').single()
           if (error || !novo) throw error
           ingredienteId = novo.id
+          isNovo = true
         }
       }
+
+      // Fase 3: ingrediente novo → criar entrada em preços (sem preço, por completar)
+      if (isNovo) {
+        await supabase.from('precos').insert({
+          produto: nome,
+          categoria: 'outro',
+          preco: null,
+          unidade: novoIng.unidade,
+          criado_por: 'Receitas',
+          ingrediente_id: ingredienteId,
+        })
+      }
+
       const { data: criado, error: errI } = await supabase
         .from('receita_ingredientes')
         .insert({
@@ -301,7 +445,7 @@ export function ReceitaDetail({ receita, campo }: Props) {
         if (errI) throw errI
       }
       toast.success('Versão criada!')
-      router.push(`/campo/${campoId}/mamas/receitas/${novaReceita.id}`)
+      router.push(`/campo/${campoId}/receitas/${novaReceita.id}`)
     } catch (e: unknown) {
       toast.error(e instanceof Error ? e.message : 'Erro ao criar versão')
     } finally {
@@ -451,7 +595,6 @@ export function ReceitaDetail({ receita, campo }: Props) {
       {/* ── Modo editar ── */}
       {modo === 'editar' && (
         <div className="space-y-4">
-          {/* Nota discreta se for receita base */}
           {receita.is_oficial && (
             <div className="bg-sky-50 border border-sky-200 rounded-xl p-3 space-y-1.5">
               <p className="text-xs text-sky-700">
@@ -500,29 +643,161 @@ export function ReceitaDetail({ receita, campo }: Props) {
             <Input value={form.tags} onChange={(e) => setForm((f) => ({ ...f, tags: e.target.value }))} placeholder="vegetariano, rápido" />
           </div>
 
-          {/* Ingredientes */}
+          {/* ── Ingredientes ── */}
           <div className="space-y-2">
             <Label>Ingredientes</Label>
             {ingredientes.length > 0 && (
               <div className="border border-[#E7E8D1] rounded-xl overflow-hidden divide-y divide-[#E7E8D1]">
-                {ingredientes.map((ing) => (
-                  <div key={ing.id} className="flex items-center gap-2 px-3 py-2 bg-white">
-                    <span className="flex-1 text-sm text-[#36454F]">{ing.ingrediente?.nome ?? '—'}</span>
-                    <span className="text-xs text-gray-400">
-                      {[
-                        ing.quantidade_mosquitos && `${ing.quantidade_mosquitos}${ing.unidade}`,
-                        ing.quantidade_aranh_melgas && `${ing.quantidade_aranh_melgas}${ing.unidade}`,
-                        ing.quantidade_cam_trem && `${ing.quantidade_cam_trem}${ing.unidade}`,
-                      ].filter(Boolean).join(' / ') || ing.unidade}
-                    </span>
-                    <button
-                      onClick={() => removerIngrediente(ing.id)}
-                      className="text-gray-300 hover:text-[#B85042] transition-colors p-1"
-                    >
-                      <Trash2 className="h-3.5 w-3.5" />
-                    </button>
-                  </div>
-                ))}
+                {ingredientes.map((ing) =>
+                  editIngId === ing.id ? (
+                    /* ── Inline edit form ── */
+                    <div key={ing.id} className="p-3 bg-[#f8f9f4] space-y-2">
+                      {/* Ingredient search */}
+                      {!editIngForm.ingSelecionado ? (
+                        <div className="relative">
+                          <div className="relative">
+                            <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-gray-400 pointer-events-none" />
+                            <Input
+                              placeholder="Pesquisar ingrediente..."
+                              value={editIngForm.ingPesquisa}
+                              onChange={(e) => pesquisarEditIng(e.target.value)}
+                              onBlur={() => setTimeout(() => setEditIngDropdown(false), 150)}
+                              onFocus={() => editIngResultados.length > 0 && setEditIngDropdown(true)}
+                              className="text-sm pl-8"
+                            />
+                          </div>
+                          {editIngBuscando && <p className="text-[10px] text-gray-400 mt-1 pl-1">A pesquisar...</p>}
+                          {editIngDropdown && (
+                            <div className="absolute z-20 w-full bg-white border border-gray-200 rounded-lg shadow-lg mt-1 overflow-hidden">
+                              {editIngResultados.map((r) => (
+                                <button key={r.id} type="button"
+                                  onMouseDown={(e) => { e.preventDefault(); selecionarEditIng(r) }}
+                                  className="w-full flex items-center justify-between px-3 py-2.5 hover:bg-gray-50 text-left border-b border-gray-50 last:border-0">
+                                  <span className="text-sm font-medium text-gray-800">{r.nome}</span>
+                                  <span className="text-[10px] text-gray-400 shrink-0 ml-2">{r.unidade_base}</span>
+                                </button>
+                              ))}
+                            </div>
+                          )}
+                        </div>
+                      ) : (
+                        <div className="flex items-center justify-between bg-[#2D5016]/5 border border-[#2D5016]/20 rounded-lg px-3 py-2">
+                          <div className="flex items-center gap-1.5 min-w-0">
+                            <CheckCircle2 className="h-3.5 w-3.5 text-[#2D5016] shrink-0" />
+                            <span className="text-sm font-medium text-[#2D5016] truncate">{editIngForm.ingSelecionado.nome}</span>
+                          </div>
+                          <button type="button"
+                            onClick={() => setEditIngForm((f) => ({ ...f, ingSelecionado: null, ingPesquisa: '' }))}
+                            className="text-xs text-gray-400 hover:text-gray-600 shrink-0 ml-2">
+                            × trocar
+                          </button>
+                        </div>
+                      )}
+
+                      {/* Tipo produto */}
+                      <div className="flex items-center gap-2">
+                        <span className="text-[10px] text-gray-400 shrink-0">Tipo:</span>
+                        <Select value={editIngForm.tipoProduto}
+                          onValueChange={(v) => setEditIngForm((f) => ({ ...f, tipoProduto: v as TipoProduto, autoCalcado: false }))}>
+                          <SelectTrigger className="text-xs h-7 flex-1"><SelectValue /></SelectTrigger>
+                          <SelectContent>
+                            {TIPO_PRODUTO_OPTS.map((o) => <SelectItem key={o.value} value={o.value}>{o.label}</SelectItem>)}
+                          </SelectContent>
+                        </Select>
+                      </div>
+
+                      {/* Calcular escalão */}
+                      <div className="bg-white rounded-lg p-2 space-y-1.5 border border-[#E7E8D1]">
+                        <p className="text-[10px] font-semibold text-gray-400 uppercase tracking-wider">Recalcular por escalão</p>
+                        <div className="flex items-center gap-1.5">
+                          <Input placeholder="Qtd" type="number" min="0.01" step="0.01"
+                            value={editIngForm.refQtd}
+                            onChange={(e) => setEditIngForm((f) => ({ ...f, refQtd: e.target.value }))}
+                            className="text-xs h-7 w-16 shrink-0" />
+                          <span className="text-[10px] text-gray-400 shrink-0">{editIngForm.unidade}</span>
+                          <span className="text-[10px] text-gray-400 shrink-0">para</span>
+                          <Select value={editIngForm.refEscalao}
+                            onValueChange={(v) => setEditIngForm((f) => ({ ...f, refEscalao: v as EscalaoFator }))}>
+                            <SelectTrigger className="text-xs h-7 flex-1"><SelectValue /></SelectTrigger>
+                            <SelectContent>
+                              {ESCALAO_CALC_OPTS.map((o) => <SelectItem key={o.value} value={o.value}>{o.label}</SelectItem>)}
+                            </SelectContent>
+                          </Select>
+                          <button type="button" onClick={handleCalcularEdit}
+                            className="text-[10px] font-semibold text-[#2D5016] bg-[#2D5016]/15 hover:bg-[#2D5016]/25 rounded px-2 h-7 shrink-0 transition-colors">
+                            Calcular
+                          </button>
+                        </div>
+                      </div>
+
+                      {editIngForm.autoCalcado && (
+                        <p className="text-[10px] text-[#2D5016]">✓ Calculado automaticamente · edita à vontade</p>
+                      )}
+
+                      {/* 3 bandas + unidade */}
+                      <div className="grid grid-cols-4 gap-1.5">
+                        <Input placeholder="Mosquitos" type="number"
+                          value={editIngForm.qtd_mosquitos}
+                          onChange={(e) => setEditIngForm((f) => ({ ...f, qtd_mosquitos: e.target.value, autoCalcado: false }))}
+                          className="text-xs" />
+                        <Input placeholder="Aranh/Mel" type="number"
+                          value={editIngForm.qtd_aranh_melgas}
+                          onChange={(e) => setEditIngForm((f) => ({ ...f, qtd_aranh_melgas: e.target.value, autoCalcado: false }))}
+                          className="text-xs" />
+                        <Input placeholder="Cam/Trem" type="number"
+                          value={editIngForm.qtd_cam_trem}
+                          onChange={(e) => setEditIngForm((f) => ({ ...f, qtd_cam_trem: e.target.value, autoCalcado: false }))}
+                          className="text-xs" />
+                        <Select value={editIngForm.unidade}
+                          onValueChange={(v) => setEditIngForm((f) => ({ ...f, unidade: v }))}>
+                          <SelectTrigger className="text-xs"><SelectValue /></SelectTrigger>
+                          <SelectContent>
+                            {UNIDADES.map((u) => <SelectItem key={u} value={u}>{u}</SelectItem>)}
+                          </SelectContent>
+                        </Select>
+                      </div>
+                      <Input placeholder="Notas (opcional)" value={editIngForm.notas}
+                        onChange={(e) => setEditIngForm((f) => ({ ...f, notas: e.target.value }))}
+                        className="text-sm" />
+
+                      <div className="flex gap-2 pt-1">
+                        <button onClick={guardarEditIng} disabled={savingEdit}
+                          className="text-xs font-medium text-white bg-[#2D5016] hover:bg-[#2D5016]/90 disabled:opacity-40 rounded-lg px-3 py-1.5 transition-colors">
+                          {savingEdit ? 'A guardar...' : 'Guardar'}
+                        </button>
+                        <button onClick={cancelarEditIng}
+                          className="text-xs text-gray-400 hover:text-gray-600 border border-gray-200 rounded-lg px-3 py-1.5 transition-colors">
+                          Cancelar
+                        </button>
+                      </div>
+                    </div>
+                  ) : (
+                    /* ── Normal row ── */
+                    <div key={ing.id} className="flex items-center gap-2 px-3 py-2 bg-white">
+                      <span className="flex-1 text-sm text-[#36454F]">{ing.ingrediente?.nome ?? '—'}</span>
+                      <span className="text-xs text-gray-400">
+                        {[
+                          ing.quantidade_mosquitos && `${ing.quantidade_mosquitos}${ing.unidade}`,
+                          ing.quantidade_aranh_melgas && `${ing.quantidade_aranh_melgas}${ing.unidade}`,
+                          ing.quantidade_cam_trem && `${ing.quantidade_cam_trem}${ing.unidade}`,
+                        ].filter(Boolean).join(' / ') || ing.unidade}
+                      </span>
+                      <button
+                        onClick={() => iniciarEditIng(ing)}
+                        className="text-gray-300 hover:text-[#2D5016] transition-colors p-1"
+                        title="Editar"
+                      >
+                        <Pencil className="h-3.5 w-3.5" />
+                      </button>
+                      <button
+                        onClick={() => removerIngrediente(ing.id)}
+                        className="text-gray-300 hover:text-[#B85042] transition-colors p-1"
+                      >
+                        <Trash2 className="h-3.5 w-3.5" />
+                      </button>
+                    </div>
+                  )
+                )}
               </div>
             )}
 
@@ -532,7 +807,6 @@ export function ReceitaDetail({ receita, campo }: Props) {
                 <Plus className="h-3.5 w-3.5" />Adicionar ingrediente
               </p>
 
-              {/* Pesquisa / seleção de ingrediente */}
               {!ingSelecionado ? (
                 <div className="relative">
                   <div className="relative">
@@ -546,18 +820,13 @@ export function ReceitaDetail({ receita, campo }: Props) {
                       className="text-sm pl-8"
                     />
                   </div>
-                  {ingBuscando && (
-                    <p className="text-[10px] text-gray-400 mt-1 pl-1">A pesquisar...</p>
-                  )}
+                  {ingBuscando && <p className="text-[10px] text-gray-400 mt-1 pl-1">A pesquisar...</p>}
                   {ingDropdownOpen && (
                     <div className="absolute z-20 w-full bg-white border border-gray-200 rounded-lg shadow-lg mt-1 overflow-hidden">
                       {ingResultados.map((ing) => (
-                        <button
-                          key={ing.id}
-                          type="button"
+                        <button key={ing.id} type="button"
                           onMouseDown={(e) => { e.preventDefault(); selecionarIngrediente(ing) }}
-                          className="w-full flex items-center justify-between px-3 py-2.5 hover:bg-gray-50 text-left border-b border-gray-50 last:border-0"
-                        >
+                          className="w-full flex items-center justify-between px-3 py-2.5 hover:bg-gray-50 text-left border-b border-gray-50 last:border-0">
                           <span className="text-sm font-medium text-gray-800">{ing.nome}</span>
                           <span className="text-[10px] text-gray-400 shrink-0 ml-2">
                             {ing.unidade_base} · {ing.tipo_produto}
@@ -581,92 +850,58 @@ export function ReceitaDetail({ receita, campo }: Props) {
                     <CheckCircle2 className="h-3.5 w-3.5 text-[#2D5016] shrink-0" />
                     <span className="text-sm font-medium text-[#2D5016] truncate">{ingSelecionado.nome}</span>
                   </div>
-                  <button
-                    type="button"
-                    onClick={limparSeleccaoIng}
-                    className="text-xs text-gray-400 hover:text-gray-600 shrink-0 ml-2"
-                  >
+                  <button type="button" onClick={limparSeleccaoIng}
+                    className="text-xs text-gray-400 hover:text-gray-600 shrink-0 ml-2">
                     × trocar
                   </button>
                 </div>
               )}
 
-              {/* Tipo de produto */}
               <div className="flex items-center gap-2">
                 <span className="text-[10px] text-gray-400 shrink-0">Tipo produto:</span>
-                <Select
-                  value={novoIngTipo}
-                  onValueChange={(v) => { setNovoIngTipo(v as TipoProduto); setAutoCalcado(false) }}
-                >
+                <Select value={novoIngTipo}
+                  onValueChange={(v) => { setNovoIngTipo(v as TipoProduto); setAutoCalcado(false) }}>
                   <SelectTrigger className="text-xs h-7 flex-1"><SelectValue /></SelectTrigger>
                   <SelectContent>
-                    {TIPO_PRODUTO_OPTS.map((o) => (
-                      <SelectItem key={o.value} value={o.value}>{o.label}</SelectItem>
-                    ))}
+                    {TIPO_PRODUTO_OPTS.map((o) => <SelectItem key={o.value} value={o.value}>{o.label}</SelectItem>)}
                   </SelectContent>
                 </Select>
               </div>
 
-              {/* Cálculo automático por escalão */}
               <div className="bg-white rounded-lg p-2 space-y-1.5 border border-[#E7E8D1]">
                 <p className="text-[10px] font-semibold text-gray-400 uppercase tracking-wider">Calcular por escalão</p>
                 <div className="flex items-center gap-1.5">
-                  <Input
-                    placeholder="Qtd"
-                    type="number"
-                    min="0.01"
-                    step="0.01"
+                  <Input placeholder="Qtd" type="number" min="0.01" step="0.01"
                     value={refQtd}
                     onChange={(e) => setRefQtd(e.target.value)}
-                    className="text-xs h-7 w-16 shrink-0"
-                  />
+                    className="text-xs h-7 w-16 shrink-0" />
                   <span className="text-[10px] text-gray-400 shrink-0">{novoIng.unidade}</span>
                   <span className="text-[10px] text-gray-400 shrink-0">para</span>
                   <Select value={refEscalao} onValueChange={(v) => setRefEscalao(v as EscalaoFator)}>
                     <SelectTrigger className="text-xs h-7 flex-1"><SelectValue /></SelectTrigger>
                     <SelectContent>
-                      {ESCALAO_CALC_OPTS.map((o) => (
-                        <SelectItem key={o.value} value={o.value}>{o.label}</SelectItem>
-                      ))}
+                      {ESCALAO_CALC_OPTS.map((o) => <SelectItem key={o.value} value={o.value}>{o.label}</SelectItem>)}
                     </SelectContent>
                   </Select>
-                  <button
-                    type="button"
-                    onClick={handleCalcular}
-                    className="text-[10px] font-semibold text-[#2D5016] bg-[#2D5016]/15 hover:bg-[#2D5016]/25 rounded px-2 h-7 shrink-0 transition-colors"
-                  >
+                  <button type="button" onClick={handleCalcular}
+                    className="text-[10px] font-semibold text-[#2D5016] bg-[#2D5016]/15 hover:bg-[#2D5016]/25 rounded px-2 h-7 shrink-0 transition-colors">
                     Calcular
                   </button>
                 </div>
               </div>
 
-              {autoCalcado && (
-                <p className="text-[10px] text-[#2D5016]">✓ Calculado automaticamente · edita à vontade</p>
-              )}
+              {autoCalcado && <p className="text-[10px] text-[#2D5016]">✓ Calculado automaticamente · edita à vontade</p>}
 
-              {/* 3 bandas de quantidade + unidade */}
               <div className="grid grid-cols-4 gap-1.5">
-                <Input
-                  placeholder="Mosquitos"
-                  type="number"
-                  value={novoIng.qtd_mosquitos}
+                <Input placeholder="Mosquitos" type="number" value={novoIng.qtd_mosquitos}
                   onChange={(e) => { setNovoIng((n) => ({ ...n, qtd_mosquitos: e.target.value })); setAutoCalcado(false) }}
-                  className="text-xs"
-                />
-                <Input
-                  placeholder="Aranh/Mel"
-                  type="number"
-                  value={novoIng.qtd_aranh_melgas}
+                  className="text-xs" />
+                <Input placeholder="Aranh/Mel" type="number" value={novoIng.qtd_aranh_melgas}
                   onChange={(e) => { setNovoIng((n) => ({ ...n, qtd_aranh_melgas: e.target.value })); setAutoCalcado(false) }}
-                  className="text-xs"
-                />
-                <Input
-                  placeholder="Cam/Trem"
-                  type="number"
-                  value={novoIng.qtd_cam_trem}
+                  className="text-xs" />
+                <Input placeholder="Cam/Trem" type="number" value={novoIng.qtd_cam_trem}
                   onChange={(e) => { setNovoIng((n) => ({ ...n, qtd_cam_trem: e.target.value })); setAutoCalcado(false) }}
-                  className="text-xs"
-                />
+                  className="text-xs" />
                 <Select value={novoIng.unidade} onValueChange={(v) => setNovoIng((n) => ({ ...n, unidade: v }))}>
                   <SelectTrigger className="text-xs"><SelectValue /></SelectTrigger>
                   <SelectContent>
@@ -674,12 +909,9 @@ export function ReceitaDetail({ receita, campo }: Props) {
                   </SelectContent>
                 </Select>
               </div>
-              <Input
-                placeholder="Notas (opcional)"
-                value={novoIng.notas}
+              <Input placeholder="Notas (opcional)" value={novoIng.notas}
                 onChange={(e) => setNovoIng((n) => ({ ...n, notas: e.target.value }))}
-                className="text-sm"
-              />
+                className="text-sm" />
               <button
                 onClick={adicionarIngrediente}
                 disabled={(!ingSelecionado && !ingPesquisa.trim()) || addingIng}
@@ -693,16 +925,14 @@ export function ReceitaDetail({ receita, campo }: Props) {
           {/* Guardar + Marcar verificada */}
           <div className="space-y-2 pt-2">
             <div className="flex gap-2">
-              <Button
-                onClick={guardar}
-                disabled={saving || !form.nome.trim()}
-                className="flex-1 bg-[#2D5016] hover:bg-[#2D5016]/90"
-              >
+              <Button onClick={guardar} disabled={saving || !form.nome.trim()}
+                className="flex-1 bg-[#2D5016] hover:bg-[#2D5016]/90">
                 {saving ? 'A guardar...' : 'Guardar alterações'}
               </Button>
               <button
                 onClick={() => {
                   setModo('ver')
+                  setEditIngId(null)
                   setForm({
                     nome: receita.nome,
                     categoria: receita.categoria,

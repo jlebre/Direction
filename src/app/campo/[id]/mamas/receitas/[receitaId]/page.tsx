@@ -1,39 +1,12 @@
-import { createClient } from '@/lib/supabase/server'
-import { notFound } from 'next/navigation'
-import { Header } from '@/components/mamas/Header'
-import { ReceitaDetail } from '@/components/mamas/receitas/ReceitaDetail'
-import type { Campo } from '@/types/shared'
-import type { Receita, ReceitaIngrediente } from '@/types/mamas'
+import { redirect } from 'next/navigation'
 
 export const dynamic = 'force-dynamic'
 
-export default async function ReceitaDetailPage({
+export default async function ReceitaRedirect({
   params,
 }: {
   params: Promise<{ id: string; receitaId: string }>
 }) {
   const { id, receitaId } = await params
-  const supabase = createClient()
-
-  const [{ data: campo }, { data: receita }] = await Promise.all([
-    supabase.from('campos').select('*').eq('id', id).single(),
-    supabase
-      .from('receitas')
-      .select('*, ingredientes:receita_ingredientes(*, ingrediente:ingredientes(*))')
-      .eq('id', receitaId)
-      .is('deleted_at', null)
-      .single(),
-  ])
-
-  if (!campo || !receita) notFound()
-
-  const r = receita as Receita & { ingredientes: ReceitaIngrediente[] }
-  const c = campo as Campo
-
-  return (
-    <>
-      <Header title={r.nome} backHref={`/campo/${id}/mamas/receitas`} />
-      <ReceitaDetail receita={r} campo={c} />
-    </>
-  )
+  redirect(`/campo/${id}/receitas/${receitaId}`)
 }

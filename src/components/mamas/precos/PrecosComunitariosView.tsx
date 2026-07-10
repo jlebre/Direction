@@ -1,7 +1,7 @@
 'use client'
 
 import { useState, useMemo, useCallback, useRef, useEffect } from 'react'
-import { Plus, X, Search, ChevronDown, Edit2, Store, Euro, Trash2 } from 'lucide-react'
+import { Plus, X, Search, Edit2, Store, Trash2, RotateCcw, AlertTriangle } from 'lucide-react'
 import { createClient } from '@/lib/supabase/client'
 import { toast } from 'sonner'
 import { Button } from '@/components/ui/button'
@@ -18,12 +18,14 @@ interface Preco {
   id: string
   produto: string
   categoria: string
-  preco: number
+  preco: number | null
   unidade: string
   supermercado_id: string | null
   criado_por: string
   data_registo: string
   notas: string | null
+  ingrediente_id?: string | null
+  deleted_at?: string | null
   supermercado?: Supermercado | null
 }
 
@@ -60,6 +62,7 @@ function normalizar(s: string) {
 }
 
 type SheetMode = 'add' | 'edit' | 'novo_super' | null
+type FiltroEstado = 'todos' | 'por_completar'
 
 export function PrecosComunitariosView({ precosIniciais, supermercadosIniciais }: Props) {
   const [precos, setPrecos] = useState<Preco[]>(precosIniciais)
@@ -68,11 +71,16 @@ export function PrecosComunitariosView({ precosIniciais, supermercadosIniciais }
   const [filtroSuper, setFiltroSuper] = useState('')
   const [filtroCategoria, setFiltroCategoria] = useState('')
   const [filtroCriador, setFiltroCriador] = useState('')
+  const [filtroEstado, setFiltroEstado] = useState<FiltroEstado>('todos')
+  const [verApagados, setVerApagados] = useState(false)
+  const [precosApagados, setPrecosApagados] = useState<Preco[]>([])
+  const [loadingApagados, setLoadingApagados] = useState(false)
   const [sheet, setSheet] = useState<SheetMode>(null)
   const [editId, setEditId] = useState<string | null>(null)
   const [saving, setSaving] = useState(false)
   const [produtoSugestoes, setProdutoSugestoes] = useState<string[]>([])
   const [showSugestoes, setShowSugestoes] = useState(false)
+  const [confirmDeleteId, setConfirmDeleteId] = useState<string | null>(null)
 
   const [form, setForm] = useState({
     produto: '',
@@ -93,7 +101,6 @@ export function PrecosComunitariosView({ precosIniciais, supermercadosIniciais }
   const supabase = createClient()
   const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null)
 
-  // Load criado_por from localStorage
   useEffect(() => {
     const saved = localStorage.getItem('precos_nome') ?? ''
     setForm((f) => ({ ...f, criado_por: saved }))
@@ -102,7 +109,6 @@ export function PrecosComunitariosView({ precosIniciais, supermercadosIniciais }
   function upd(key: string, v: string) {
     setForm((f) => {
       const next = { ...f, [key]: v }
-      // Auto-fill category/unit from existing product
       if (key === 'produto' && v.trim()) {
         const match = precos.find((p) => normalizar(p.produto) === normalizar(v))
         if (match) {
@@ -124,7 +130,6 @@ export function PrecosComunitariosView({ precosIniciais, supermercadosIniciais }
     }
   }
 
-  // Debounced search → refetch from Supabase
   const handlePesquisa = useCallback((v: string) => {
     setPesquisa(v)
     if (debounceRef.current) clearTimeout(debounceRef.current)
@@ -132,6 +137,7 @@ export function PrecosComunitariosView({ precosIniciais, supermercadosIniciais }
       const query = supabase
         .from('precos')
         .select('*, supermercado:supermercados(*)')
+        .is('deleted_at', null)
         .order('produto')
       if (v.trim()) query.ilike('produto', `%${v.trim()}%`)
       const { data } = await query
@@ -139,12 +145,33 @@ export function PrecosComunitariosView({ precosIniciais, supermercadosIniciais }
     }, 300)
   }, [supabase])
 
-  // Group precos by normalised product name
+  async function carregarApagados() {
+    setLoadingApagados(true)
+    try {
+      const { data } = await supabase
+        .from('precos')
+        .select('*, supermercado:supermercados(*)')
+        .not('deleted_at', 'is', null)
+        .order('deleted_at', { ascending: false })
+      setPrecosApagados((data ?? []) as Preco[])
+    } finally {
+      setLoadingApagados(false)
+    }
+  }
+
+  async function toggleApagados() {
+    if (!verApagados) {
+      await carregarApagados()
+    }
+    setVerApagados((v) => !v)
+  }
+
   const grupos = useMemo(() => {
     let filtered = precos
     if (filtroSuper) filtered = filtered.filter((p) => p.supermercado_id === filtroSuper)
     if (filtroCategoria) filtered = filtered.filter((p) => p.categoria === filtroCategoria)
     if (filtroCriador) filtered = filtered.filter((p) => p.criado_por === filtroCriador)
+    if (filtroEstado === 'por_completar') filtered = filtered.filter((p) => p.preco == null)
 
     const map = new Map<string, Preco[]>()
     filtered.forEach((p) => {
@@ -152,13 +179,14 @@ export function PrecosComunitariosView({ precosIniciais, supermercadosIniciais }
       if (!map.has(key)) map.set(key, [])
       map.get(key)!.push(p)
     })
-    // Sort by product name
     return Array.from(map.entries()).sort(([a], [b]) => a.localeCompare(b))
-  }, [precos, filtroSuper, filtroCategoria, filtroCriador])
+  }, [precos, filtroSuper, filtroCategoria, filtroCriador, filtroEstado])
 
   const criadores = useMemo(() => {
     return [...new Set(precos.map((p) => p.criado_por).filter(Boolean))].sort()
   }, [precos])
+
+  const nPorCompletar = useMemo(() => precos.filter((p) => p.preco == null).length, [precos])
 
   function abrirAdicionar(produtoPreenchido?: string) {
     setEditId(null)
@@ -179,7 +207,7 @@ export function PrecosComunitariosView({ precosIniciais, supermercadosIniciais }
     setForm({
       produto: p.produto,
       categoria: p.categoria,
-      preco: String(p.preco),
+      preco: p.preco != null ? String(p.preco) : '',
       unidade: p.unidade,
       supermercado_id: p.supermercado_id ?? '',
       criado_por: p.criado_por,
@@ -189,10 +217,11 @@ export function PrecosComunitariosView({ precosIniciais, supermercadosIniciais }
   }
 
   async function guardar() {
-    if (!form.produto.trim() || !form.preco || !form.supermercado_id) {
-      toast.error('Produto, preço e supermercado são obrigatórios')
+    if (!form.produto.trim() || !form.supermercado_id) {
+      toast.error('Produto e supermercado são obrigatórios')
       return
     }
+    const precoVal = form.preco.trim() ? parseFloat(form.preco) : null
     setSaving(true)
     localStorage.setItem('precos_nome', form.criado_por)
     try {
@@ -200,7 +229,7 @@ export function PrecosComunitariosView({ precosIniciais, supermercadosIniciais }
         const { data, error } = await supabase
           .from('precos')
           .update({
-            preco: parseFloat(form.preco),
+            preco: precoVal,
             notas: form.notas.trim() || null,
             data_registo: new Date().toISOString().slice(0, 10),
           })
@@ -216,7 +245,7 @@ export function PrecosComunitariosView({ precosIniciais, supermercadosIniciais }
           .insert({
             produto: form.produto.trim(),
             categoria: form.categoria,
-            preco: parseFloat(form.preco),
+            preco: precoVal,
             unidade: form.unidade,
             supermercado_id: form.supermercado_id || null,
             criado_por: form.criado_por.trim() || 'Anónimo',
@@ -237,9 +266,34 @@ export function PrecosComunitariosView({ precosIniciais, supermercadosIniciais }
   }
 
   async function remover(id: string) {
-    await supabase.from('precos').delete().eq('id', id)
+    const { error } = await supabase
+      .from('precos')
+      .update({ deleted_at: new Date().toISOString() })
+      .eq('id', id)
+    if (error) { toast.error(error.message); return }
     setPrecos((prev) => prev.filter((p) => p.id !== id))
     toast.success('Removido')
+  }
+
+  async function recuperar(id: string) {
+    const { data, error } = await supabase
+      .from('precos')
+      .update({ deleted_at: null })
+      .eq('id', id)
+      .select('*, supermercado:supermercados(*)')
+      .single()
+    if (error) { toast.error(error.message); return }
+    setPrecosApagados((prev) => prev.filter((p) => p.id !== id))
+    setPrecos((prev) => [...prev, data as Preco])
+    toast.success('Recuperado')
+  }
+
+  async function apagarDefinitivamente(id: string) {
+    const { error } = await supabase.from('precos').delete().eq('id', id)
+    if (error) { toast.error(error.message); return }
+    setPrecosApagados((prev) => prev.filter((p) => p.id !== id))
+    setConfirmDeleteId(null)
+    toast.success('Apagado definitivamente')
   }
 
   async function criarSupermercado() {
@@ -269,12 +323,6 @@ export function PrecosComunitariosView({ precosIniciais, supermercadosIniciais }
     }
   }
 
-  const superMap = useMemo(() => {
-    const m = new Map<string, Supermercado>()
-    supermercados.forEach((s) => m.set(s.id, s))
-    return m
-  }, [supermercados])
-
   return (
     <div className="max-w-2xl mx-auto pb-24">
       {/* Search */}
@@ -289,119 +337,199 @@ export function PrecosComunitariosView({ precosIniciais, supermercadosIniciais }
           />
         </div>
 
-        {/* Filters */}
-        <div className="flex gap-2 overflow-x-auto pb-1 -mx-1 px-1">
-          <select
-            value={filtroSuper}
-            onChange={(e) => setFiltroSuper(e.target.value)}
-            className="shrink-0 border border-[#E7E8D1] rounded-lg px-2.5 py-1.5 text-xs text-[#36454F] bg-white focus:outline-none appearance-none pr-6 relative"
+        {/* Estado filter chips */}
+        <div className="flex gap-1.5 overflow-x-auto pb-0.5">
+          <button
+            onClick={() => setFiltroEstado('todos')}
+            className={cn(
+              'shrink-0 px-3 py-1.5 rounded-full text-xs font-semibold border transition-colors',
+              filtroEstado === 'todos' ? 'bg-[#2D5016] text-white border-[#2D5016]' : 'bg-white border-gray-200 text-gray-600'
+            )}
           >
-            <option value="">Todos os supermercados</option>
-            {supermercados.map((s) => (
-              <option key={s.id} value={s.id}>{s.nome}</option>
-            ))}
-          </select>
-          <select
-            value={filtroCategoria}
-            onChange={(e) => setFiltroCategoria(e.target.value)}
-            className="shrink-0 border border-[#E7E8D1] rounded-lg px-2.5 py-1.5 text-xs text-[#36454F] bg-white focus:outline-none appearance-none"
+            Todos
+          </button>
+          <button
+            onClick={() => setFiltroEstado('por_completar')}
+            className={cn(
+              'shrink-0 px-3 py-1.5 rounded-full text-xs font-semibold border transition-colors',
+              filtroEstado === 'por_completar' ? 'bg-amber-500 text-white border-amber-500' : 'bg-white border-gray-200 text-gray-600'
+            )}
           >
-            <option value="">Todas as categorias</option>
-            {CATEGORIAS.map((c) => (
-              <option key={c.value} value={c.value}>{c.label}</option>
-            ))}
-          </select>
-          {criadores.length > 0 && (
-            <select
-              value={filtroCriador}
-              onChange={(e) => setFiltroCriador(e.target.value)}
-              className="shrink-0 border border-[#E7E8D1] rounded-lg px-2.5 py-1.5 text-xs text-[#36454F] bg-white focus:outline-none appearance-none"
-            >
-              <option value="">Toda a gente</option>
-              {criadores.map((c) => (
-                <option key={c} value={c}>{c}</option>
-              ))}
-            </select>
-          )}
+            Por completar{nPorCompletar > 0 ? ` (${nPorCompletar})` : ''}
+          </button>
+          <button
+            onClick={toggleApagados}
+            className={cn(
+              'shrink-0 px-3 py-1.5 rounded-full text-xs font-semibold border transition-colors',
+              verApagados ? 'bg-red-500 text-white border-red-500' : 'bg-white border-gray-200 text-gray-600'
+            )}
+          >
+            Apagados
+          </button>
         </div>
-      </div>
 
-      {/* Price list */}
-      <div className="px-4 space-y-3 mt-2">
-        {grupos.length === 0 ? (
-          <div className="text-center py-16">
-            <div className="text-4xl mb-3">💰</div>
-            <p className="text-gray-500 font-semibold">Sem preços registados ainda.</p>
-            <p className="text-gray-400 text-sm mt-1">Sê o primeiro a adicionar!</p>
+        {/* Supermercado / Categoria / Criador filters */}
+        {!verApagados && (
+          <div className="flex gap-2 overflow-x-auto pb-1 -mx-1 px-1">
+            <select value={filtroSuper} onChange={(e) => setFiltroSuper(e.target.value)}
+              className="shrink-0 border border-[#E7E8D1] rounded-lg px-2.5 py-1.5 text-xs text-[#36454F] bg-white focus:outline-none appearance-none">
+              <option value="">Todos os supermercados</option>
+              {supermercados.map((s) => <option key={s.id} value={s.id}>{s.nome}</option>)}
+            </select>
+            <select value={filtroCategoria} onChange={(e) => setFiltroCategoria(e.target.value)}
+              className="shrink-0 border border-[#E7E8D1] rounded-lg px-2.5 py-1.5 text-xs text-[#36454F] bg-white focus:outline-none appearance-none">
+              <option value="">Todas as categorias</option>
+              {CATEGORIAS.map((c) => <option key={c.value} value={c.value}>{c.label}</option>)}
+            </select>
+            {criadores.length > 0 && (
+              <select value={filtroCriador} onChange={(e) => setFiltroCriador(e.target.value)}
+                className="shrink-0 border border-[#E7E8D1] rounded-lg px-2.5 py-1.5 text-xs text-[#36454F] bg-white focus:outline-none appearance-none">
+                <option value="">Toda a gente</option>
+                {criadores.map((c) => <option key={c} value={c}>{c}</option>)}
+              </select>
+            )}
           </div>
-        ) : (
-          grupos.map(([key, items]) => (
-            <div key={key} className="bg-white rounded-xl border border-[#E7E8D1] overflow-hidden">
-              <div className="px-4 py-3 border-b border-[#E7E8D1] bg-[#f8f8f4]">
-                <div className="flex items-center justify-between gap-2">
-                  <div>
-                    <p className="font-semibold text-[#36454F] text-sm">{items[0].produto}</p>
-                    <p className="text-[10px] text-gray-400 mt-0.5">
-                      {CATEGORIAS.find((c) => c.value === items[0].categoria)?.label ?? items[0].categoria}
-                      {' · '}{items[0].unidade}
-                    </p>
-                  </div>
-                  <button
-                    onClick={() => abrirAdicionar(items[0].produto)}
-                    className="shrink-0 flex items-center gap-1 text-xs text-[#2D5016] font-semibold hover:opacity-70 transition-opacity px-2 py-1"
-                  >
-                    <Plus className="h-3.5 w-3.5" />
-                    <span className="hidden sm:inline">Outro supermercado</span>
-                  </button>
-                </div>
-              </div>
-              <div className="divide-y divide-[#E7E8D1]">
-                {items.map((p) => (
-                  <div key={p.id} className="flex items-center gap-3 px-4 py-2.5">
-                    <div className="flex-1 min-w-0">
-                      <div className="flex items-center gap-2 flex-wrap">
-                        <span className="font-bold text-[#2D5016] text-base">
-                          {p.preco.toLocaleString('pt-PT', { style: 'currency', currency: 'EUR' })}
-                        </span>
-                        <span className="text-xs text-gray-400">/ {p.unidade}</span>
-                      </div>
-                      <p className="text-xs text-gray-500 truncate">
-                        {p.supermercado ? p.supermercado.nome : 'Supermercado desconhecido'}
-                        {' · '}{p.criado_por}
-                        {' · '}{formatData(p.data_registo)}
-                      </p>
-                      {p.notas && <p className="text-xs text-gray-400 italic truncate">{p.notas}</p>}
-                    </div>
-                    <button
-                      onClick={() => abrirEditar(p)}
-                      className="p-1.5 text-gray-300 hover:text-[#2D5016] transition-colors"
-                    >
-                      <Edit2 className="h-3.5 w-3.5" />
-                    </button>
-                    <button
-                      onClick={() => remover(p.id)}
-                      className="p-1.5 text-gray-300 hover:text-[#F96167] transition-colors"
-                    >
-                      <Trash2 className="h-3.5 w-3.5" />
-                    </button>
-                  </div>
-                ))}
-              </div>
-            </div>
-          ))
         )}
       </div>
 
+      {/* ── Vista apagados ── */}
+      {verApagados ? (
+        <div className="px-4 space-y-3 mt-2">
+          {loadingApagados ? (
+            <div className="text-center py-12 text-gray-400 text-sm">A carregar...</div>
+          ) : precosApagados.length === 0 ? (
+            <div className="text-center py-16">
+              <p className="text-gray-500 font-semibold">Sem entradas apagadas.</p>
+            </div>
+          ) : (
+            precosApagados.map((p) => (
+              <div key={p.id} className="bg-white rounded-xl border border-red-100 p-3 flex items-start gap-3">
+                <div className="flex-1 min-w-0">
+                  <p className="font-semibold text-[#36454F] text-sm">{p.produto}</p>
+                  <p className="text-xs text-gray-400 mt-0.5">
+                    {p.preco != null
+                      ? p.preco.toLocaleString('pt-PT', { style: 'currency', currency: 'EUR' })
+                      : 'sem preço'}{' '}
+                    · {p.unidade} · {p.supermercado?.nome ?? '—'}
+                  </p>
+                </div>
+                <div className="flex gap-1.5 shrink-0">
+                  <button
+                    onClick={() => recuperar(p.id)}
+                    className="flex items-center gap-1 text-xs text-[#2D5016] border border-[#2D5016]/30 bg-[#2D5016]/5 hover:bg-[#2D5016]/10 rounded-lg px-2.5 py-1.5 transition-colors"
+                  >
+                    <RotateCcw className="h-3 w-3" />
+                    Recuperar
+                  </button>
+                  {confirmDeleteId === p.id ? (
+                    <div className="flex gap-1">
+                      <button onClick={() => apagarDefinitivamente(p.id)}
+                        className="text-xs text-white bg-red-600 hover:bg-red-700 rounded-lg px-2.5 py-1.5 transition-colors">
+                        Confirmar
+                      </button>
+                      <button onClick={() => setConfirmDeleteId(null)}
+                        className="text-xs text-gray-400 border border-gray-200 rounded-lg px-2 py-1.5">
+                        <X className="h-3 w-3" />
+                      </button>
+                    </div>
+                  ) : (
+                    <button onClick={() => setConfirmDeleteId(p.id)}
+                      className="text-xs text-red-600 border border-red-200 bg-red-50 hover:bg-red-100 rounded-lg px-2.5 py-1.5 transition-colors">
+                      Apagar
+                    </button>
+                  )}
+                </div>
+              </div>
+            ))
+          )}
+        </div>
+      ) : (
+        /* ── Vista normal ── */
+        <div className="px-4 space-y-3 mt-2">
+          {grupos.length === 0 ? (
+            <div className="text-center py-16">
+              <div className="text-4xl mb-3">💰</div>
+              <p className="text-gray-500 font-semibold">
+                {filtroEstado === 'por_completar' ? 'Nenhum produto por completar.' : 'Sem preços registados ainda.'}
+              </p>
+              {filtroEstado !== 'por_completar' && (
+                <p className="text-gray-400 text-sm mt-1">Sê o primeiro a adicionar!</p>
+              )}
+            </div>
+          ) : (
+            grupos.map(([key, items]) => (
+              <div key={key} className="bg-white rounded-xl border border-[#E7E8D1] overflow-hidden">
+                <div className="px-4 py-3 border-b border-[#E7E8D1] bg-[#f8f8f4]">
+                  <div className="flex items-center justify-between gap-2">
+                    <div>
+                      <p className="font-semibold text-[#36454F] text-sm">{items[0].produto}</p>
+                      <p className="text-[10px] text-gray-400 mt-0.5">
+                        {CATEGORIAS.find((c) => c.value === items[0].categoria)?.label ?? items[0].categoria}
+                        {' · '}{items[0].unidade}
+                      </p>
+                    </div>
+                    <button
+                      onClick={() => abrirAdicionar(items[0].produto)}
+                      className="shrink-0 flex items-center gap-1 text-xs text-[#2D5016] font-semibold hover:opacity-70 transition-opacity px-2 py-1"
+                    >
+                      <Plus className="h-3.5 w-3.5" />
+                      <span className="hidden sm:inline">Outro supermercado</span>
+                    </button>
+                  </div>
+                </div>
+                <div className="divide-y divide-[#E7E8D1]">
+                  {items.map((p) => (
+                    <div key={p.id} className="flex items-center gap-3 px-4 py-2.5">
+                      <div className="flex-1 min-w-0">
+                        <div className="flex items-center gap-2 flex-wrap">
+                          {p.preco != null ? (
+                            <span className="font-bold text-[#2D5016] text-base">
+                              {p.preco.toLocaleString('pt-PT', { style: 'currency', currency: 'EUR' })}
+                            </span>
+                          ) : (
+                            <span className="flex items-center gap-1 text-amber-600 font-semibold text-sm">
+                              <AlertTriangle className="h-3.5 w-3.5" />
+                              por completar
+                            </span>
+                          )}
+                          <span className="text-xs text-gray-400">/ {p.unidade}</span>
+                        </div>
+                        <p className="text-xs text-gray-500 truncate">
+                          {p.supermercado ? p.supermercado.nome : 'Supermercado desconhecido'}
+                          {' · '}{p.criado_por}
+                          {' · '}{formatData(p.data_registo)}
+                        </p>
+                        {p.notas && <p className="text-xs text-gray-400 italic truncate">{p.notas}</p>}
+                      </div>
+                      <button onClick={() => abrirEditar(p)}
+                        className="p-1.5 text-gray-300 hover:text-[#2D5016] transition-colors" title="Editar">
+                        <Edit2 className="h-3.5 w-3.5" />
+                      </button>
+                      <button onClick={() => remover(p.id)}
+                        className="p-1.5 text-gray-300 hover:text-[#F96167] transition-colors">
+                        <Trash2 className="h-3.5 w-3.5" />
+                      </button>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            ))
+          )}
+        </div>
+      )}
+
       {/* FAB */}
-      <div className="fixed bottom-6 right-4 z-20">
-        <button
-          onClick={() => abrirAdicionar()}
-          className="flex items-center gap-2 bg-[#2D5016] text-white rounded-full px-5 py-3 shadow-lg font-semibold text-sm hover:bg-[#2D5016]/90 transition-colors"
-        >
-          <Plus className="h-4 w-4" />
-          Adicionar preço
-        </button>
-      </div>
+      {!verApagados && (
+        <div className="fixed bottom-6 right-4 z-20">
+          <button
+            onClick={() => abrirAdicionar()}
+            className="flex items-center gap-2 bg-[#2D5016] text-white rounded-full px-5 py-3 shadow-lg font-semibold text-sm hover:bg-[#2D5016]/90 transition-colors"
+          >
+            <Plus className="h-4 w-4" />
+            Adicionar preço
+          </button>
+        </div>
+      )}
 
       {/* Add / Edit sheet */}
       {(sheet === 'add' || sheet === 'edit') && (
@@ -418,7 +546,7 @@ export function PrecosComunitariosView({ precosIniciais, supermercadosIniciais }
             </div>
             <div className="flex-1 overflow-y-auto p-4 space-y-3 pb-[calc(env(safe-area-inset-bottom)+16px)]">
               {/* Produto */}
-              {sheet === 'add' && (
+              {sheet === 'add' ? (
                 <div className="relative">
                   <label className="text-xs font-semibold text-gray-500 block mb-1">Produto *</label>
                   <input
@@ -432,20 +560,15 @@ export function PrecosComunitariosView({ precosIniciais, supermercadosIniciais }
                   {showSugestoes && produtoSugestoes.length > 0 && (
                     <div className="absolute top-full left-0 right-0 bg-white border border-[#E7E8D1] rounded-xl shadow-lg z-10 mt-1 overflow-hidden">
                       {produtoSugestoes.map((s) => (
-                        <button
-                          key={s}
-                          onMouseDown={() => { upd('produto', s); setShowSugestoes(false) }}
-                          className="w-full text-left px-4 py-2.5 text-sm text-[#36454F] hover:bg-[#f8f8f4] border-b border-[#E7E8D1] last:border-0"
-                        >
+                        <button key={s} onMouseDown={() => { upd('produto', s); setShowSugestoes(false) }}
+                          className="w-full text-left px-4 py-2.5 text-sm text-[#36454F] hover:bg-[#f8f8f4] border-b border-[#E7E8D1] last:border-0">
                           {s}
                         </button>
                       ))}
                     </div>
                   )}
                 </div>
-              )}
-
-              {sheet === 'edit' && (
+              ) : (
                 <div className="bg-[#f8f8f4] rounded-xl px-4 py-2.5">
                   <p className="text-xs text-gray-500">Produto</p>
                   <p className="font-semibold text-[#36454F] text-sm">{form.produto}</p>
@@ -455,39 +578,32 @@ export function PrecosComunitariosView({ precosIniciais, supermercadosIniciais }
               {/* Preço + Unidade */}
               <div className="grid grid-cols-2 gap-3">
                 <div>
-                  <label className="text-xs font-semibold text-gray-500 block mb-1">Preço (€) *</label>
-                  <input
-                    type="number"
-                    min="0"
-                    step="0.01"
+                  <label className="text-xs font-semibold text-gray-500 block mb-1">
+                    Preço (€){sheet === 'add' ? '' : ' *'}
+                  </label>
+                  <input type="number" min="0" step="0.01"
                     value={form.preco}
                     onChange={(e) => upd('preco', e.target.value)}
-                    placeholder="1.23"
+                    placeholder="1.23 (ou deixa vazio)"
                     className="w-full border border-[#E7E8D1] rounded-xl px-4 py-3 text-sm text-[#36454F] focus:outline-none focus:ring-2 focus:ring-[#2D5016]/30 focus:border-[#2D5016]"
                   />
                 </div>
                 <div>
                   <label className="text-xs font-semibold text-gray-500 block mb-1">Unidade</label>
-                  <select
-                    value={form.unidade}
-                    onChange={(e) => upd('unidade', e.target.value)}
+                  <select value={form.unidade} onChange={(e) => upd('unidade', e.target.value)}
                     disabled={sheet === 'edit'}
-                    className="w-full border border-[#E7E8D1] rounded-xl px-4 py-3 text-sm text-[#36454F] focus:outline-none focus:ring-2 focus:ring-[#2D5016]/30 focus:border-[#2D5016] bg-white disabled:opacity-60"
-                  >
+                    className="w-full border border-[#E7E8D1] rounded-xl px-4 py-3 text-sm text-[#36454F] focus:outline-none focus:ring-2 focus:ring-[#2D5016]/30 focus:border-[#2D5016] bg-white disabled:opacity-60">
                     {UNIDADES.map((u) => <option key={u} value={u}>{u}</option>)}
                   </select>
                 </div>
               </div>
 
-              {/* Categoria */}
+              {/* Categoria (só ao adicionar) */}
               {sheet === 'add' && (
                 <div>
                   <label className="text-xs font-semibold text-gray-500 block mb-1">Categoria</label>
-                  <select
-                    value={form.categoria}
-                    onChange={(e) => upd('categoria', e.target.value)}
-                    className="w-full border border-[#E7E8D1] rounded-xl px-4 py-3 text-sm text-[#36454F] focus:outline-none focus:ring-2 focus:ring-[#2D5016]/30 focus:border-[#2D5016] bg-white"
-                  >
+                  <select value={form.categoria} onChange={(e) => upd('categoria', e.target.value)}
+                    className="w-full border border-[#E7E8D1] rounded-xl px-4 py-3 text-sm text-[#36454F] focus:outline-none focus:ring-2 focus:ring-[#2D5016]/30 focus:border-[#2D5016] bg-white">
                     {CATEGORIAS.map((c) => <option key={c.value} value={c.value}>{c.label}</option>)}
                   </select>
                 </div>
@@ -497,20 +613,15 @@ export function PrecosComunitariosView({ precosIniciais, supermercadosIniciais }
               <div>
                 <label className="text-xs font-semibold text-gray-500 block mb-1">Supermercado *</label>
                 <div className="flex gap-2">
-                  <select
-                    value={form.supermercado_id}
-                    onChange={(e) => upd('supermercado_id', e.target.value)}
+                  <select value={form.supermercado_id} onChange={(e) => upd('supermercado_id', e.target.value)}
                     disabled={sheet === 'edit'}
-                    className="flex-1 border border-[#E7E8D1] rounded-xl px-4 py-3 text-sm text-[#36454F] focus:outline-none focus:ring-2 focus:ring-[#2D5016]/30 focus:border-[#2D5016] bg-white disabled:opacity-60"
-                  >
+                    className="flex-1 border border-[#E7E8D1] rounded-xl px-4 py-3 text-sm text-[#36454F] focus:outline-none focus:ring-2 focus:ring-[#2D5016]/30 focus:border-[#2D5016] bg-white disabled:opacity-60">
                     <option value="">Selecionar...</option>
                     {supermercados.map((s) => <option key={s.id} value={s.id}>{s.nome}</option>)}
                   </select>
                   {sheet === 'add' && (
-                    <button
-                      onClick={() => setSheet('novo_super')}
-                      className="shrink-0 flex items-center gap-1 border border-[#E7E8D1] rounded-xl px-3 py-2 text-xs text-[#36454F] hover:bg-[#E7E8D1] transition-colors"
-                    >
+                    <button onClick={() => setSheet('novo_super')}
+                      className="shrink-0 flex items-center gap-1 border border-[#E7E8D1] rounded-xl px-3 py-2 text-xs text-[#36454F] hover:bg-[#E7E8D1] transition-colors">
                       <Store className="h-3.5 w-3.5" />
                       Novo
                     </button>
@@ -521,29 +632,23 @@ export function PrecosComunitariosView({ precosIniciais, supermercadosIniciais }
               {/* Nome */}
               <div>
                 <label className="text-xs font-semibold text-gray-500 block mb-1">O teu nome</label>
-                <input
-                  value={form.criado_por}
-                  onChange={(e) => upd('criado_por', e.target.value)}
+                <input value={form.criado_por} onChange={(e) => upd('criado_por', e.target.value)}
                   placeholder="Mamã Mema, Tia Tecas..."
                   disabled={sheet === 'edit'}
-                  className="w-full border border-[#E7E8D1] rounded-xl px-4 py-3 text-sm text-[#36454F] focus:outline-none focus:ring-2 focus:ring-[#2D5016]/30 focus:border-[#2D5016] disabled:opacity-60"
-                />
+                  className="w-full border border-[#E7E8D1] rounded-xl px-4 py-3 text-sm text-[#36454F] focus:outline-none focus:ring-2 focus:ring-[#2D5016]/30 focus:border-[#2D5016] disabled:opacity-60" />
               </div>
 
               {/* Notas */}
               <div>
                 <label className="text-xs font-semibold text-gray-500 block mb-1">Notas</label>
-                <input
-                  value={form.notas}
-                  onChange={(e) => upd('notas', e.target.value)}
+                <input value={form.notas} onChange={(e) => upd('notas', e.target.value)}
                   placeholder="Promoção, marca branca, pack de 6..."
-                  className="w-full border border-[#E7E8D1] rounded-xl px-4 py-3 text-sm text-[#36454F] focus:outline-none focus:ring-2 focus:ring-[#2D5016]/30 focus:border-[#2D5016]"
-                />
+                  className="w-full border border-[#E7E8D1] rounded-xl px-4 py-3 text-sm text-[#36454F] focus:outline-none focus:ring-2 focus:ring-[#2D5016]/30 focus:border-[#2D5016]" />
               </div>
 
               <Button
                 onClick={guardar}
-                disabled={saving || !form.produto.trim() || !form.preco || !form.supermercado_id}
+                disabled={saving || !form.produto.trim() || !form.supermercado_id}
                 className="w-full bg-[#2D5016] hover:bg-[#2D5016]/90 min-h-[48px]"
               >
                 {saving ? 'A guardar...' : 'Guardar'}
@@ -567,38 +672,28 @@ export function PrecosComunitariosView({ precosIniciais, supermercadosIniciais }
             <div className="p-4 space-y-3 pb-[calc(env(safe-area-inset-bottom)+16px)]">
               <div>
                 <label className="text-xs font-semibold text-gray-500 block mb-1">Nome *</label>
-                <input
-                  autoFocus
-                  value={novoSuperForm.nome}
+                <input autoFocus value={novoSuperForm.nome}
                   onChange={(e) => setNovoSuperForm((f) => ({ ...f, nome: e.target.value }))}
                   placeholder="Ex: Pingo Doce Castelo Branco"
-                  className="w-full border border-[#E7E8D1] rounded-xl px-4 py-3 text-sm text-[#36454F] focus:outline-none focus:ring-2 focus:ring-[#2D5016]/30 focus:border-[#2D5016]"
-                />
+                  className="w-full border border-[#E7E8D1] rounded-xl px-4 py-3 text-sm text-[#36454F] focus:outline-none focus:ring-2 focus:ring-[#2D5016]/30 focus:border-[#2D5016]" />
               </div>
               <div>
                 <label className="text-xs font-semibold text-gray-500 block mb-1">Cadeia</label>
-                <select
-                  value={novoSuperForm.cadeia}
+                <select value={novoSuperForm.cadeia}
                   onChange={(e) => setNovoSuperForm((f) => ({ ...f, cadeia: e.target.value }))}
-                  className="w-full border border-[#E7E8D1] rounded-xl px-4 py-3 text-sm text-[#36454F] focus:outline-none focus:ring-2 focus:ring-[#2D5016]/30 focus:border-[#2D5016] bg-white"
-                >
+                  className="w-full border border-[#E7E8D1] rounded-xl px-4 py-3 text-sm text-[#36454F] focus:outline-none focus:ring-2 focus:ring-[#2D5016]/30 focus:border-[#2D5016] bg-white">
                   {CADEIAS.map((c) => <option key={c} value={c}>{c}</option>)}
                 </select>
               </div>
               <div>
                 <label className="text-xs font-semibold text-gray-500 block mb-1">Localidade</label>
-                <input
-                  value={novoSuperForm.localidade}
+                <input value={novoSuperForm.localidade}
                   onChange={(e) => setNovoSuperForm((f) => ({ ...f, localidade: e.target.value }))}
                   placeholder="Ex: Castelo Branco"
-                  className="w-full border border-[#E7E8D1] rounded-xl px-4 py-3 text-sm text-[#36454F] focus:outline-none focus:ring-2 focus:ring-[#2D5016]/30 focus:border-[#2D5016]"
-                />
+                  className="w-full border border-[#E7E8D1] rounded-xl px-4 py-3 text-sm text-[#36454F] focus:outline-none focus:ring-2 focus:ring-[#2D5016]/30 focus:border-[#2D5016]" />
               </div>
-              <Button
-                onClick={criarSupermercado}
-                disabled={saving || !novoSuperForm.nome.trim()}
-                className="w-full bg-[#2D5016] hover:bg-[#2D5016]/90 min-h-[48px]"
-              >
+              <Button onClick={criarSupermercado} disabled={saving || !novoSuperForm.nome.trim()}
+                className="w-full bg-[#2D5016] hover:bg-[#2D5016]/90 min-h-[48px]">
                 {saving ? 'A criar...' : 'Criar supermercado'}
               </Button>
             </div>
