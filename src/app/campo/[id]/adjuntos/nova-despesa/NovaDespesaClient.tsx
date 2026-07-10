@@ -17,10 +17,9 @@ import type { LinhaParsed } from '@/lib/adjuntos/ocr-parser'
 import { useOcr } from '@/hooks/useOcr'
 import { QRScanner } from '@/components/adjuntos/QRScanner'
 import { parsearQrFatura, type QrFaturaData } from '@/lib/adjuntos/qr-parser'
+import { CAMTIL_NIF } from '@/lib/adjuntos/codes'
 
 type Step = 1 | 2 | 3 | 4
-
-const CAMTIL_NIF = '501979891'
 
 interface FormState {
   photoFile: File | null
@@ -525,7 +524,7 @@ export default function NovaDespesaClient({ campo, hasPin }: { campo: CampoPubli
                   <div>
                     <p className="font-semibold text-sm text-gray-800">NIF detetado automaticamente pelo OCR</p>
                     <p className="text-sm font-mono font-bold text-[#B85042] mt-0.5">
-                      {(ocr.resultado?.nif_detectado ?? '501979891').replace(/(\d{3})(\d{3})(\d{3})/, '$1 $2 $3')}
+                      {(ocr.resultado?.nif_detectado ?? CAMTIL_NIF).replace(/(\d{3})(\d{3})(\d{3})/, '$1 $2 $3')}
                     </p>
                     <button
                       type="button"

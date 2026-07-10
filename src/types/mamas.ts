@@ -313,3 +313,16 @@ export type EstimativaItem = {
   preco: number | null
   total: number | null
 }
+
+export type RefeicaoBreakdown = {
+  refeicao: RefeicaoTipo
+  numPessoas: number | null
+  total: number | null
+}
+
+export type DiaBreakdown = {
+  dia: number
+  label: string
+  total: number | null
+  refeicoes: RefeicaoBreakdown[]
+}

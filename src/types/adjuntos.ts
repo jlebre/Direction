@@ -93,16 +93,6 @@ export interface Devolucao {
   fatura_original?: Despesa | null
 }
 
-/** @deprecated Substituído por RegularizacaoNif — tabela liquidacoes_nif mantida por compatibilidade */
-export interface LiquidacaoNif {
-  id: string
-  campo_id: string
-  valor: number
-  data: string
-  observacao: string | null
-  created_at: string
-}
-
 export interface CodeEntry {
   code: string
   short: string

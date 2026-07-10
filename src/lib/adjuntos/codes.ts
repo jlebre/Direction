@@ -1,5 +1,7 @@
 import type { CodeCategory, CodeEntry } from '@/types/adjuntos'
 
+export const CAMTIL_NIF = '501979891'
+
 export const CODE_CATEGORIES: CodeCategory[] = [
   {
     label: 'FDS Campo',

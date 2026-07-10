@@ -3,7 +3,6 @@
 import { useState, useRef } from 'react'
 import { useRouter } from 'next/navigation'
 import Link from 'next/link'
-import { ChevronLeft } from 'lucide-react'
 import { createClient } from '@/lib/supabase/client'
 import { toast } from 'sonner'
 import { Input } from '@/components/ui/input'
@@ -12,140 +11,169 @@ import { Button } from '@/components/ui/button'
 import CodeSelector from '@/components/adjuntos/CodeSelector'
 import { compressImage } from '@/lib/adjuntos/image-utils'
 import { getCampoSlug } from '@/lib/adjuntos/supabase-storage'
+import { getPhotoUrl } from '@/lib/adjuntos/supabase-storage'
 import type { CampoPublico } from '@/types/shared'
-import type { Despesa } from '@/types/adjuntos'
+import { validatePin } from '@/actions/validatePin'
+import type { Devolucao, Despesa } from '@/types/adjuntos'
+import PinDialog from '@/components/shared/PinDialog'
+
+type PhotoState =
+  | { mode: 'keep'; url: string; path: string }
+  | { mode: 'replace'; file: File; preview: string }
+  | { mode: 'remove'; oldPath: string }
+  | { mode: 'none' }
 
 interface Props {
   campo: CampoPublico
+  hasPin: boolean
+  devolucao: Devolucao
   faturas: Despesa[]
 }
 
-function today() {
-  return new Date().toISOString().split('T')[0]
-}
-
-export default function NovaDevolucaoClient({ campo, faturas }: Props) {
+export default function EditarDevolucaoClient({ campo, hasPin, devolucao, faturas }: Props) {
   const router = useRouter()
   const supabase = createClient()
   const cameraRef = useRef<HTMLInputElement>(null)
   const galleryRef = useRef<HTMLInputElement>(null)
 
-  const [data, setData] = useState(today())
-  const [valor, setValor] = useState('')
-  const [descricao, setDescricao] = useState('')
-  const [codigo, setCodigo] = useState<string | null>(null)
-  const [codigoDescricao, setCodigoDescricao] = useState<string | null>(null)
-  const [faturaId, setFaturaId] = useState<string>('')
-  const [notas, setNotas] = useState('')
-  const [photoFile, setPhotoFile] = useState<File | null>(null)
-  const [photoPreview, setPhotoPreview] = useState<string | null>(null)
+  const [showPin, setShowPin] = useState(hasPin)
+  const [pinError, setPinError] = useState(false)
+  const [pinUnlocked, setPinUnlocked] = useState(!hasPin)
+
+  const existingUrl = devolucao.foto_path ? getPhotoUrl(devolucao.foto_path) : null
+
+  const [data, setData] = useState(devolucao.data)
+  const [valor, setValor] = useState(Number(devolucao.valor).toFixed(2))
+  const [descricao, setDescricao] = useState(devolucao.descricao ?? '')
+  const [codigo, setCodigo] = useState<string | null>(devolucao.codigo)
+  const [codigoDescricao, setCodigoDescricao] = useState<string | null>(devolucao.codigo_descricao)
+  const [faturaId, setFaturaId] = useState<string>(devolucao.fatura_original_id ?? '')
+  const [notas, setNotas] = useState(devolucao.notas ?? '')
+  const [photoState, setPhotoState] = useState<PhotoState>(
+    existingUrl && devolucao.foto_path
+      ? { mode: 'keep', url: existingUrl, path: devolucao.foto_path }
+      : { mode: 'none' }
+  )
   const [submitting, setSubmitting] = useState(false)
+
+  async function handlePinConfirm(pin: string) {
+    const valid = await validatePin(campo.id, pin)
+    if (valid) { setPinUnlocked(true); setShowPin(false); setPinError(false) }
+    else { setPinError(true); setTimeout(() => setPinError(false), 1200) }
+  }
 
   async function handleFileChange(e: React.ChangeEvent<HTMLInputElement>) {
     const file = e.target.files?.[0]
     if (!file) return
     const compressed = await compressImage(file)
-    setPhotoFile(new File([compressed], file.name, { type: 'image/jpeg' }))
-    setPhotoPreview(URL.createObjectURL(compressed))
+    setPhotoState({ mode: 'replace', file: new File([compressed], file.name, { type: 'image/jpeg' }), preview: URL.createObjectURL(compressed) })
+  }
+
+  function removePhoto() {
+    if (devolucao.foto_path) setPhotoState({ mode: 'remove', oldPath: devolucao.foto_path })
+    else setPhotoState({ mode: 'none' })
+  }
+
+  function canSave() {
+    return !!valor && parseFloat(valor) > 0
   }
 
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault()
-    if (!valor || parseFloat(valor) <= 0) { toast.error('Valor inválido'); return }
+    if (!canSave()) return
     setSubmitting(true)
     try {
-      // Insert row first to claim numero_devolucao atomically.
-      // Retry up to 5x on unique constraint violation (23505) caused by concurrent inserts.
-      let insertedId: string | null = null
-      let numeroDevolucao = 0
+      let fotoPath: string | null = devolucao.foto_path ?? null
 
-      for (let attempt = 0; attempt < 5; attempt++) {
-        const { data: lastDev } = await supabase
-          .from('devolucoes')
-          .select('numero_devolucao')
-          .eq('campo_id', campo.id)
-          .order('numero_devolucao', { ascending: false })
-          .limit(1)
-          .maybeSingle()
-
-        numeroDevolucao = (lastDev?.numero_devolucao ?? 0) + 1
-
-        const { data: inserted, error: insertError } = await supabase
-          .from('devolucoes')
-          .insert({
-            campo_id: campo.id,
-            numero_devolucao: numeroDevolucao,
-            data,
-            valor: parseFloat(valor),
-            descricao: descricao.trim() || null,
-            codigo: codigo || null,
-            codigo_descricao: codigoDescricao || null,
-            fatura_original_id: faturaId || null,
-            notas: notas.trim() || null,
-            foto_path: null,
-            origem_dados: 'manual',
-          })
-          .select('id')
-          .single()
-
-        if (!insertError && inserted) { insertedId = inserted.id; break }
-        if (insertError?.code === '23505' && attempt < 4) continue
-        throw insertError
-      }
-
-      if (!insertedId) throw new Error('Não foi possível criar número de devolução único')
-
-      // Upload photo now that we have the confirmed numero
-      if (photoFile) {
+      if (photoState.mode === 'replace') {
         const slug = getCampoSlug(campo.nome)
-        const numStr = String(numeroDevolucao).padStart(3, '0')
+        const numStr = String(devolucao.numero_devolucao).padStart(3, '0')
         const path = `${slug}/dev-${numStr}.jpg`
         const { error: uploadErr } = await supabase.storage
           .from('faturas')
-          .upload(path, photoFile, { contentType: 'image/jpeg', upsert: true })
-        if (!uploadErr) {
-          await supabase.from('devolucoes').update({ foto_path: path }).eq('id', insertedId)
+          .upload(path, photoState.file, { contentType: 'image/jpeg', upsert: true })
+        if (!uploadErr) fotoPath = path
+        if (devolucao.foto_path && devolucao.foto_path !== path) {
+          await supabase.storage.from('faturas').remove([devolucao.foto_path])
         }
+      } else if (photoState.mode === 'remove') {
+        await supabase.storage.from('faturas').remove([photoState.oldPath])
+        fotoPath = null
+      } else if (photoState.mode === 'keep') {
+        fotoPath = photoState.path
+      } else {
+        fotoPath = null
       }
 
-      toast.success(`Devolução #${numeroDevolucao} registada!`)
-      router.push(`/campo/${campo.id}/adjuntos`)
+      const { error } = await supabase
+        .from('devolucoes')
+        .update({
+          data,
+          valor: parseFloat(valor),
+          descricao: descricao.trim() || null,
+          codigo: codigo || null,
+          codigo_descricao: codigoDescricao || null,
+          fatura_original_id: faturaId || null,
+          notas: notas.trim() || null,
+          foto_path: fotoPath,
+        })
+        .eq('id', devolucao.id)
+      if (error) throw error
+      toast.success('Devolução atualizada!')
+      router.push(`/campo/${campo.id}/adjuntos/devolucao/${devolucao.id}`)
       router.refresh()
     } catch (e: unknown) {
-      toast.error(e instanceof Error ? e.message : 'Erro ao registar devolução')
+      toast.error(e instanceof Error ? e.message : 'Erro ao guardar')
       setSubmitting(false)
     }
   }
 
+  if (showPin) {
+    return (
+      <PinDialog
+        onConfirm={handlePinConfirm}
+        onCancel={() => router.back()}
+        error={pinError}
+        subtitle="Introduz o PIN para editar esta devolução."
+      />
+    )
+  }
+  if (!pinUnlocked) return null
+
+  const currentPhotoUrl =
+    photoState.mode === 'keep' ? photoState.url :
+    photoState.mode === 'replace' ? photoState.preview :
+    null
+
   return (
     <main className="min-h-screen pb-10">
       <div className="bg-green-700 text-white px-4 pt-10 pb-5">
-        <div className="max-w-lg mx-auto flex items-center gap-3 mb-4">
-          <Link href={`/campo/${campo.id}/adjuntos`} className="text-green-200">
-            <ChevronLeft className="h-5 w-5" />
+        <div className="max-w-lg mx-auto flex items-center justify-between">
+          <Link href={`/campo/${campo.id}/adjuntos/devolucao/${devolucao.id}`} className="text-green-200 text-sm">
+            ← Cancelar
           </Link>
-          <h1 className="text-xl font-bold">Nova Devolução</h1>
+          <span className="text-green-200 text-sm">Dev. #{devolucao.numero_devolucao}</span>
         </div>
-        <p className="max-w-lg mx-auto text-sm text-green-200">
-          Regista uma nota de crédito, reembolso ou devolução. O valor será abatido ao total gasto.
-        </p>
+        <div className="max-w-lg mx-auto mt-2">
+          <h1 className="text-xl font-bold">Editar Devolução</h1>
+        </div>
       </div>
 
       <form onSubmit={handleSubmit} className="max-w-lg mx-auto px-4 py-5 space-y-4">
 
-        {/* Foto (opcional) */}
+        {/* Foto */}
         <section>
-          <p className="text-xs font-bold text-gray-400 uppercase tracking-wider mb-2">Documento (opcional)</p>
-          {photoPreview ? (
+          <p className="text-xs font-bold text-gray-400 uppercase tracking-wider mb-2">Documento</p>
+          {currentPhotoUrl ? (
             <div className="space-y-2">
               <div className="rounded-xl overflow-hidden bg-gray-100 aspect-video">
                 {/* eslint-disable-next-line @next/next/no-img-element */}
-                <img src={photoPreview} alt="Documento" className="w-full h-full object-cover" />
+                <img src={currentPhotoUrl} alt="Documento" className="w-full h-full object-cover" />
               </div>
               <div className="grid grid-cols-3 gap-2">
                 <button type="button" onClick={() => cameraRef.current?.click()} className="py-2.5 text-xs font-medium border border-gray-200 rounded-xl text-gray-700 bg-white active:bg-gray-50">📷 Câmara</button>
                 <button type="button" onClick={() => galleryRef.current?.click()} className="py-2.5 text-xs font-medium border border-gray-200 rounded-xl text-gray-700 bg-white active:bg-gray-50">🖼 Galeria</button>
-                <button type="button" onClick={() => { setPhotoFile(null); setPhotoPreview(null) }} className="py-2.5 text-xs font-medium border border-red-200 rounded-xl text-red-500 bg-white active:bg-red-50">Remover</button>
+                <button type="button" onClick={removePhoto} className="py-2.5 text-xs font-medium border border-red-200 rounded-xl text-red-500 bg-white active:bg-red-50">Remover</button>
               </div>
             </div>
           ) : (
@@ -234,10 +262,10 @@ export default function NovaDevolucaoClient({ campo, faturas }: Props) {
 
         <Button
           type="submit"
-          disabled={submitting}
+          disabled={!canSave() || submitting}
           className="w-full h-12 text-base font-bold bg-green-700 hover:bg-green-800 text-white"
         >
-          {submitting ? 'A registar...' : 'Registar Devolução'}
+          {submitting ? 'A guardar...' : 'Guardar Alterações'}
         </Button>
       </form>
     </main>

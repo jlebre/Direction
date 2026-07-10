@@ -17,9 +17,20 @@ export default async function AdjuntosDashboard({ params }: { params: Promise<{ 
 
   const [{ data: campo }, { data: despesas }, { data: regularizacoes }, { data: devolucoes }] = await Promise.all([
     supabase.from('campos').select('*').eq('id', id).single(),
-    supabase.from('despesas').select('*').eq('campo_id', id).order('numero_recibo', { ascending: false }),
-    supabase.from('regularizacoes_nif').select('*').eq('campo_id', id),
-    supabase.from('devolucoes').select('*').eq('campo_id', id).order('numero_devolucao', { ascending: false }),
+    supabase
+      .from('despesas')
+      .select('id, campo_id, numero_recibo, data, valor, descricao, codigo, codigo_descricao, tipo, nif_confirmado, foto_path, is_regularizacao_nif, created_at')
+      .eq('campo_id', id)
+      .order('numero_recibo', { ascending: false }),
+    supabase
+      .from('regularizacoes_nif')
+      .select('id, campo_id, despesa_original_id, despesa_regularizacao_id, valor, created_at')
+      .eq('campo_id', id),
+    supabase
+      .from('devolucoes')
+      .select('id, campo_id, numero_devolucao, data, valor, descricao, codigo, codigo_descricao')
+      .eq('campo_id', id)
+      .order('numero_devolucao', { ascending: false }),
   ])
 
   if (!campo) notFound()
@@ -39,7 +50,9 @@ export default async function AdjuntosDashboard({ params }: { params: Promise<{ 
   const totalDevolucoes = devs.reduce((s, d) => s + Number(d.valor), 0)
   // Devoluções abatidas às despesas para saldo líquido
   const saldoDisponivel = c.saldo_inicial + totalReceitas - totalDespesas + totalDevolucoes
-  const pctGasto = c.saldo_inicial > 0 ? Math.min((totalDespesas / c.saldo_inicial) * 100, 100) : 0
+  const orcamentoTotal = c.saldo_inicial + totalReceitas
+  const gastoLiquido = totalDespesas - totalDevolucoes
+  const pctGasto = orcamentoTotal > 0 ? Math.min((gastoLiquido / orcamentoTotal) * 100, 100) : 0
 
   const porCodigo: Record<string, number> = {}
   for (const d of dsFinanceiras.filter((d) => d.tipo === 'despesa')) {
@@ -149,15 +162,22 @@ export default async function AdjuntosDashboard({ params }: { params: Promise<{ 
             </h2>
             <div className="space-y-2">
               {devs.map((d) => (
-                <div key={d.id} className="bg-white rounded-xl border border-green-100 px-4 py-3 flex items-center justify-between">
+                <Link
+                  key={d.id}
+                  href={`/campo/${id}/adjuntos/devolucao/${d.id}`}
+                  className="flex items-center justify-between bg-white rounded-xl border border-green-100 px-4 py-3 hover:shadow-sm active:scale-[0.99] transition-all"
+                >
                   <div className="min-w-0">
                     <p className="text-sm font-medium text-gray-800 truncate">
                       #{d.numero_devolucao} — {d.descricao ?? d.codigo_descricao ?? 'Devolução'}
                     </p>
                     <p className="text-xs text-gray-400">{new Date(d.data + 'T00:00:00').toLocaleDateString('pt-PT')}</p>
                   </div>
-                  <span className="text-green-600 font-bold text-sm shrink-0 ml-3">+€{Number(d.valor).toFixed(2)}</span>
-                </div>
+                  <div className="flex items-center gap-2 shrink-0 ml-3">
+                    <span className="text-green-600 font-bold text-sm">+€{Number(d.valor).toFixed(2)}</span>
+                    <span className="text-gray-300 text-xs">›</span>
+                  </div>
+                </Link>
               ))}
             </div>
             {totalDevolucoes > 0 && (

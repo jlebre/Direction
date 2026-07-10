@@ -36,7 +36,10 @@ export default async function MamasPage({ params }: { params: Promise<{ id: stri
   )
 
   const numDias = getNumDias(c.seccao)
-  const diasList = [-2, -1, ...Array.from({ length: numDias }, (_, i) => i + 1)]
+  const campoDiasActive = (campoDiasData ?? []) as CampoDia[]
+  const diasList: number[] = campoDiasActive.length > 0
+    ? campoDiasActive.filter((d) => d.ativo).sort((a, b) => a.ordem - b.ordem).map((d) => d.ordem)
+    : [-2, -1, ...Array.from({ length: numDias }, (_, i) => i + 1)]
 
   return (
     <div className="flex flex-col h-screen">
@@ -47,7 +50,7 @@ export default async function MamasPage({ params }: { params: Promise<{ id: stri
             <Link href={`/campo/${id}`} className="text-sm" style={{ color: 'rgba(255,255,255,0.75)' }}>
               ← {c.nome}
             </Link>
-            <ExportarPlanoButton campo={c} diasList={diasList} />
+            <ExportarPlanoButton campo={c} diasList={diasList} campoDias={campoDiasActive} />
           </div>
           <h1 className="text-2xl font-bold">Olá, {primeiroNome}</h1>
           <div className="flex gap-2 mt-3 flex-wrap">

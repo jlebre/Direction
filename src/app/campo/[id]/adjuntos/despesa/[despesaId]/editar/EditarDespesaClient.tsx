@@ -11,7 +11,8 @@ import { validatePin } from '@/actions/validatePin'
 import type { Despesa } from '@/types/adjuntos'
 import CodeSelector from '@/components/adjuntos/CodeSelector'
 import PinDialog from '@/components/shared/PinDialog'
-import Toast from '@/components/shared/Toast'
+import { toast } from 'sonner'
+import { CAMTIL_NIF } from '@/lib/adjuntos/codes'
 
 type PhotoState =
   | { mode: 'keep'; url: string; path: string }
@@ -49,7 +50,6 @@ export default function EditarDespesaClient({ campo, hasPin, despesa, existingPh
   )
 
   const [submitting, setSubmitting] = useState(false)
-  const [toast, setToast] = useState<{ msg: string; type: 'success' | 'error' } | null>(null)
 
   async function handlePinConfirm(pin: string) {
     const valid = await validatePin(campo.id, pin)
@@ -120,13 +120,11 @@ export default function EditarDespesaClient({ campo, hasPin, despesa, existingPh
 
       if (updateError) throw updateError
 
-      setToast({ msg: 'Despesa atualizada!', type: 'success' })
-      setTimeout(() => {
-        router.push(`/campo/${campo.id}/adjuntos/despesa/${despesa.id}`)
-        router.refresh()
-      }, 800)
+      toast.success('Despesa atualizada!')
+      router.push(`/campo/${campo.id}/adjuntos/despesa/${despesa.id}`)
+      router.refresh()
     } catch {
-      setToast({ msg: 'Erro ao guardar. Tenta de novo.', type: 'error' })
+      toast.error('Erro ao guardar. Tenta de novo.')
       setSubmitting(false)
     }
   }
@@ -282,7 +280,7 @@ export default function EditarDespesaClient({ campo, hasPin, despesa, existingPh
             <label className="flex items-center justify-between cursor-pointer gap-4">
               <div>
                 <p className="text-sm font-medium text-gray-800">NIF CAMTIL confirmado</p>
-                <p className="text-xs font-mono text-gray-400 mt-0.5">501 979 891</p>
+                <p className="text-xs font-mono text-gray-400 mt-0.5">{CAMTIL_NIF.replace(/(\d{3})(\d{3})(\d{3})/, '$1 $2 $3')}</p>
               </div>
               <input
                 type="checkbox"
@@ -313,7 +311,6 @@ export default function EditarDespesaClient({ campo, hasPin, despesa, existingPh
         </button>
       </div>
 
-      {toast && <Toast message={toast.msg} type={toast.type} onDismiss={() => setToast(null)} />}
     </main>
   )
 }

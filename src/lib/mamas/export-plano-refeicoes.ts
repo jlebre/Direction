@@ -1,7 +1,7 @@
 import * as XLSX from 'xlsx'
 import type { Campo, SeccaoTipo } from '@/types/shared'
 import { getDiaLabel } from '@/types/shared'
-import { REFEICAO_LABELS, TIPO_PRATO_LABELS, type EmentaItem, calcularQuantidade } from '@/types/mamas'
+import { REFEICAO_LABELS, TIPO_PRATO_LABELS, type EmentaItem, type CampoDia, calcularQuantidade } from '@/types/mamas'
 import { exportOrShareFile } from '@/lib/export-share'
 
 type RiExport = {
@@ -18,8 +18,18 @@ function formatDatePT(dateStr: string): string {
   return `${String(d.getDate()).padStart(2, '0')}/${String(d.getMonth() + 1).padStart(2, '0')}/${d.getFullYear()}`
 }
 
-export async function exportPlanoRefeicoes(campo: Campo, ementa: EmentaItem[], diasList: number[]): Promise<void> {
+function getDiaLabelCustom(dia: number, campoDias: CampoDia[]): string {
+  return campoDias.find((d) => d.ordem === dia)?.nome ?? getDiaLabel(dia)
+}
+
+export async function exportPlanoRefeicoes(
+  campo: Campo,
+  ementa: EmentaItem[],
+  diasList: number[],
+  campoDias: CampoDia[] = []
+): Promise<void> {
   const wb = XLSX.utils.book_new()
+  const numPessoasCampo = (campo.num_animados ?? 0) + (campo.num_animadores ?? 0) || null
 
   // ── Sheet 1: Plano de Refeições ────────────────────────────────────────────
   const rows: (string | number | null)[][] = [
@@ -27,7 +37,7 @@ export async function exportPlanoRefeicoes(campo: Campo, ementa: EmentaItem[], d
     ['Mamã', campo.mama ?? ''],
     ['Período', campo.datas ?? ''],
     [],
-    ['Dia', 'Data', 'Refeição', 'Prato', 'Nome', 'Notas'],
+    ['Dia', 'Data', 'Refeição', 'Prato', 'Nome', 'Notas', 'Nº Pessoas'],
   ]
 
   // Agrupar por (dia, refeicao)
@@ -38,14 +48,8 @@ export async function exportPlanoRefeicoes(campo: Campo, ementa: EmentaItem[], d
     grouped.get(key)!.push(item)
   }
 
-  // Ordenar dias e refeições
   const ordemRefeicao: Record<string, number> = {
-    pequeno_almoco: 0,
-    almoco: 1,
-    lanche: 2,
-    jantar: 3,
-    ceia: 4,
-    extra: 5,
+    pequeno_almoco: 0, almoco: 1, lanche: 2, jantar: 3, ceia: 4, extra: 5,
   }
 
   const entries = [...grouped.entries()].sort(([a], [b]) => {
@@ -62,13 +66,11 @@ export async function exportPlanoRefeicoes(campo: Campo, ementa: EmentaItem[], d
   for (const [key, pratos] of entries) {
     const [diaStr, refeicao] = key.split('-')
     const dia = parseInt(diaStr)
-    const diaLabel = getDiaLabel(dia)
+    const diaLabel = getDiaLabelCustom(dia, campoDias)
 
-    // Calcular data se disponível
     let dataLabel = ''
     if (campo.data_inicio) {
       const inicio = new Date(campo.data_inicio + 'T00:00:00')
-      // dia=1 → dia 0 de offset; dia=-1 → pré-campo -1; etc.
       const offset = dia > 0 ? dia - 1 : dia
       const data = new Date(inicio)
       data.setDate(data.getDate() + offset)
@@ -76,6 +78,12 @@ export async function exportPlanoRefeicoes(campo: Campo, ementa: EmentaItem[], d
     }
 
     const refeicaoLabel = REFEICAO_LABELS[refeicao as keyof typeof REFEICAO_LABELS] ?? refeicao
+    // num_pessoas for this slot (take first non-null in the group)
+    const slotNumPessoas = pratos.find((p) => p.num_pessoas != null)?.num_pessoas ?? null
+    const numPessoasLabel: string | number | null =
+      slotNumPessoas !== null && slotNumPessoas !== numPessoasCampo
+        ? slotNumPessoas
+        : (slotNumPessoas !== null ? slotNumPessoas : null)
 
     const sortedPratos = [...pratos].sort((a, b) => a.ordem - b.ordem)
 
@@ -83,14 +91,17 @@ export async function exportPlanoRefeicoes(campo: Campo, ementa: EmentaItem[], d
       const prato = sortedPratos[i]
       const nome = prato.receita?.nome ?? prato.receita_nome_custom ?? ''
       const tipoPrato = TIPO_PRATO_LABELS[prato.tipo_prato ?? 'prato']
+      const isNewSlot = dia !== lastDia || refeicao !== lastRefeicao
 
       rows.push([
         dia !== lastDia ? diaLabel : '',
         dia !== lastDia ? dataLabel : '',
-        (dia !== lastDia || refeicao !== lastRefeicao) ? refeicaoLabel : '',
+        isNewSlot ? refeicaoLabel : '',
         tipoPrato,
         nome,
         prato.notas ?? '',
+        // Show num_pessoas on the first row of each (dia, refeicao) group
+        (i === 0 && isNewSlot && numPessoasLabel !== null) ? numPessoasLabel : '',
       ])
 
       if (i === 0) {
@@ -102,12 +113,13 @@ export async function exportPlanoRefeicoes(campo: Campo, ementa: EmentaItem[], d
 
   const ws1 = XLSX.utils.aoa_to_sheet(rows)
   ws1['!cols'] = [
-    { wch: 12 },
+    { wch: 14 },
     { wch: 11 },
     { wch: 18 },
     { wch: 12 },
     { wch: 38 },
     { wch: 28 },
+    { wch: 11 },
   ]
   XLSX.utils.book_append_sheet(wb, ws1, 'Plano de Refeições')
 
@@ -131,8 +143,16 @@ export async function exportPlanoRefeicoes(campo: Campo, ementa: EmentaItem[], d
     ['Total de pratos', totalPratos],
   ]
 
+  if (campoDias.length > 0) {
+    resumo.push([])
+    resumo.push(['DIAS PERSONALIZADOS'])
+    for (const d of campoDias.filter((d) => d.ativo).sort((a, b) => a.ordem - b.ordem)) {
+      resumo.push([`Dia ${d.ordem}`, d.nome ?? getDiaLabel(d.ordem), d.data ?? ''])
+    }
+  }
+
   const ws2 = XLSX.utils.aoa_to_sheet(resumo)
-  ws2['!cols'] = [{ wch: 22 }, { wch: 32 }]
+  ws2['!cols'] = [{ wch: 22 }, { wch: 32 }, { wch: 14 }]
   XLSX.utils.book_append_sheet(wb, ws2, 'Resumo')
 
   // ── Sheet 3: Ingredientes calculados ─────────────────────────────────────
@@ -142,6 +162,7 @@ export async function exportPlanoRefeicoes(campo: Campo, ementa: EmentaItem[], d
   const agregados = new Map<string, { nome: string; categoria: string; qty: number; unidade: string }>()
 
   for (const slot of ementa) {
+    const slotPessoas = slot.num_pessoas ?? numPessoas
     const ris = (slot.receita as unknown as { receita_ingredientes?: RiExport[] })?.receita_ingredientes ?? []
     for (const ri of ris) {
       if (!ri.ingrediente?.nome) continue
@@ -150,7 +171,7 @@ export async function exportPlanoRefeicoes(campo: Campo, ementa: EmentaItem[], d
         ri.quantidade_mosquitos,
         ri.quantidade_aranh_melgas,
         ri.quantidade_cam_trem,
-        numPessoas,
+        slotPessoas,
         58
       )
       if (!qty) continue
@@ -187,7 +208,6 @@ export async function exportPlanoRefeicoes(campo: Campo, ementa: EmentaItem[], d
   }
 
   // ── Export / Share ────────────────────────────────────────────────────────
-  // Não usar .buffer.slice — falha em iOS Safari quando XLSX.write devolve Array<number>.
   const raw = XLSX.write(wb, { type: 'array', bookType: 'xlsx' }) as number[]
   const blob = new Blob([new Uint8Array(raw)], {
     type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',

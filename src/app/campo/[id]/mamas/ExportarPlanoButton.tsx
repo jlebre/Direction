@@ -4,14 +4,15 @@ import { useState } from 'react'
 import { createClient } from '@/lib/supabase/client'
 import { toast } from 'sonner'
 import type { Campo } from '@/types/shared'
-import type { EmentaItem } from '@/types/mamas'
+import type { EmentaItem, CampoDia } from '@/types/mamas'
 
 interface Props {
   campo: Campo
   diasList: number[]
+  campoDias?: CampoDia[]
 }
 
-export function ExportarPlanoButton({ campo, diasList }: Props) {
+export function ExportarPlanoButton({ campo, diasList, campoDias = [] }: Props) {
   const [loading, setLoading] = useState(false)
   const supabase = createClient()
 
@@ -35,7 +36,7 @@ export function ExportarPlanoButton({ campo, diasList }: Props) {
         .order('ordem')
       if (error) throw error
       const { exportPlanoRefeicoes } = await import('@/lib/mamas/export-plano-refeicoes')
-      await exportPlanoRefeicoes(campo, (data ?? []) as EmentaItem[], diasList)
+      await exportPlanoRefeicoes(campo, (data ?? []) as EmentaItem[], diasList, campoDias)
     } catch (e: unknown) {
       toast.error(e instanceof Error ? e.message : 'Erro ao exportar')
     } finally {

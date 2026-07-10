@@ -5,7 +5,8 @@ import { createClient } from '@/lib/supabase/client'
 import { toast } from 'sonner'
 import { Plus, Trash2, X, AlertCircle, ChevronDown, ChevronUp, Download } from 'lucide-react'
 import type { Campo } from '@/types/shared'
-import type { OrcamentoItem, EstimativaItem } from '@/types/mamas'
+import type { OrcamentoItem, EstimativaItem, DiaBreakdown } from '@/types/mamas'
+import { REFEICAO_LABELS } from '@/types/mamas'
 import { formatCurrency, formatQuantidade } from '@/lib/utils'
 
 type CorEscalao = { bg: string; text: string; light: string; border: string }
@@ -27,6 +28,7 @@ interface OrcamentoViewProps {
   corEscalao: CorEscalao
   totalPrevisto: number | null
   gastosReais?: GastoReal[]
+  diasBreakdown?: DiaBreakdown[]
 }
 
 type AddForm = {
@@ -43,9 +45,11 @@ export function OrcamentoView({
   corEscalao,
   totalPrevisto,
   gastosReais = [],
+  diasBreakdown = [],
 }: OrcamentoViewProps) {
   const [extras, setExtras] = useState<OrcamentoItem[]>(extrasIniciais)
   const [mostrarEstimativas, setMostrarEstimativas] = useState(false)
+  const [diaAberto, setDiaAberto] = useState<number | null>(null)
   const [addSheetOpen, setAddSheetOpen] = useState(false)
   const [salvando, setSalvando] = useState(false)
   const [exportando, setExportando] = useState(false)
@@ -54,7 +58,7 @@ export function OrcamentoView({
     setExportando(true)
     try {
       const { exportOrcamento } = await import('@/lib/mamas/export-orcamento')
-      await exportOrcamento(campo, estimativas, extras, totalPrevisto)
+      await exportOrcamento(campo, estimativas, extras, totalPrevisto, diasBreakdown)
     } catch (e: unknown) {
       toast.error(e instanceof Error ? e.message : 'Erro ao exportar')
     } finally {
@@ -187,6 +191,69 @@ export function OrcamentoView({
           </button>
         )}
       </div>
+
+      {/* Por dia e refeição */}
+      {diasBreakdown.length > 0 && (
+        <div className="bg-white rounded-xl border border-[#E7E8D1] overflow-hidden">
+          <div className="px-4 py-3 border-b border-[#E7E8D1]">
+            <h2 className="text-xs font-bold text-gray-400 uppercase tracking-wider">
+              Por dia e refeição ({diasBreakdown.length} dia{diasBreakdown.length !== 1 ? 's' : ''})
+            </h2>
+          </div>
+          <div className="divide-y divide-[#E7E8D1]">
+            {diasBreakdown.map((dia) => {
+              const isOpen = diaAberto === dia.dia
+              const semPreco = dia.refeicoes.some((r) => r.total === null)
+              return (
+                <div key={dia.dia}>
+                  <button
+                    type="button"
+                    onClick={() => setDiaAberto(isOpen ? null : dia.dia)}
+                    className="w-full flex items-center px-4 py-3 gap-3 hover:bg-[#f8f8f4] transition-colors text-left"
+                  >
+                    <span className="flex-1 text-sm font-semibold text-[#36454F] truncate">
+                      {dia.label}
+                    </span>
+                    {semPreco ? (
+                      <span className="text-xs text-amber-500 shrink-0">preços parciais</span>
+                    ) : (
+                      <span className="text-sm font-semibold tabular-nums shrink-0" style={{ color: corEscalao.bg }}>
+                        {dia.total !== null ? formatCurrency(dia.total) : '—'}
+                      </span>
+                    )}
+                    {isOpen
+                      ? <ChevronUp className="h-4 w-4 text-gray-400 shrink-0" />
+                      : <ChevronDown className="h-4 w-4 text-gray-400 shrink-0" />
+                    }
+                  </button>
+                  {isOpen && (
+                    <div className="bg-[#f8f8f4] border-t border-[#E7E8D1] divide-y divide-[#E7E8D1]">
+                      {dia.refeicoes.map((ref) => (
+                        <div key={ref.refeicao} className="flex items-center px-6 py-2.5 gap-2 text-sm">
+                          <span className="flex-1 text-gray-600">
+                            {REFEICAO_LABELS[ref.refeicao] ?? ref.refeicao}
+                          </span>
+                          {ref.numPessoas !== null && (
+                            <span className="text-xs text-gray-400 tabular-nums shrink-0">
+                              {ref.numPessoas} pess.
+                            </span>
+                          )}
+                          <span
+                            className={`text-sm font-medium tabular-nums shrink-0 ${ref.total === null ? 'text-amber-500' : ''}`}
+                            style={ref.total !== null ? { color: corEscalao.bg } : undefined}
+                          >
+                            {ref.total !== null ? formatCurrency(ref.total) : '—'}
+                          </span>
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                </div>
+              )
+            })}
+          </div>
+        </div>
+      )}
 
       {/* Gastos reais de alimentação */}
       {gastosReais.some((g) => g.real > 0 || g.previsto > 0) && (
