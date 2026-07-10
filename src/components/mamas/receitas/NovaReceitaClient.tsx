@@ -33,6 +33,7 @@ export default function NovaReceitaClient({ campoId }: { campoId: string }) {
   const [dicasPrompt, setDicasPrompt] = useState<'add' | 'remove' | false>(false)
   const [pendingCategoria, setPendingCategoria] = useState<CategoriaReceita | ''>('')
   const [saving, setSaving] = useState(false)
+  const [receitaCriada, setReceitaCriada] = useState<{ id: string; nome: string } | null>(null)
 
   function handleCategoria(v: CategoriaReceita | '') {
     const dicasAtuais = form.dicas_campo.trim()
@@ -84,7 +85,7 @@ export default function NovaReceitaClient({ campoId }: { campoId: string }) {
     if (!form.categoria) { toast.error('Seleciona uma categoria para a receita'); return }
     setSaving(true)
     try {
-      const { error } = await supabase.from('receitas').insert({
+      const { data, error } = await supabase.from('receitas').insert({
         nome: form.nome.trim(),
         categoria: form.categoria as CategoriaReceita,
         descricao: form.descricao.trim() || null,
@@ -93,14 +94,43 @@ export default function NovaReceitaClient({ campoId }: { campoId: string }) {
         tags: form.tags ? form.tags.split(',').map((t) => t.trim()).filter(Boolean) : [],
         pessoas_base: 58,
         is_oficial: false,
-      })
+      }).select('id').single()
       if (error) throw error
-      toast.success('Receita criada!')
-      router.push(`/campo/${campoId}/receitas`)
+      setReceitaCriada({ id: data.id, nome: form.nome.trim() })
     } catch (e: unknown) {
       toast.error(e instanceof Error ? e.message : 'Erro')
+    } finally {
       setSaving(false)
     }
+  }
+
+  if (receitaCriada) {
+    return (
+      <>
+        <Header title="Nova Receita" backHref={`/campo/${campoId}/receitas`} />
+        <div className="max-w-lg mx-auto p-4 pb-10 space-y-4">
+          <div className="bg-green-50 border border-green-200 rounded-xl p-4">
+            <p className="font-semibold text-green-900 text-sm">Receita criada com sucesso!</p>
+            <p className="text-sm text-green-700 mt-0.5">&ldquo;{receitaCriada.nome}&rdquo;</p>
+          </div>
+          <p className="text-sm text-gray-600">Queres configurar os ingredientes e preparação agora?</p>
+          <div className="flex flex-col gap-2">
+            <Button
+              onClick={() => router.push(`/campo/${campoId}/receitas/${receitaCriada.id}`)}
+              className="w-full bg-[#2D5016] hover:bg-[#2D5016]/90"
+            >
+              Configurar agora
+            </Button>
+            <button
+              onClick={() => router.push(`/campo/${campoId}/receitas`)}
+              className="w-full text-sm text-gray-500 hover:text-gray-700 border border-gray-200 rounded-lg py-2.5 transition-colors"
+            >
+              Configurar mais tarde
+            </button>
+          </div>
+        </div>
+      </>
+    )
   }
 
   return (

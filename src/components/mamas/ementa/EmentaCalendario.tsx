@@ -135,7 +135,7 @@ export function EmentaCalendario({ campo, ementaInicial, receitas, restricoes, c
     setModalAberto(true)
   }
 
-  async function salvarPratos(pratos: PratoSave[], numPessoas: number | null) {
+  async function salvarPratos(pratos: PratoSave[], numPessoas: number | null, numAnimados: number | null, numAnimadores: number | null) {
     if (!slotSelecionado) return
     const { dia, refeicao } = slotSelecionado
     const existentes = getSlots(dia, refeicao)
@@ -161,6 +161,8 @@ export function EmentaCalendario({ campo, ementaInicial, receitas, restricoes, c
               notas: p.notas ?? null,
               responsavel: null,
               num_pessoas: numPessoas ?? null,
+              num_animados: numAnimados ?? null,
+              num_animadores: numAnimadores ?? null,
               ordem: i,
             }))
           )

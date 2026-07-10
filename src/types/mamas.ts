@@ -107,6 +107,8 @@ export interface EmentaItem {
   notas?: string
   ordem: number
   num_pessoas?: number | null
+  num_animados?: number | null
+  num_animadores?: number | null
   receita?: Receita
   versao?: { id: string; nome_versao: string; is_default: boolean } | null
 }

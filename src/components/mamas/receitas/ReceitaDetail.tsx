@@ -64,14 +64,16 @@ export function ReceitaDetail({ receita, campo, precosReferencia }: Props) {
   const [verificada, setVerificada] = useState(receita.quantidades_verificadas ?? false)
   const [markingVerif, setMarkingVerif] = useState(false)
   const [showVerifConfirm, setShowVerifConfirm] = useState(false)
-  const [form, setForm] = useState({
+  const initialForm = {
     nome: receita.nome,
     categoria: receita.categoria,
     descricao: receita.descricao ?? '',
     instrucoes: receita.instrucoes ?? '',
     dicas_campo: receita.dicas_campo ?? '',
     tags: receita.tags?.join(', ') ?? '',
-  })
+  }
+  const [form, setForm] = useState(initialForm)
+  const [lastSaved, setLastSaved] = useState(initialForm)
   const [ingredientes, setIngredientes] = useState<ReceitaIngrediente[]>(receita.ingredientes ?? [])
 
   // ── Adicionar ingrediente ──────────────────────────────────────────────────
@@ -180,15 +182,26 @@ export function ReceitaDetail({ receita, campo, precosReferencia }: Props) {
   async function guardar() {
     setSaving(true)
     try {
-      const { error } = await supabase.from('receitas').update({
+      const saved = {
         nome: form.nome.trim(),
         categoria: form.categoria,
-        descricao: form.descricao.trim() || null,
-        instrucoes: form.instrucoes.trim() || null,
-        dicas_campo: form.dicas_campo.trim() || null,
-        tags: form.tags ? form.tags.split(',').map((t) => t.trim()).filter(Boolean) : [],
-      }).eq('id', receita.id)
+        descricao: form.descricao.trim(),
+        instrucoes: form.instrucoes.trim(),
+        dicas_campo: form.dicas_campo.trim(),
+        tags: form.tags,
+      }
+      const { data: updated, error } = await supabase.from('receitas').update({
+        nome: saved.nome,
+        categoria: saved.categoria,
+        descricao: saved.descricao || null,
+        instrucoes: saved.instrucoes || null,
+        dicas_campo: saved.dicas_campo || null,
+        tags: saved.tags ? saved.tags.split(',').map((t) => t.trim()).filter(Boolean) : [],
+      }).eq('id', receita.id).select('id').maybeSingle()
       if (error) throw error
+      if (!updated) throw new Error('Receita não encontrada ou sem permissão para atualizar')
+      setLastSaved(saved)
+      setForm(saved)
       toast.success('Receita guardada!')
       setModo('ver')
       router.refresh()
@@ -665,8 +678,8 @@ export function ReceitaDetail({ receita, campo, precosReferencia }: Props) {
       {/* ── Vista ── */}
       {modo === 'ver' && (
         <>
-          {receita.descricao && (
-            <p className="text-gray-600 text-sm">{receita.descricao}</p>
+          {form.descricao && (
+            <p className="text-gray-600 text-sm">{form.descricao}</p>
           )}
           {ingredientes.length > 0 && (
             <div>
@@ -687,16 +700,16 @@ export function ReceitaDetail({ receita, campo, precosReferencia }: Props) {
               />
             </div>
           )}
-          {receita.instrucoes && (
+          {form.instrucoes && (
             <div>
               <h2 className="font-bold text-[#36454F] mb-2">Preparação</h2>
-              <p className="text-sm text-gray-600 whitespace-pre-wrap leading-relaxed">{receita.instrucoes}</p>
+              <p className="text-sm text-gray-600 whitespace-pre-wrap leading-relaxed">{form.instrucoes}</p>
             </div>
           )}
-          {receita.dicas_campo && (
+          {form.dicas_campo && (
             <div className="bg-[#2D5016]/5 border border-[#2D5016]/20 rounded-xl p-4">
               <p className="font-semibold text-[#2D5016] text-sm mb-1">Dica para o campo</p>
-              <p className="text-sm text-gray-600 whitespace-pre-wrap">{receita.dicas_campo}</p>
+              <p className="text-sm text-gray-600 whitespace-pre-wrap">{form.dicas_campo}</p>
             </div>
           )}
         </>
@@ -1043,14 +1056,7 @@ export function ReceitaDetail({ receita, campo, precosReferencia }: Props) {
                 onClick={() => {
                   setModo('ver')
                   setEditIngId(null)
-                  setForm({
-                    nome: receita.nome,
-                    categoria: receita.categoria,
-                    descricao: receita.descricao ?? '',
-                    instrucoes: receita.instrucoes ?? '',
-                    dicas_campo: receita.dicas_campo ?? '',
-                    tags: receita.tags?.join(', ') ?? '',
-                  })
+                  setForm(lastSaved)
                 }}
                 className="px-4 py-2 text-sm text-gray-500 hover:text-gray-700 border border-gray-200 rounded-lg transition-colors"
               >

@@ -163,7 +163,7 @@ interface EmentaSlotModalProps {
   campoNome: string
   numAnimados?: number
   numAnimadores?: number
-  onSave: (pratos: PratoSave[], numPessoas: number | null) => Promise<void>
+  onSave: (pratos: PratoSave[], numPessoas: number | null, numAnimados: number | null, numAnimadores: number | null) => Promise<void>
   onRemoveAll: () => void
   onClose: () => void
 }
@@ -193,24 +193,32 @@ export function EmentaSlotModal({
   const [numPessoas, setNumPessoas] = useState<number | null>(
     existingPratos[0]?.num_pessoas ?? null
   )
-  const [numPessoasCustom, setNumPessoasCustom] = useState<string>(
-    existingPratos[0]?.num_pessoas?.toString() ?? ''
+  const [numAnimadosCustom, setNumAnimadosCustom] = useState<string>(
+    existingPratos[0]?.num_animados?.toString() ?? ''
+  )
+  const [numAnimadoresCustom, setNumAnimadoresCustom] = useState<string>(
+    existingPratos[0]?.num_animadores?.toString() ?? ''
   )
 
   type NumPreset = 'campo' | 'animados' | 'animadores' | 'custom'
-  function getPreset(): NumPreset {
-    if (numPessoas === null) return 'campo'
-    if (numPessoas === numAnimados && numAnimados > 0) return 'animados'
-    if (numPessoas === numAnimadores && numAnimadores > 0) return 'animadores'
+  function calcInitialPreset(): NumPreset {
+    const np = existingPratos[0]?.num_pessoas ?? null
+    const na = existingPratos[0]?.num_animados ?? null
+    const nad = existingPratos[0]?.num_animadores ?? null
+    if (np === null) return 'campo'
+    if (na != null || nad != null) return 'custom'
+    if (np === numAnimados && numAnimados > 0) return 'animados'
+    if (np === numAnimadores && numAnimadores > 0) return 'animadores'
     return 'custom'
   }
+  const [preset, setPresetState] = useState<NumPreset>(calcInitialPreset)
   function setPreset(p: NumPreset) {
-    if (p === 'campo') { setNumPessoas(null); setNumPessoasCustom('') }
-    else if (p === 'animados') { setNumPessoas(numAnimados); setNumPessoasCustom(String(numAnimados)) }
-    else if (p === 'animadores') { setNumPessoas(numAnimadores); setNumPessoasCustom(String(numAnimadores)) }
-    else { setNumPessoasCustom(String(numPessoas ?? '')); }
+    setPresetState(p)
+    if (p === 'campo') { setNumPessoas(null); setNumAnimadosCustom(''); setNumAnimadoresCustom('') }
+    else if (p === 'animados') { setNumPessoas(numAnimados); setNumAnimadosCustom(''); setNumAnimadoresCustom('') }
+    else if (p === 'animadores') { setNumPessoas(numAnimadores); setNumAnimadosCustom(''); setNumAnimadoresCustom('') }
+    // 'custom': não alterar numPessoas nem os campos — o utilizador define-os
   }
-  const preset = getPreset()
 
   // Picker state
   const [pickerIdx, setPickerIdx] = useState<number | null>(null)
@@ -501,6 +509,20 @@ export function EmentaSlotModal({
     })
     if (valid.length === 0) return
 
+    let saveNumPessoas = numPessoas
+    let saveNumAnimados: number | null = null
+    let saveNumAnimadores: number | null = null
+
+    if (preset === 'custom') {
+      const a = parseInt(numAnimadosCustom) || 0
+      const ad = parseInt(numAnimadoresCustom) || 0
+      if (a > 0 || ad > 0) {
+        saveNumAnimados = a > 0 ? a : null
+        saveNumAnimadores = ad > 0 ? ad : null
+        saveNumPessoas = (a + ad) > 0 ? (a + ad) : null
+      }
+    }
+
     setSaving(true)
     try {
       await onSave(
@@ -512,7 +534,9 @@ export function EmentaSlotModal({
             p.modo === 'custom' ? (p.receita_nome_custom?.trim() || undefined) : undefined,
           notas: p.notas?.trim() || undefined,
         })),
-        numPessoas
+        saveNumPessoas,
+        saveNumAnimados,
+        saveNumAnimadores
       )
     } finally {
       setSaving(false)
@@ -1095,19 +1119,45 @@ export function EmentaSlotModal({
               </button>
             </div>
             {preset === 'custom' && (
-              <input
-                type="number"
-                min={1}
-                max={9999}
-                value={numPessoasCustom}
-                onChange={(e) => {
-                  setNumPessoasCustom(e.target.value)
-                  const v = parseInt(e.target.value)
-                  setNumPessoas(isNaN(v) || v <= 0 ? null : v)
-                }}
-                placeholder={`Ex: ${totalCampo}`}
-                className="w-24 text-sm border border-[#E7E8D1] rounded-lg px-3 py-1.5 focus:outline-none focus:ring-1 focus:ring-[#2D5016]"
-              />
+              <div className="flex items-end gap-3 flex-wrap">
+                <div>
+                  <p className="text-[10px] text-gray-400 mb-1">Animados</p>
+                  <input
+                    type="number"
+                    min={0}
+                    max={9999}
+                    value={numAnimadosCustom}
+                    onChange={(e) => {
+                      setNumAnimadosCustom(e.target.value)
+                      const a = parseInt(e.target.value) || 0
+                      const ad = parseInt(numAnimadoresCustom) || 0
+                      setNumPessoas((a + ad) > 0 ? (a + ad) : null)
+                    }}
+                    placeholder="0"
+                    className="w-20 text-sm border border-[#E7E8D1] rounded-lg px-3 py-1.5 focus:outline-none focus:ring-1 focus:ring-[#2D5016]"
+                  />
+                </div>
+                <div>
+                  <p className="text-[10px] text-gray-400 mb-1">Animadores</p>
+                  <input
+                    type="number"
+                    min={0}
+                    max={9999}
+                    value={numAnimadoresCustom}
+                    onChange={(e) => {
+                      setNumAnimadoresCustom(e.target.value)
+                      const a = parseInt(numAnimadosCustom) || 0
+                      const ad = parseInt(e.target.value) || 0
+                      setNumPessoas((a + ad) > 0 ? (a + ad) : null)
+                    }}
+                    placeholder="0"
+                    className="w-20 text-sm border border-[#E7E8D1] rounded-lg px-3 py-1.5 focus:outline-none focus:ring-1 focus:ring-[#2D5016]"
+                  />
+                </div>
+                {numPessoas !== null && (
+                  <p className="text-xs text-gray-400 pb-1.5">= {numPessoas} pessoas</p>
+                )}
+              </div>
             )}
           </div>
         )}
