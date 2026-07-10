@@ -24,7 +24,7 @@ type AlertaPreco = { nome: string; tipo: 'sem_referencia' | 'preco_incompleto' }
 interface Props {
   receita: Receita & { ingredientes: ReceitaIngrediente[] }
   campo: Campo
-  precosReferencia?: { produto: string; preco: number | null }[]
+  precosReferencia?: { produto: string; preco: number | null; ingrediente_id?: string | null }[]
 }
 
 const UNIDADES = ['g', 'kg', 'ml', 'L', 'un', 'dl', 'colher', 'chávena', 'lata', 'pacote', 'fatia', 'dente']
@@ -119,13 +119,24 @@ export function ReceitaDetail({ receita, campo, precosReferencia }: Props) {
     const result: AlertaPreco[] = []
     for (const ing of ingredientes) {
       const nome = ing.ingrediente?.nome
+      const ingId = ing.ingrediente_id
       if (!nome) continue
-      const matches = precosReferencia.filter(
-        (p) => p.produto.toLowerCase().trim() === nome.toLowerCase().trim()
-      )
-      if (matches.length === 0) {
+
+      // 1. Verificar por FK (mais fiável — evita falsos positivos por nome parecido)
+      const porFK = precosReferencia.filter((p) => p.ingrediente_id && p.ingrediente_id === ingId)
+      if (porFK.length > 0) {
+        if (!porFK.some((p) => p.preco != null)) {
+          result.push({ nome, tipo: 'preco_incompleto' })
+        }
+        continue
+      }
+
+      // 2. Fallback: nome exato (para registos antigos sem FK)
+      const nLower = nome.toLowerCase().trim()
+      const porNome = precosReferencia.filter((p) => p.produto.toLowerCase().trim() === nLower)
+      if (porNome.length === 0) {
         result.push({ nome, tipo: 'sem_referencia' })
-      } else if (matches.some((p) => p.preco == null)) {
+      } else if (!porNome.some((p) => p.preco != null)) {
         result.push({ nome, tipo: 'preco_incompleto' })
       }
     }

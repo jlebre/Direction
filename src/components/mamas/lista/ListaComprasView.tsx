@@ -1,7 +1,7 @@
 'use client'
 
 import { useState, useEffect, useMemo, useRef } from 'react'
-import { ShoppingCart, Plus, X, Share2 } from 'lucide-react'
+import { ShoppingCart, Plus, X, Share2, FileSpreadsheet, Printer } from 'lucide-react'
 import { createClient } from '@/lib/supabase/client'
 import { toast } from 'sonner'
 import { Button } from '@/components/ui/button'
@@ -57,6 +57,7 @@ export function ListaComprasView({ campo, listas, campoId, gerarDia, gerarRefeic
   const [selecaoState, setSelecaoState] = useState<SelecaoState | null>(null)
   const [inserindoSelecionados, setInserindoSelecionados] = useState(false)
   const [ordenacao, setOrdenacao] = useState<'zona' | 'alfabetica'>('zona')
+  const [exportandoExcel, setExportandoExcel] = useState(false)
   const autoGerarRef = useRef(false)
 
   const listaDespensa = listasState.find((l) => l.tipo === 'despensa')
@@ -385,6 +386,26 @@ export function ListaComprasView({ campo, listas, campoId, gerarDia, gerarRefeic
     }
   }
 
+  async function exportarExcel() {
+    if (!campo) return
+    setExportandoExcel(true)
+    try {
+      const { exportListaExcel } = await import('@/lib/mamas/export-lista')
+      await exportListaExcel(campo, todosItems)
+    } catch (e: unknown) {
+      toast.error(e instanceof Error ? e.message : 'Erro ao exportar')
+    } finally {
+      setExportandoExcel(false)
+    }
+  }
+
+  function imprimirPDF() {
+    if (!campo) return
+    import('@/lib/mamas/export-lista').then(({ imprimirLista }) => {
+      imprimirLista(campo, todosItems)
+    }).catch(() => toast.error('Erro ao preparar impressão'))
+  }
+
   function gerarMensagem(): string {
     const allItems = todosItems
     if (allItems.length === 0) return 'Lista de compras vazia.'
@@ -485,6 +506,24 @@ export function ListaComprasView({ campo, listas, campoId, gerarDia, gerarRefeic
           >
             <Share2 className="h-3.5 w-3.5" />
             Partilhar
+          </button>
+          <button
+            onClick={exportarExcel}
+            disabled={exportandoExcel || todosItems.length === 0}
+            className="flex items-center gap-1.5 text-xs font-medium text-[#36454F] border border-[#E7E8D1] rounded-lg px-2.5 py-1.5 hover:bg-[#f8f8f4] transition-colors disabled:opacity-40"
+            title="Exportar para Excel"
+          >
+            <FileSpreadsheet className="h-3.5 w-3.5" />
+            {exportandoExcel ? '...' : 'Excel'}
+          </button>
+          <button
+            onClick={imprimirPDF}
+            disabled={todosItems.length === 0}
+            className="flex items-center gap-1.5 text-xs font-medium text-[#36454F] border border-[#E7E8D1] rounded-lg px-2.5 py-1.5 hover:bg-[#f8f8f4] transition-colors disabled:opacity-40"
+            title="Imprimir / Exportar PDF"
+          >
+            <Printer className="h-3.5 w-3.5" />
+            PDF
           </button>
           <Button variant="outline" size="sm" onClick={() => gerarLista()} disabled={gerandoLista}>
             {gerandoLista ? 'A gerar...' : 'Atualizar lista'}

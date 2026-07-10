@@ -4,7 +4,7 @@ import Link from 'next/link'
 import { UtensilsCrossed, BookOpen } from 'lucide-react'
 import type { Campo } from '@/types/shared'
 import { getNumDias, ESCALAO_COR } from '@/types/shared'
-import type { EmentaItem, RestricaoAlimentar } from '@/types/mamas'
+import type { EmentaItem, CampoDia, RestricaoAlimentar } from '@/types/mamas'
 import { EmentaCalendario } from '@/components/mamas/ementa/EmentaCalendario'
 import { ExportarPlanoButton } from './ExportarPlanoButton'
 
@@ -14,7 +14,7 @@ export default async function MamasPage({ params }: { params: Promise<{ id: stri
   const { id } = await params
   const supabase = createClient()
 
-  const [{ data: campo }, { data: ementa }, { data: receitas }, { data: animados }] = await Promise.all([
+  const [{ data: campo }, { data: ementa }, { data: receitas }, { data: animados }, { data: campoDiasData }] = await Promise.all([
     supabase.from('campos').select('*').eq('id', id).single(),
     supabase.from('ementa').select('*, receita:receitas(id, nome, categoria, tags), versao:receita_versoes(id, nome_versao, is_default)').eq('campo_id', id),
     supabase.from('receitas').select('id, nome, categoria, tags, is_oficial').is('deleted_at', null).order('nome'),
@@ -22,6 +22,7 @@ export default async function MamasPage({ params }: { params: Promise<{ id: stri
       .from('animados')
       .select('id, nome, restricoes:restricoes_alimentares(*, animado:animados(id, nome))')
       .eq('campo_id', id),
+    supabase.from('campo_dias').select('id, campo_id, ordem, nome, data, tipo, ativo').eq('campo_id', id).eq('ativo', true).order('ordem'),
   ])
 
   if (!campo) notFound()
@@ -88,6 +89,7 @@ export default async function MamasPage({ params }: { params: Promise<{ id: stri
           receitas={receitas ?? []}
           restricoes={restricoes}
           corEscalao={cor}
+          campoDiasInicial={(campoDiasData ?? []) as CampoDia[]}
         />
       </div>
     </div>

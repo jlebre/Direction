@@ -62,7 +62,7 @@ function normalizar(s: string) {
 }
 
 type SheetMode = 'add' | 'edit' | 'novo_super' | null
-type FiltroEstado = 'todos' | 'por_completar'
+type FiltroEstado = 'todos' | 'completo' | 'sem_ligacao' | 'sem_preco'
 
 export function PrecosComunitariosView({ precosIniciais, supermercadosIniciais }: Props) {
   const [precos, setPrecos] = useState<Preco[]>(precosIniciais)
@@ -177,7 +177,9 @@ export function PrecosComunitariosView({ precosIniciais, supermercadosIniciais }
     if (filtroSuper) filtered = filtered.filter((p) => p.supermercado_id === filtroSuper)
     if (filtroCategoria) filtered = filtered.filter((p) => p.categoria === filtroCategoria)
     if (filtroCriador) filtered = filtered.filter((p) => p.criado_por === filtroCriador)
-    if (filtroEstado === 'por_completar') filtered = filtered.filter((p) => p.preco == null)
+    if (filtroEstado === 'completo') filtered = filtered.filter((p) => p.ingrediente_id != null && p.preco != null)
+    else if (filtroEstado === 'sem_ligacao') filtered = filtered.filter((p) => !p.ingrediente_id)
+    else if (filtroEstado === 'sem_preco') filtered = filtered.filter((p) => p.ingrediente_id != null && p.preco == null)
 
     const map = new Map<string, Preco[]>()
     filtered.forEach((p) => {
@@ -192,7 +194,9 @@ export function PrecosComunitariosView({ precosIniciais, supermercadosIniciais }
     return [...new Set(precos.map((p) => p.criado_por).filter(Boolean))].sort()
   }, [precos])
 
-  const nPorCompletar = useMemo(() => precos.filter((p) => p.preco == null).length, [precos])
+  const nCompleto = useMemo(() => precos.filter((p) => p.ingrediente_id != null && p.preco != null).length, [precos])
+  const nSemLigacao = useMemo(() => precos.filter((p) => !p.ingrediente_id).length, [precos])
+  const nSemPreco = useMemo(() => precos.filter((p) => p.ingrediente_id != null && p.preco == null).length, [precos])
 
   function abrirAdicionar(produtoPreenchido?: string) {
     setEditId(null)
@@ -370,24 +374,23 @@ export function PrecosComunitariosView({ precosIniciais, supermercadosIniciais }
 
         {/* Estado filter chips */}
         <div className="flex gap-1.5 overflow-x-auto pb-0.5">
-          <button
-            onClick={() => setFiltroEstado('todos')}
-            className={cn(
-              'shrink-0 px-3 py-1.5 rounded-full text-xs font-semibold border transition-colors',
-              filtroEstado === 'todos' ? 'bg-[#2D5016] text-white border-[#2D5016]' : 'bg-white border-gray-200 text-gray-600'
-            )}
-          >
-            Todos
-          </button>
-          <button
-            onClick={() => setFiltroEstado('por_completar')}
-            className={cn(
-              'shrink-0 px-3 py-1.5 rounded-full text-xs font-semibold border transition-colors',
-              filtroEstado === 'por_completar' ? 'bg-amber-500 text-white border-amber-500' : 'bg-white border-gray-200 text-gray-600'
-            )}
-          >
-            Por completar{nPorCompletar > 0 ? ` (${nPorCompletar})` : ''}
-          </button>
+          {([
+            { key: 'todos', label: `Todos (${precos.length})`, active: 'bg-[#2D5016] text-white border-[#2D5016]' },
+            { key: 'completo', label: `Completos${nCompleto > 0 ? ` (${nCompleto})` : ''}`, active: 'bg-green-600 text-white border-green-600' },
+            { key: 'sem_ligacao', label: `Sem ligação${nSemLigacao > 0 ? ` (${nSemLigacao})` : ''}`, active: 'bg-orange-500 text-white border-orange-500' },
+            { key: 'sem_preco', label: `Sem preço${nSemPreco > 0 ? ` (${nSemPreco})` : ''}`, active: 'bg-amber-500 text-white border-amber-500' },
+          ] as const).map(({ key, label, active }) => (
+            <button
+              key={key}
+              onClick={() => { setFiltroEstado(key as FiltroEstado); setVerApagados(false) }}
+              className={cn(
+                'shrink-0 px-3 py-1.5 rounded-full text-xs font-semibold border transition-colors',
+                filtroEstado === key && !verApagados ? active : 'bg-white border-gray-200 text-gray-600'
+              )}
+            >
+              {label}
+            </button>
+          ))}
           <button
             onClick={toggleApagados}
             className={cn(
@@ -481,9 +484,12 @@ export function PrecosComunitariosView({ precosIniciais, supermercadosIniciais }
             <div className="text-center py-16">
               <div className="text-4xl mb-3">💰</div>
               <p className="text-gray-500 font-semibold">
-                {filtroEstado === 'por_completar' ? 'Nenhum produto por completar.' : 'Sem preços registados ainda.'}
+                {filtroEstado === 'completo' ? 'Nenhum preço completo ainda.' :
+                 filtroEstado === 'sem_ligacao' ? 'Todos os preços têm ingrediente ligado.' :
+                 filtroEstado === 'sem_preco' ? 'Nenhum preço em falta.' :
+                 'Sem preços registados ainda.'}
               </p>
-              {filtroEstado !== 'por_completar' && (
+              {filtroEstado === 'todos' && (
                 <p className="text-gray-400 text-sm mt-1">Sê o primeiro a adicionar!</p>
               )}
             </div>

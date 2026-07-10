@@ -161,7 +161,9 @@ interface EmentaSlotModalProps {
   receitas: unknown[]
   campoId: string
   campoNome: string
-  onSave: (pratos: PratoSave[]) => Promise<void>
+  numAnimados?: number
+  numAnimadores?: number
+  onSave: (pratos: PratoSave[], numPessoas: number | null) => Promise<void>
   onRemoveAll: () => void
   onClose: () => void
 }
@@ -175,6 +177,8 @@ export function EmentaSlotModal({
   receitas,
   campoId,
   campoNome,
+  numAnimados = 0,
+  numAnimadores = 0,
   onSave,
   onRemoveAll,
   onClose,
@@ -183,6 +187,30 @@ export function EmentaSlotModal({
     getInitialPratos(refeicao, existingPratos, receitas as ReceitaLite[])
   )
   const [saving, setSaving] = useState(false)
+
+  // num_pessoas: null = usar total do campo, número = override por refeição
+  const totalCampo = numAnimados + numAnimadores
+  const [numPessoas, setNumPessoas] = useState<number | null>(
+    existingPratos[0]?.num_pessoas ?? null
+  )
+  const [numPessoasCustom, setNumPessoasCustom] = useState<string>(
+    existingPratos[0]?.num_pessoas?.toString() ?? ''
+  )
+
+  type NumPreset = 'campo' | 'animados' | 'animadores' | 'custom'
+  function getPreset(): NumPreset {
+    if (numPessoas === null) return 'campo'
+    if (numPessoas === numAnimados && numAnimados > 0) return 'animados'
+    if (numPessoas === numAnimadores && numAnimadores > 0) return 'animadores'
+    return 'custom'
+  }
+  function setPreset(p: NumPreset) {
+    if (p === 'campo') { setNumPessoas(null); setNumPessoasCustom('') }
+    else if (p === 'animados') { setNumPessoas(numAnimados); setNumPessoasCustom(String(numAnimados)) }
+    else if (p === 'animadores') { setNumPessoas(numAnimadores); setNumPessoasCustom(String(numAnimadores)) }
+    else { setNumPessoasCustom(String(numPessoas ?? '')); }
+  }
+  const preset = getPreset()
 
   // Picker state
   const [pickerIdx, setPickerIdx] = useState<number | null>(null)
@@ -483,7 +511,8 @@ export function EmentaSlotModal({
           receita_nome_custom:
             p.modo === 'custom' ? (p.receita_nome_custom?.trim() || undefined) : undefined,
           notas: p.notas?.trim() || undefined,
-        }))
+        })),
+        numPessoas
       )
     } finally {
       setSaving(false)
@@ -1004,6 +1033,84 @@ export function EmentaSlotModal({
             </>
           )}
         </div>
+
+        {/* ── Nº de pessoas ─────────────────────────────────────────────────── */}
+        {totalCampo > 0 && (
+          <div className="border-t border-gray-100 pt-3 space-y-1.5">
+            <p className="text-[11px] font-bold text-gray-400 uppercase tracking-wider">
+              Nº de pessoas nesta refeição
+            </p>
+            <div className="flex flex-wrap gap-1.5">
+              <button
+                type="button"
+                onClick={() => setPreset('campo')}
+                className={cnUtil(
+                  'text-xs font-medium px-3 py-1.5 rounded-lg border transition-colors',
+                  preset === 'campo'
+                    ? 'bg-[#2D5016] text-white border-[#2D5016]'
+                    : 'border-[#E7E8D1] text-[#36454F] hover:border-[#2D5016]/40'
+                )}
+              >
+                Todos ({totalCampo})
+              </button>
+              {numAnimados > 0 && (
+                <button
+                  type="button"
+                  onClick={() => setPreset('animados')}
+                  className={cnUtil(
+                    'text-xs font-medium px-3 py-1.5 rounded-lg border transition-colors',
+                    preset === 'animados'
+                      ? 'bg-[#2D5016] text-white border-[#2D5016]'
+                      : 'border-[#E7E8D1] text-[#36454F] hover:border-[#2D5016]/40'
+                  )}
+                >
+                  Só animados ({numAnimados})
+                </button>
+              )}
+              {numAnimadores > 0 && (
+                <button
+                  type="button"
+                  onClick={() => setPreset('animadores')}
+                  className={cnUtil(
+                    'text-xs font-medium px-3 py-1.5 rounded-lg border transition-colors',
+                    preset === 'animadores'
+                      ? 'bg-[#2D5016] text-white border-[#2D5016]'
+                      : 'border-[#E7E8D1] text-[#36454F] hover:border-[#2D5016]/40'
+                  )}
+                >
+                  Só animadores ({numAnimadores})
+                </button>
+              )}
+              <button
+                type="button"
+                onClick={() => setPreset('custom')}
+                className={cnUtil(
+                  'text-xs font-medium px-3 py-1.5 rounded-lg border transition-colors',
+                  preset === 'custom'
+                    ? 'bg-[#2D5016] text-white border-[#2D5016]'
+                    : 'border-[#E7E8D1] text-[#36454F] hover:border-[#2D5016]/40'
+                )}
+              >
+                Outro
+              </button>
+            </div>
+            {preset === 'custom' && (
+              <input
+                type="number"
+                min={1}
+                max={9999}
+                value={numPessoasCustom}
+                onChange={(e) => {
+                  setNumPessoasCustom(e.target.value)
+                  const v = parseInt(e.target.value)
+                  setNumPessoas(isNaN(v) || v <= 0 ? null : v)
+                }}
+                placeholder={`Ex: ${totalCampo}`}
+                className="w-24 text-sm border border-[#E7E8D1] rounded-lg px-3 py-1.5 focus:outline-none focus:ring-1 focus:ring-[#2D5016]"
+              />
+            )}
+          </div>
+        )}
 
         <DialogFooter className="gap-2 flex-wrap">
           {existingPratos.length > 0 && (

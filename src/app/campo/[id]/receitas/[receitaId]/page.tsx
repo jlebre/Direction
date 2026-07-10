@@ -23,7 +23,7 @@ export default async function ReceitaDetailPage({
       .eq('id', receitaId)
       .is('deleted_at', null)
       .single(),
-    supabase.from('precos').select('produto, preco'),
+    supabase.from('precos').select('produto, preco, ingrediente_id').is('deleted_at', null),
   ])
 
   if (!campo || !receita) notFound()
@@ -37,7 +37,7 @@ export default async function ReceitaDetailPage({
       <ReceitaDetail
         receita={r}
         campo={c}
-        precosReferencia={(precosData ?? []) as { produto: string; preco: number | null }[]}
+        precosReferencia={(precosData ?? []) as { produto: string; preco: number | null; ingrediente_id?: string | null }[]}
       />
     </>
   )

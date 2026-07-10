@@ -106,8 +106,19 @@ export interface EmentaItem {
   responsavel?: string
   notas?: string
   ordem: number
+  num_pessoas?: number | null
   receita?: Receita
   versao?: { id: string; nome_versao: string; is_default: boolean } | null
+}
+
+export interface CampoDia {
+  id: string
+  campo_id: string
+  ordem: number
+  nome?: string | null
+  data?: string | null
+  tipo: string
+  ativo: boolean
 }
 
 // ── Lista de Compras ──────────────────────────────────────────────────────────

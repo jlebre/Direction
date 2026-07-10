@@ -3,16 +3,18 @@
 import { useState } from 'react'
 import Link from 'next/link'
 import { toast } from 'sonner'
-import { Plus, AlertTriangle, Info, Copy, ChevronLeft, ChevronRight, Calendar, LayoutGrid, ExternalLink } from 'lucide-react'
+import { Plus, AlertTriangle, Info, Copy, ChevronLeft, ChevronRight, Calendar, LayoutGrid, ExternalLink, Settings2, Trash2, GripVertical } from 'lucide-react'
 import { createClient } from '@/lib/supabase/client'
 import { Button } from '@/components/ui/button'
 import { Badge } from '@/components/ui/badge'
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from '@/components/ui/dialog'
+import { Input } from '@/components/ui/input'
 import { EmentaSlotModal, type PratoSave } from './EmentaSlotModal'
 import type { Campo, SeccaoTipo } from '@/types/shared'
 import { getDiaLabel, getNumDias } from '@/types/shared'
 import {
   type EmentaItem,
+  type CampoDia,
   type RestricaoAlimentar,
   type RefeicaoTipo,
   type TipoPrato,
@@ -33,10 +35,12 @@ interface EmentaCalendarioProps {
   receitas: unknown[]
   restricoes: RestricaoAlimentar[]
   corEscalao?: CorEscalao
+  campoDiasInicial?: CampoDia[]
 }
 
-export function EmentaCalendario({ campo, ementaInicial, receitas, restricoes, corEscalao = COR_FALLBACK }: EmentaCalendarioProps) {
+export function EmentaCalendario({ campo, ementaInicial, receitas, restricoes, corEscalao = COR_FALLBACK, campoDiasInicial = [] }: EmentaCalendarioProps) {
   const [ementa, setEmenta] = useState<EmentaItem[]>(ementaInicial)
+  const [campoDias, setCampoDias] = useState<CampoDia[]>(campoDiasInicial)
   const [modalAberto, setModalAberto] = useState(false)
   const [slotSelecionado, setSlotSelecionado] = useState<{ dia: number; refeicao: RefeicaoTipo } | null>(null)
   const [cloneModalAberto, setCloneModalAberto] = useState(false)
@@ -45,16 +49,29 @@ export function EmentaCalendario({ campo, ementaInicial, receitas, restricoes, c
   const [substituirExistente, setSubstituirExistente] = useState(false)
   const [clonando, setClonando] = useState(false)
   const [vista, setVista] = useState<'periodo' | 'dia' | 'semana'>('periodo')
+  // Gerir Dias modal
+  const [diasModalAberto, setDiasModalAberto] = useState(false)
+  const [diasEdit, setDiasEdit] = useState<CampoDia[]>([])
+  const [salvanDias, setSalvandoDias] = useState(false)
   const supabase = createClient()
 
   const numDias = getNumDias(campo.seccao as SeccaoTipo)
   const temPrecampo = campo.data_precampo_inicio != null
 
-  const diasList: number[] = []
-  if (temPrecampo) {
-    diasList.push(-2, -1)
+  // Se existirem entradas em campo_dias, usa-as; caso contrário, usa comportamento legado
+  const diasList: number[] = campoDias.length > 0
+    ? campoDias.filter((d) => d.ativo).sort((a, b) => a.ordem - b.ordem).map((d) => d.ordem)
+    : (() => {
+        const l: number[] = []
+        if (temPrecampo) l.push(-2, -1)
+        for (let i = 1; i <= numDias; i++) l.push(i)
+        return l
+      })()
+
+  function getDiaLabelLocal(dia: number): string {
+    const customDia = campoDias.find((d) => d.ordem === dia && d.ativo)
+    return customDia?.nome ?? getDiaLabel(dia)
   }
-  for (let i = 1; i <= numDias; i++) diasList.push(i)
 
   const [diaAtual, setDiaAtual] = useState<number>(() => {
     if (!campo.data_inicio) return diasList[0]
@@ -118,7 +135,7 @@ export function EmentaCalendario({ campo, ementaInicial, receitas, restricoes, c
     setModalAberto(true)
   }
 
-  async function salvarPratos(pratos: PratoSave[]) {
+  async function salvarPratos(pratos: PratoSave[], numPessoas: number | null) {
     if (!slotSelecionado) return
     const { dia, refeicao } = slotSelecionado
     const existentes = getSlots(dia, refeicao)
@@ -143,6 +160,7 @@ export function EmentaCalendario({ campo, ementaInicial, receitas, restricoes, c
               receita_nome_custom: p.receita_nome_custom ?? null,
               notas: p.notas ?? null,
               responsavel: null,
+              num_pessoas: numPessoas ?? null,
               ordem: i,
             }))
           )
@@ -222,6 +240,75 @@ export function EmentaCalendario({ campo, ementaInicial, receitas, restricoes, c
     } finally {
       setClonando(false)
     }
+  }
+
+  // ── Gerir Dias ────────────────────────────────────────────────────────────────
+
+  function abrirDiasModal() {
+    // Se ainda não há campo_dias, inicializa com os dias atuais
+    const initial: CampoDia[] = campoDias.length > 0
+      ? campoDias.filter((d) => d.ativo)
+      : diasList.map((d) => ({
+          id: '',
+          campo_id: campo.id,
+          ordem: d,
+          nome: null,
+          data: null,
+          tipo: d < 0 ? 'precampo' : 'campo',
+          ativo: true,
+        }))
+    setDiasEdit(initial)
+    setDiasModalAberto(true)
+  }
+
+  async function salvarDias() {
+    setSalvandoDias(true)
+    try {
+      // Apaga todas as entradas existentes de campo_dias para este campo
+      await supabase.from('campo_dias').delete().eq('campo_id', campo.id)
+
+      if (diasEdit.length > 0) {
+        const { data, error } = await supabase
+          .from('campo_dias')
+          .insert(diasEdit.map((d) => ({
+            campo_id: campo.id,
+            ordem: d.ordem,
+            nome: d.nome || null,
+            data: d.data || null,
+            tipo: d.tipo,
+            ativo: true,
+          })))
+          .select('id, campo_id, ordem, nome, data, tipo, ativo')
+        if (error) throw error
+        setCampoDias((data ?? []) as CampoDia[])
+      } else {
+        setCampoDias([])
+      }
+      setDiasModalAberto(false)
+      toast.success('Dias guardados')
+    } catch (e: unknown) {
+      toast.error(e instanceof Error ? e.message : 'Erro ao guardar dias')
+    } finally {
+      setSalvandoDias(false)
+    }
+  }
+
+  function adicionarDia() {
+    const maxOrdem = diasEdit.reduce((m, d) => Math.max(m, d.ordem), 0)
+    const newOrdem = Math.max(maxOrdem + 1, 1)
+    setDiasEdit((prev) => [...prev, {
+      id: '',
+      campo_id: campo.id,
+      ordem: newOrdem,
+      nome: `Dia ${newOrdem}`,
+      data: null,
+      tipo: 'campo',
+      ativo: true,
+    }])
+  }
+
+  function removerDiaEdit(idx: number) {
+    setDiasEdit((prev) => prev.filter((_, i) => i !== idx))
   }
 
   const existingPratos = slotSelecionado
@@ -340,8 +427,18 @@ export function EmentaCalendario({ campo, ementaInicial, receitas, restricoes, c
           )}
         </div>
 
+        {/* Gerir Dias */}
+        <button
+          onClick={abrirDiasModal}
+          className="shrink-0 flex items-center gap-1.5 text-xs font-medium text-gray-500 hover:text-[#36454F] border border-[#E7E8D1] rounded-lg px-2.5 py-1.5 transition-colors"
+          title="Gerir dias do campo"
+        >
+          <Settings2 className="h-3.5 w-3.5" />
+          <span className="hidden sm:inline">Dias</span>
+        </button>
+
         {/* View toggle — Dia / Semana (só visível fora do período) */}
-        <div className="flex items-center bg-[#E7E8D1] rounded-lg p-0.5 gap-0.5 ml-auto">
+        <div className="flex items-center bg-[#E7E8D1] rounded-lg p-0.5 gap-0.5">
           <button
             onClick={() => setVista('periodo')}
             className={cnUtil(
@@ -387,7 +484,7 @@ export function EmentaCalendario({ campo, ementaInicial, receitas, restricoes, c
                 >
                   <div className="flex items-center justify-between mb-1">
                     <div className="flex items-center gap-2">
-                      <span className="font-bold text-sm text-[#36454F]">{getDiaLabel(dia)}</span>
+                      <span className="font-bold text-sm text-[#36454F]">{getDiaLabelLocal(dia)}</span>
                       {isToday && (
                         <span className="text-[10px] font-bold px-1.5 py-0.5 rounded-full text-white" style={{ backgroundColor: corEscalao.bg }}>Hoje</span>
                       )}
@@ -460,7 +557,7 @@ export function EmentaCalendario({ campo, ementaInicial, receitas, restricoes, c
 
               <div className="flex-1 text-center">
                 <div className="flex items-center justify-center gap-2">
-                  <span className="font-bold text-[#36454F] text-base">{getDiaLabel(diaAtual)}</span>
+                  <span className="font-bold text-[#36454F] text-base">{getDiaLabelLocal(diaAtual)}</span>
                   {diaAtual === diaHoje && (
                     <Badge className="text-white text-[10px] py-0 px-1.5 border-0" style={{ backgroundColor: corEscalao.bg }}>Hoje</Badge>
                   )}
@@ -568,7 +665,7 @@ export function EmentaCalendario({ campo, ementaInicial, receitas, restricoes, c
                     href={`/campo/${campo.id}/mamas/ementa/${dia}`}
                     className="block text-xs font-bold text-[#36454F] hover:text-[#B85042] transition-colors"
                   >
-                    {getDiaLabel(dia)}
+                    {getDiaLabelLocal(dia)}
                   </Link>
                   {dia === diaHoje && (
                     <span className="text-[9px] font-bold" style={{ color: corEscalao.bg }}>Hoje</span>
@@ -619,6 +716,8 @@ export function EmentaCalendario({ campo, ementaInicial, receitas, restricoes, c
           receitas={receitas}
           campoId={campo.id}
           campoNome={campo.nome}
+          numAnimados={campo.num_animados ?? 0}
+          numAnimadores={campo.num_animadores ?? 0}
           onSave={salvarPratos}
           onRemoveAll={() => removerRefeicao(slotSelecionado.dia, slotSelecionado.refeicao)}
           onClose={() => setModalAberto(false)}
@@ -680,6 +779,71 @@ export function EmentaCalendario({ campo, ementaInicial, receitas, restricoes, c
               className="bg-[#2D5016] hover:bg-[#2D5016]/90"
             >
               {clonando ? 'A copiar...' : 'Copiar plano'}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* ── Gerir Dias modal ──────────────────────────────────────────────────── */}
+      <Dialog open={diasModalAberto} onOpenChange={setDiasModalAberto}>
+        <DialogContent className="max-w-md">
+          <DialogHeader>
+            <DialogTitle>Gerir dias do campo</DialogTitle>
+          </DialogHeader>
+          <div className="space-y-2">
+            <p className="text-xs text-gray-500">
+              Personaliza os nomes dos dias. Podes adicionar dias extra ou remover dias sem refeições.
+            </p>
+            <div className="space-y-1.5 max-h-72 overflow-y-auto">
+              {diasEdit.map((d, idx) => (
+                <div key={`${d.ordem}-${idx}`} className="flex items-center gap-2">
+                  <GripVertical className="h-4 w-4 text-gray-300 shrink-0" />
+                  <div className="w-12 shrink-0 text-[11px] font-semibold text-gray-400 text-center">
+                    {d.tipo === 'precampo' ? 'Pré' : `D${d.ordem}`}
+                  </div>
+                  <Input
+                    value={d.nome ?? ''}
+                    placeholder={getDiaLabel(d.ordem)}
+                    onChange={(e) =>
+                      setDiasEdit((prev) =>
+                        prev.map((item, i) => i === idx ? { ...item, nome: e.target.value } : item)
+                      )
+                    }
+                    className="text-sm h-8"
+                  />
+                  <button
+                    type="button"
+                    onClick={() => removerDiaEdit(idx)}
+                    className="shrink-0 p-1.5 rounded-lg hover:bg-red-50 text-gray-300 hover:text-red-500 transition-colors"
+                    title="Remover dia"
+                  >
+                    <Trash2 className="h-3.5 w-3.5" />
+                  </button>
+                </div>
+              ))}
+              {diasEdit.length === 0 && (
+                <p className="text-sm text-gray-400 text-center py-4">
+                  Nenhum dia definido — vai usar configuração padrão ({numDias} dias).
+                </p>
+              )}
+            </div>
+            <button
+              type="button"
+              onClick={adicionarDia}
+              className="w-full flex items-center justify-center gap-2 py-2 rounded-lg border-2 border-dashed border-[#E7E8D1] text-sm text-gray-400 hover:border-[#2D5016] hover:text-[#2D5016] transition-colors"
+            >
+              <Plus className="h-4 w-4" />
+              Adicionar dia extra
+            </button>
+          </div>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setDiasModalAberto(false)}>Cancelar</Button>
+            <Button
+              onClick={salvarDias}
+              disabled={salvanDias}
+              className="bg-[#2D5016] hover:bg-[#2D5016]/90"
+            >
+              {salvanDias ? 'A guardar...' : 'Guardar dias'}
             </Button>
           </DialogFooter>
         </DialogContent>
