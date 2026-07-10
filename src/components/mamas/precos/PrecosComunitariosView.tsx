@@ -81,6 +81,12 @@ export function PrecosComunitariosView({ precosIniciais, supermercadosIniciais }
   const [produtoSugestoes, setProdutoSugestoes] = useState<string[]>([])
   const [showSugestoes, setShowSugestoes] = useState(false)
   const [confirmDeleteId, setConfirmDeleteId] = useState<string | null>(null)
+  const [editIngId, setEditIngId] = useState<string | null>(null)
+  const [editIngNome, setEditIngNome] = useState('')
+  const [editIngPesquisa, setEditIngPesquisa] = useState('')
+  const [editIngResultados, setEditIngResultados] = useState<{ id: string; nome: string }[]>([])
+  const [showIngDropdown, setShowIngDropdown] = useState(false)
+  const ingSearchRef = useRef<ReturnType<typeof setTimeout> | null>(null)
 
   const [form, setForm] = useState({
     produto: '',
@@ -213,7 +219,31 @@ export function PrecosComunitariosView({ precosIniciais, supermercadosIniciais }
       criado_por: p.criado_por,
       notas: p.notas ?? '',
     })
+    setEditIngId(p.ingrediente_id ?? null)
+    setEditIngNome('')
+    setEditIngPesquisa('')
+    setEditIngResultados([])
     setSheet('edit')
+    // Carrega nome do ingrediente se já ligado
+    if (p.ingrediente_id) {
+      supabase.from('ingredientes').select('nome').eq('id', p.ingrediente_id).single()
+        .then(({ data }) => { if (data) setEditIngNome((data as { nome: string }).nome) })
+    }
+  }
+
+  function buscarIngredientes(q: string) {
+    setEditIngPesquisa(q)
+    setShowIngDropdown(true)
+    if (ingSearchRef.current) clearTimeout(ingSearchRef.current)
+    if (!q.trim()) { setEditIngResultados([]); return }
+    ingSearchRef.current = setTimeout(async () => {
+      const { data } = await supabase
+        .from('ingredientes')
+        .select('id, nome')
+        .ilike('nome', `%${q.trim()}%`)
+        .limit(8)
+      setEditIngResultados((data ?? []) as { id: string; nome: string }[])
+    }, 200)
   }
 
   async function guardar() {
@@ -231,6 +261,7 @@ export function PrecosComunitariosView({ precosIniciais, supermercadosIniciais }
           .update({
             preco: precoVal,
             notas: form.notas.trim() || null,
+            ingrediente_id: editIngId,
             data_registo: new Date().toISOString().slice(0, 10),
           })
           .eq('id', editId)
@@ -637,6 +668,57 @@ export function PrecosComunitariosView({ precosIniciais, supermercadosIniciais }
                   disabled={sheet === 'edit'}
                   className="w-full border border-[#E7E8D1] rounded-xl px-4 py-3 text-sm text-[#36454F] focus:outline-none focus:ring-2 focus:ring-[#2D5016]/30 focus:border-[#2D5016] disabled:opacity-60" />
               </div>
+
+              {/* Ligar a ingrediente (só no modo edição) */}
+              {sheet === 'edit' && (
+                <div>
+                  <label className="text-xs font-semibold text-gray-500 block mb-1">
+                    Ligar a ingrediente
+                    <span className="ml-1 font-normal text-gray-400">(para matching automático no orçamento)</span>
+                  </label>
+                  {editIngId ? (
+                    <div className="flex items-center gap-2 bg-[#E7F3DD] border border-[#86efac] rounded-xl px-3 py-2.5">
+                      <span className="text-sm text-[#2D5016] flex-1 font-medium">{editIngNome || '—'}</span>
+                      <button
+                        type="button"
+                        onClick={() => { setEditIngId(null); setEditIngNome(''); setEditIngPesquisa('') }}
+                        className="text-xs text-[#2D5016] hover:underline shrink-0"
+                      >
+                        Remover
+                      </button>
+                    </div>
+                  ) : (
+                    <div className="relative">
+                      <input
+                        value={editIngPesquisa}
+                        onChange={(e) => buscarIngredientes(e.target.value)}
+                        onBlur={() => setTimeout(() => setShowIngDropdown(false), 150)}
+                        placeholder="Pesquisar ingrediente..."
+                        className="w-full border border-[#E7E8D1] rounded-xl px-4 py-3 text-sm text-[#36454F] focus:outline-none focus:ring-2 focus:ring-[#2D5016]/30 focus:border-[#2D5016]"
+                      />
+                      {showIngDropdown && editIngResultados.length > 0 && (
+                        <div className="absolute top-full left-0 right-0 bg-white border border-[#E7E8D1] rounded-xl shadow-lg z-10 mt-1 overflow-hidden">
+                          {editIngResultados.map((ing) => (
+                            <button
+                              key={ing.id}
+                              type="button"
+                              onMouseDown={() => {
+                                setEditIngId(ing.id)
+                                setEditIngNome(ing.nome)
+                                setEditIngPesquisa('')
+                                setShowIngDropdown(false)
+                              }}
+                              className="w-full text-left px-4 py-2.5 text-sm text-[#36454F] hover:bg-[#f8f8f4] border-b border-[#E7E8D1] last:border-0"
+                            >
+                              {ing.nome}
+                            </button>
+                          ))}
+                        </div>
+                      )}
+                    </div>
+                  )}
+                </div>
+              )}
 
               {/* Notas */}
               <div>

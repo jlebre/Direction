@@ -15,7 +15,7 @@ export default async function ReceitaDetailPage({
   const { id, receitaId } = await params
   const supabase = createClient()
 
-  const [{ data: campo }, { data: receita }] = await Promise.all([
+  const [{ data: campo }, { data: receita }, { data: precosData }] = await Promise.all([
     supabase.from('campos').select('*').eq('id', id).single(),
     supabase
       .from('receitas')
@@ -23,6 +23,7 @@ export default async function ReceitaDetailPage({
       .eq('id', receitaId)
       .is('deleted_at', null)
       .single(),
+    supabase.from('precos').select('produto, preco'),
   ])
 
   if (!campo || !receita) notFound()
@@ -33,7 +34,11 @@ export default async function ReceitaDetailPage({
   return (
     <>
       <Header title={r.nome} backHref={`/campo/${id}/receitas`} />
-      <ReceitaDetail receita={r} campo={c} />
+      <ReceitaDetail
+        receita={r}
+        campo={c}
+        precosReferencia={(precosData ?? []) as { produto: string; preco: number | null }[]}
+      />
     </>
   )
 }

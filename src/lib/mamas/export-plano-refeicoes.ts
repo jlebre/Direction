@@ -1,8 +1,17 @@
 import * as XLSX from 'xlsx'
-import type { Campo } from '@/types/shared'
+import type { Campo, SeccaoTipo } from '@/types/shared'
 import { getDiaLabel } from '@/types/shared'
-import { REFEICAO_LABELS, TIPO_PRATO_LABELS, type EmentaItem } from '@/types/mamas'
+import { REFEICAO_LABELS, TIPO_PRATO_LABELS, type EmentaItem, calcularQuantidade } from '@/types/mamas'
 import { exportOrShareFile } from '@/lib/export-share'
+
+type RiExport = {
+  ingrediente_id: string
+  quantidade_mosquitos: number | null
+  quantidade_aranh_melgas: number | null
+  quantidade_cam_trem: number | null
+  unidade: string
+  ingrediente?: { nome: string; categoria_supermercado?: string | null } | null
+}
 
 function formatDatePT(dateStr: string): string {
   const d = new Date(dateStr + 'T00:00:00')
@@ -125,6 +134,57 @@ export async function exportPlanoRefeicoes(campo: Campo, ementa: EmentaItem[], d
   const ws2 = XLSX.utils.aoa_to_sheet(resumo)
   ws2['!cols'] = [{ wch: 22 }, { wch: 32 }]
   XLSX.utils.book_append_sheet(wb, ws2, 'Resumo')
+
+  // ── Sheet 3: Ingredientes calculados ─────────────────────────────────────
+  const seccao = (campo.seccao ?? 'aranhicos') as SeccaoTipo
+  const numPessoas = (campo.num_animados ?? 0) + (campo.num_animadores ?? 0) || 58
+
+  const agregados = new Map<string, { nome: string; categoria: string; qty: number; unidade: string }>()
+
+  for (const slot of ementa) {
+    const ris = (slot.receita as unknown as { receita_ingredientes?: RiExport[] })?.receita_ingredientes ?? []
+    for (const ri of ris) {
+      if (!ri.ingrediente?.nome) continue
+      const qty = calcularQuantidade(
+        seccao,
+        ri.quantidade_mosquitos,
+        ri.quantidade_aranh_melgas,
+        ri.quantidade_cam_trem,
+        numPessoas,
+        58
+      )
+      if (!qty) continue
+      const key = ri.ingrediente_id
+      const existing = agregados.get(key)
+      if (existing) {
+        existing.qty += qty
+      } else {
+        agregados.set(key, {
+          nome: ri.ingrediente.nome,
+          categoria: ri.ingrediente.categoria_supermercado ?? 'outro',
+          qty,
+          unidade: ri.unidade,
+        })
+      }
+    }
+  }
+
+  if (agregados.size > 0) {
+    const ing3: (string | number)[][] = [
+      [`Ingredientes — ${campo.nome}`, '', '', ''],
+      [`Calculados para ${numPessoas} pessoas (seccão: ${seccao})`, '', '', ''],
+      [],
+      ['Categoria', 'Ingrediente', 'Quantidade', 'Unidade'],
+    ]
+    for (const [, item] of [...agregados.entries()].sort(([, a], [, b]) =>
+      a.categoria.localeCompare(b.categoria) || a.nome.localeCompare(b.nome)
+    )) {
+      ing3.push([item.categoria, item.nome, Math.ceil(item.qty * 100) / 100, item.unidade])
+    }
+    const ws3 = XLSX.utils.aoa_to_sheet(ing3)
+    ws3['!cols'] = [{ wch: 18 }, { wch: 30 }, { wch: 12 }, { wch: 10 }]
+    XLSX.utils.book_append_sheet(wb, ws3, 'Ingredientes')
+  }
 
   // ── Export / Share ────────────────────────────────────────────────────────
   // Não usar .buffer.slice — falha em iOS Safari quando XLSX.write devolve Array<number>.

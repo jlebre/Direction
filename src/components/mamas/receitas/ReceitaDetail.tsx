@@ -1,6 +1,6 @@
 'use client'
 
-import { useState, useRef } from 'react'
+import { useState, useRef, useMemo } from 'react'
 import { useRouter } from 'next/navigation'
 import { createClient } from '@/lib/supabase/client'
 import { toast } from 'sonner'
@@ -19,9 +19,12 @@ import { cn } from '@/lib/utils'
 import { calcularBandas, arredondarPratico } from '@/lib/mamas/fatores-escalao'
 import type { TipoProduto, EscalaoFator } from '@/lib/mamas/fatores-escalao'
 
+type AlertaPreco = { nome: string; tipo: 'sem_referencia' | 'preco_incompleto' }
+
 interface Props {
   receita: Receita & { ingredientes: ReceitaIngrediente[] }
   campo: Campo
+  precosReferencia?: { produto: string; preco: number | null }[]
 }
 
 const UNIDADES = ['g', 'kg', 'ml', 'L', 'un', 'dl', 'colher', 'chávena', 'lata', 'pacote', 'fatia', 'dente']
@@ -52,7 +55,7 @@ const DICAS_SOPA = `- Usar a água de cozer a massa para fazer a sopa.
 
 type IngResultado = { id: string; nome: string; unidade_base: string; tipo_produto: string }
 
-export function ReceitaDetail({ receita, campo }: Props) {
+export function ReceitaDetail({ receita, campo, precosReferencia }: Props) {
   const [modo, setModo] = useState<'ver' | 'editar'>('ver')
   const [showDelete, setShowDelete] = useState(false)
   const [saving, setSaving] = useState(false)
@@ -60,6 +63,7 @@ export function ReceitaDetail({ receita, campo }: Props) {
   const [forking, setForking] = useState(false)
   const [verificada, setVerificada] = useState(receita.quantidades_verificadas ?? false)
   const [markingVerif, setMarkingVerif] = useState(false)
+  const [showVerifConfirm, setShowVerifConfirm] = useState(false)
   const [form, setForm] = useState({
     nome: receita.nome,
     categoria: receita.categoria,
@@ -109,6 +113,32 @@ export function ReceitaDetail({ receita, campo }: Props) {
   const supabase = createClient()
   const campoId = campo.id
   const corCat = CATEGORIA_CORES[form.categoria]
+
+  const alertasPreco = useMemo<AlertaPreco[]>(() => {
+    if (!precosReferencia || ingredientes.length === 0) return []
+    const result: AlertaPreco[] = []
+    for (const ing of ingredientes) {
+      const nome = ing.ingrediente?.nome
+      if (!nome) continue
+      const matches = precosReferencia.filter(
+        (p) => p.produto.toLowerCase().trim() === nome.toLowerCase().trim()
+      )
+      if (matches.length === 0) {
+        result.push({ nome, tipo: 'sem_referencia' })
+      } else if (matches.some((p) => p.preco == null)) {
+        result.push({ nome, tipo: 'preco_incompleto' })
+      }
+    }
+    return result
+  }, [precosReferencia, ingredientes])
+
+  function handleMarcarVerificada() {
+    if (alertasPreco.length > 0) {
+      setShowVerifConfirm(true)
+    } else {
+      marcarVerificada(true)
+    }
+  }
 
   function handleCategoria(v: CategoriaReceita) {
     setForm((f) => ({
@@ -459,7 +489,7 @@ export function ReceitaDetail({ receita, campo }: Props) {
     <div className="max-w-2xl mx-auto p-4 space-y-5 pb-10">
 
       {/* ── Banner: por verificar ── */}
-      {modo === 'ver' && !verificada && (
+      {modo === 'ver' && !verificada && !showVerifConfirm && (
         <div className="bg-amber-50 border border-amber-200 rounded-xl p-3 flex items-start gap-2.5">
           <AlertTriangle className="h-4 w-4 text-amber-500 shrink-0 mt-0.5" />
           <div className="flex-1 min-w-0">
@@ -469,33 +499,102 @@ export function ReceitaDetail({ receita, campo }: Props) {
             <p className="text-xs text-amber-600 mt-0.5">
               {receita.instrucoes?.trim()
                 ? 'Revê os ingredientes e quantidades, corrige se necessário e marca como verificada.'
-                : 'Esta receita ainda não tem preparação. Edita para completar.'}
+                : 'Esta receita ainda não tem preparação — podes marcá-la como verificada na mesma.'}
             </p>
           </div>
-          {receita.instrucoes?.trim() && (
+          <button
+            onClick={handleMarcarVerificada}
+            disabled={markingVerif}
+            className="text-xs font-semibold text-amber-800 bg-white border border-amber-300 rounded-lg px-2.5 py-1.5 shrink-0 hover:bg-amber-50 disabled:opacity-50 transition-colors whitespace-nowrap"
+          >
+            {markingVerif ? '...' : '✓ Verificada'}
+          </button>
+        </div>
+      )}
+
+      {/* ── Confirmação: marcar verificada com alertas ── */}
+      {modo === 'ver' && !verificada && showVerifConfirm && (
+        <div className="bg-amber-50 border border-amber-300 rounded-xl p-4 space-y-3">
+          <div className="flex items-start gap-2.5">
+            <AlertTriangle className="h-4 w-4 text-amber-600 shrink-0 mt-0.5" />
+            <div className="flex-1 min-w-0">
+              <p className="text-xs font-semibold text-amber-900">Ingredientes/preços por completar</p>
+              <ul className="mt-1.5 space-y-0.5">
+                {alertasPreco.map((a) => (
+                  <li key={a.nome} className="text-xs text-amber-800">
+                    <span className="font-medium">{a.nome}</span>
+                    {' — '}
+                    {a.tipo === 'sem_referencia' ? 'não está na tabela de preços' : 'preço por completar'}
+                  </li>
+                ))}
+              </ul>
+              <p className="text-xs text-amber-600 mt-2">O orçamento pode ficar incompleto. Queres marcar como verificada na mesma?</p>
+            </div>
+          </div>
+          <div className="flex gap-2">
             <button
-              onClick={() => marcarVerificada(true)}
+              onClick={() => { setShowVerifConfirm(false); marcarVerificada(true) }}
               disabled={markingVerif}
-              className="text-xs font-semibold text-amber-800 bg-white border border-amber-300 rounded-lg px-2.5 py-1.5 shrink-0 hover:bg-amber-50 disabled:opacity-50 transition-colors whitespace-nowrap"
+              className="text-xs font-semibold text-amber-900 bg-white border border-amber-400 rounded-lg px-3 py-1.5 hover:bg-amber-50 disabled:opacity-50 transition-colors"
             >
-              {markingVerif ? '...' : '✓ Verificada'}
+              {markingVerif ? 'A marcar...' : '✓ Marcar como verificada'}
             </button>
-          )}
+            <button
+              onClick={() => setShowVerifConfirm(false)}
+              className="text-xs text-amber-700 border border-amber-200 rounded-lg px-3 py-1.5 hover:bg-amber-100 transition-colors"
+            >
+              Cancelar
+            </button>
+          </div>
         </div>
       )}
 
       {/* ── Badge: verificada ── */}
       {modo === 'ver' && verificada && (
-        <div className="flex items-center gap-1.5">
-          <CheckCircle2 className="h-3.5 w-3.5 text-green-600" />
-          <span className="text-xs font-medium text-green-700">Verificada</span>
-          <button
-            onClick={() => marcarVerificada(false)}
-            disabled={markingVerif}
-            className="ml-1 text-[10px] text-gray-400 hover:text-gray-600 underline disabled:opacity-50"
-          >
-            reverter
-          </button>
+        <div className="space-y-2">
+          <div className="flex items-center gap-1.5">
+            <CheckCircle2 className="h-3.5 w-3.5 text-green-600" />
+            <span className="text-xs font-medium text-green-700">Verificada</span>
+            <button
+              onClick={() => marcarVerificada(false)}
+              disabled={markingVerif}
+              className="ml-1 text-[10px] text-gray-400 hover:text-gray-600 underline disabled:opacity-50"
+            >
+              reverter
+            </button>
+          </div>
+          {alertasPreco.length > 0 && (
+            <div className="bg-amber-50 border border-amber-200 rounded-xl p-3 space-y-1">
+              <p className="text-xs font-semibold text-amber-800 flex items-center gap-1.5">
+                <AlertTriangle className="h-3.5 w-3.5 shrink-0" />
+                Preços incompletos
+              </p>
+              {alertasPreco.map((a) => (
+                <p key={a.nome} className="text-xs text-amber-700 pl-5">
+                  <span className="font-medium">{a.nome}</span>
+                  {' — '}
+                  {a.tipo === 'sem_referencia' ? 'não está na tabela de preços' : 'preço por completar'}
+                </p>
+              ))}
+            </div>
+          )}
+        </div>
+      )}
+
+      {/* ── Alertas de preço (receita não verificada) ── */}
+      {modo === 'ver' && !verificada && alertasPreco.length > 0 && !showVerifConfirm && (
+        <div className="bg-amber-50/60 border border-amber-200 rounded-xl p-3 space-y-1">
+          <p className="text-xs font-semibold text-amber-800 flex items-center gap-1.5">
+            <AlertTriangle className="h-3.5 w-3.5 shrink-0" />
+            {alertasPreco.length} ingrediente{alertasPreco.length !== 1 ? 's' : ''} sem preço de referência
+          </p>
+          {alertasPreco.map((a) => (
+            <p key={a.nome} className="text-xs text-amber-700 pl-5">
+              <span className="font-medium">{a.nome}</span>
+              {' — '}
+              {a.tipo === 'sem_referencia' ? 'não está na tabela de preços' : 'preço por completar'}
+            </p>
+          ))}
         </div>
       )}
 
@@ -949,7 +1048,7 @@ export function ReceitaDetail({ receita, campo }: Props) {
             </div>
             {!verificada && (
               <button
-                onClick={() => marcarVerificada(true)}
+                onClick={handleMarcarVerificada}
                 disabled={markingVerif}
                 className="w-full text-xs font-medium text-green-700 border border-green-200 bg-green-50 hover:bg-green-100 rounded-lg py-2 transition-colors disabled:opacity-50"
               >

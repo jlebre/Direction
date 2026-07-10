@@ -20,7 +20,17 @@ export function ExportarPlanoButton({ campo, diasList }: Props) {
     try {
       const { data, error } = await supabase
         .from('ementa')
-        .select('*, receita:receitas(id, nome)')
+        .select(`*, receita:receitas(
+          id, nome,
+          receita_ingredientes(
+            ingrediente_id,
+            quantidade_mosquitos,
+            quantidade_aranh_melgas,
+            quantidade_cam_trem,
+            unidade,
+            ingrediente:ingredientes(nome, categoria_supermercado)
+          )
+        )`)
         .eq('campo_id', campo.id)
         .order('ordem')
       if (error) throw error

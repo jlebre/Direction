@@ -36,11 +36,12 @@ type EstadoFiltro = 'all' | 'incompleta' | 'por_verificar' | 'verificadas'
 
 interface ReceitasGridProps {
   receitas: Receita[]
-  campo: { id: string; nome: string; seccao: string; num_animados: number; num_animadores: number } | null
+  campo: { id: string; nome: string; seccao?: string; num_animados?: number; num_animadores?: number } | null
   campoId: string
+  alertasPreco?: Record<string, number>
 }
 
-export function ReceitasGrid({ receitas, campo, campoId }: ReceitasGridProps) {
+export function ReceitasGrid({ receitas, campo, campoId, alertasPreco }: ReceitasGridProps) {
   const [pesquisa, setPesquisa] = useState('')
   const [categoriaFiltro, setCategoriaFiltro] = useState<CategoriaReceita | 'all'>('all')
   const [tagFiltro, setTagFiltro] = useState<string | null>(null)
@@ -183,7 +184,7 @@ export function ReceitasGrid({ receitas, campo, campoId }: ReceitasGridProps) {
           </div>
           <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
             {incompletas.map((receita) => (
-              <ReceitaCard key={receita.id} receita={receita} campoId={campoId} estado="incompleta" />
+              <ReceitaCard key={receita.id} receita={receita} campoId={campoId} estado="incompleta" alertasPreco={alertasPreco?.[receita.id] ?? 0} />
             ))}
           </div>
         </div>
@@ -201,7 +202,7 @@ export function ReceitasGrid({ receitas, campo, campoId }: ReceitasGridProps) {
           </div>
           <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
             {porVerificar.map((receita) => (
-              <ReceitaCard key={receita.id} receita={receita} campoId={campoId} estado="por_verificar" />
+              <ReceitaCard key={receita.id} receita={receita} campoId={campoId} estado="por_verificar" alertasPreco={alertasPreco?.[receita.id] ?? 0} />
             ))}
           </div>
         </div>
@@ -216,7 +217,7 @@ export function ReceitasGrid({ receitas, campo, campoId }: ReceitasGridProps) {
           </div>
           <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
             {verificadas.map((receita) => (
-              <ReceitaCard key={receita.id} receita={receita} campoId={campoId} estado="verificada" />
+              <ReceitaCard key={receita.id} receita={receita} campoId={campoId} estado="verificada" alertasPreco={alertasPreco?.[receita.id] ?? 0} />
             ))}
           </div>
         </div>
@@ -235,10 +236,12 @@ function ReceitaCard({
   receita,
   campoId,
   estado,
+  alertasPreco,
 }: {
   receita: Receita
   campoId: string
   estado: 'incompleta' | 'por_verificar' | 'verificada'
+  alertasPreco: number
 }) {
   const corCat = CATEGORIA_CORES[receita.categoria]
 
@@ -256,16 +259,23 @@ function ReceitaCard({
             <CardTitle className="text-sm leading-tight group-hover:text-[#B85042] transition-colors">
               {receita.nome}
             </CardTitle>
-            {estado === 'incompleta' && (
-              <span className="shrink-0 text-[10px] text-gray-500 bg-gray-100 border border-gray-200 rounded px-1.5 py-0.5 font-medium whitespace-nowrap">
-                Incompleta
-              </span>
-            )}
-            {estado === 'por_verificar' && (
-              <span className="shrink-0 text-[10px] text-amber-700 bg-amber-50 border border-amber-200 rounded px-1.5 py-0.5 font-medium whitespace-nowrap">
-                Por verificar
-              </span>
-            )}
+            <div className="flex items-center gap-1 shrink-0">
+              {alertasPreco > 0 && (
+                <span className="text-[10px] text-orange-700 bg-orange-50 border border-orange-200 rounded px-1.5 py-0.5 font-medium whitespace-nowrap" title={`${alertasPreco} ingrediente${alertasPreco !== 1 ? 's' : ''} sem preço`}>
+                  💰 {alertasPreco}
+                </span>
+              )}
+              {estado === 'incompleta' && (
+                <span className="text-[10px] text-gray-500 bg-gray-100 border border-gray-200 rounded px-1.5 py-0.5 font-medium whitespace-nowrap">
+                  Incompleta
+                </span>
+              )}
+              {estado === 'por_verificar' && (
+                <span className="text-[10px] text-amber-700 bg-amber-50 border border-amber-200 rounded px-1.5 py-0.5 font-medium whitespace-nowrap">
+                  Por verificar
+                </span>
+              )}
+            </div>
           </div>
         </CardHeader>
         <CardContent className="pt-0 space-y-2">

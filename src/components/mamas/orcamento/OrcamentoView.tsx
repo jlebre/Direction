@@ -3,12 +3,13 @@
 import { useState } from 'react'
 import { createClient } from '@/lib/supabase/client'
 import { toast } from 'sonner'
-import { Plus, Trash2, X, AlertCircle, ChevronDown, ChevronUp } from 'lucide-react'
+import { Plus, Trash2, X, AlertCircle, ChevronDown, ChevronUp, Download } from 'lucide-react'
 import type { Campo } from '@/types/shared'
 import type { OrcamentoItem, EstimativaItem } from '@/types/mamas'
 import { formatCurrency, formatQuantidade } from '@/lib/utils'
 
 type CorEscalao = { bg: string; text: string; light: string; border: string }
+type GastoReal = { label: string; real: number; previsto: number }
 
 const CATEGORIAS_EXTRA = [
   { value: 'limpeza', label: 'Limpeza', emoji: '🧹' },
@@ -25,6 +26,7 @@ interface OrcamentoViewProps {
   extrasIniciais: OrcamentoItem[]
   corEscalao: CorEscalao
   totalPrevisto: number | null
+  gastosReais?: GastoReal[]
 }
 
 type AddForm = {
@@ -40,11 +42,25 @@ export function OrcamentoView({
   extrasIniciais,
   corEscalao,
   totalPrevisto,
+  gastosReais = [],
 }: OrcamentoViewProps) {
   const [extras, setExtras] = useState<OrcamentoItem[]>(extrasIniciais)
   const [mostrarEstimativas, setMostrarEstimativas] = useState(false)
   const [addSheetOpen, setAddSheetOpen] = useState(false)
   const [salvando, setSalvando] = useState(false)
+  const [exportando, setExportando] = useState(false)
+
+  async function handleExport() {
+    setExportando(true)
+    try {
+      const { exportOrcamento } = await import('@/lib/mamas/export-orcamento')
+      await exportOrcamento(campo, estimativas, extras, totalPrevisto)
+    } catch (e: unknown) {
+      toast.error(e instanceof Error ? e.message : 'Erro ao exportar')
+    } finally {
+      setExportando(false)
+    }
+  }
 
   const supabase = createClient()
 
@@ -159,7 +175,87 @@ export function OrcamentoView({
             </div>
           )}
         </div>
+        {(estimativas.length > 0 || extras.length > 0) && (
+          <button
+            type="button"
+            onClick={handleExport}
+            disabled={exportando}
+            className="mt-3 flex items-center gap-1.5 text-xs text-gray-500 hover:text-[#2D5016] transition-colors disabled:opacity-50"
+          >
+            <Download className="h-3.5 w-3.5" />
+            {exportando ? 'A exportar...' : 'Exportar orçamento (.xlsx)'}
+          </button>
+        )}
       </div>
+
+      {/* Gastos reais de alimentação */}
+      {gastosReais.some((g) => g.real > 0 || g.previsto > 0) && (
+        <div className="bg-white rounded-xl border border-[#E7E8D1] overflow-hidden">
+          <div className="px-4 py-3 border-b border-[#E7E8D1]">
+            <h2 className="text-xs font-bold text-gray-400 uppercase tracking-wider">
+              Gastos reais — alimentação
+            </h2>
+          </div>
+          <div className="divide-y divide-[#E7E8D1]">
+            {gastosReais.map((g) => {
+              const diff = g.previsto > 0 ? g.real - g.previsto : null
+              const acima = diff !== null && diff > 0
+              return (
+                <div key={g.label} className="flex items-center px-4 py-2.5 gap-2 text-sm">
+                  <span className="flex-1 text-[#36454F] truncate">{g.label}</span>
+                  <span className="text-gray-400 tabular-nums w-16 text-right">
+                    {g.previsto > 0 ? formatCurrency(g.previsto) : '—'}
+                  </span>
+                  <span className="font-semibold tabular-nums w-16 text-right" style={{ color: corEscalao.bg }}>
+                    {g.real > 0 ? formatCurrency(g.real) : '—'}
+                  </span>
+                  {diff !== null && (
+                    <span
+                      className={`text-xs tabular-nums w-16 text-right font-medium ${
+                        acima ? 'text-red-500' : 'text-green-600'
+                      }`}
+                    >
+                      {acima ? '+' : ''}{formatCurrency(diff)}
+                    </span>
+                  )}
+                </div>
+              )
+            })}
+            {/* Totais */}
+            {(() => {
+              const totalPrev = gastosReais.reduce((s, g) => s + g.previsto, 0)
+              const totalReal = gastosReais.reduce((s, g) => s + g.real, 0)
+              const diffTotal = totalPrev > 0 ? totalReal - totalPrev : null
+              const acima = diffTotal !== null && diffTotal > 0
+              return (
+                <div className="flex items-center px-4 py-2.5 gap-2 text-sm font-bold bg-[#f8f8f4]">
+                  <span className="flex-1 text-[#36454F]">Total alimentação</span>
+                  <span className="text-gray-400 tabular-nums w-16 text-right">
+                    {totalPrev > 0 ? formatCurrency(totalPrev) : '—'}
+                  </span>
+                  <span className="tabular-nums w-16 text-right" style={{ color: corEscalao.bg }}>
+                    {totalReal > 0 ? formatCurrency(totalReal) : '—'}
+                  </span>
+                  {diffTotal !== null && (
+                    <span
+                      className={`text-xs tabular-nums w-16 text-right font-semibold ${
+                        acima ? 'text-red-500' : 'text-green-600'
+                      }`}
+                    >
+                      {acima ? '+' : ''}{formatCurrency(diffTotal)}
+                    </span>
+                  )}
+                </div>
+              )
+            })()}
+          </div>
+          <div className="px-4 py-2 border-t border-[#E7E8D1]">
+            <p className="text-[10px] text-gray-400">
+              Previsto · Real · Diferença — valores das despesas registadas com código 3.1.x
+            </p>
+          </div>
+        </div>
+      )}
 
       {/* Estimativa por ingrediente (colapsível) */}
       {estimativas.length > 0 && (

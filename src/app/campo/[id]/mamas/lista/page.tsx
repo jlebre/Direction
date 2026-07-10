@@ -34,7 +34,7 @@ export default async function ListaPage({
 
   return (
     <>
-      <Header title="Lista de Compras" backHref={`/campo/${id}`} />
+      <Header title="Lista de Compras" backHref={`/campo/${id}/mamas`} />
       <ListaComprasView
         campo={campo as Campo}
         listas={(listas ?? []) as ListaCompras[]}

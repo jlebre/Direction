@@ -42,6 +42,7 @@ export function EmentaCalendario({ campo, ementaInicial, receitas, restricoes, c
   const [cloneModalAberto, setCloneModalAberto] = useState(false)
   const [camposDisponiveis, setCamposDisponiveis] = useState<{ id: string; nome: string; ano?: number | null }[]>([])
   const [campoFonte, setCampoFonte] = useState<string>('')
+  const [substituirExistente, setSubstituirExistente] = useState(false)
   const [clonando, setClonando] = useState(false)
   const [vista, setVista] = useState<'periodo' | 'dia' | 'semana'>('periodo')
   const supabase = createClient()
@@ -196,13 +197,24 @@ export function EmentaCalendario({ campo, ementaInicial, receitas, restricoes, c
         toast.error('O campo selecionado não tem plano de refeições')
         return
       }
+
+      // Substituir ementa existente se pedido
+      if (substituirExistente && ementa.length > 0) {
+        const { error: deleteErr } = await supabase
+          .from('ementa')
+          .delete()
+          .in('id', ementa.map((e) => e.id))
+        if (deleteErr) throw deleteErr
+        setEmenta([])
+      }
+
       const novosItems = fonte.map((item) => ({ ...item, campo_id: campo.id }))
       const { data: inseridos, error: insertErr } = await supabase
         .from('ementa')
         .insert(novosItems)
         .select('*, receita:receitas(id, nome, categoria, tags)')
       if (insertErr) throw insertErr
-      setEmenta((prev) => [...prev, ...(inseridos as EmentaItem[])])
+      setEmenta((prev) => (substituirExistente ? [] : prev).concat(inseridos as EmentaItem[]))
       setCloneModalAberto(false)
       toast.success(`Plano copiado com ${inseridos?.length ?? 0} entradas!`)
     } catch (e: unknown) {
@@ -643,6 +655,22 @@ export function EmentaCalendario({ campo, ementaInicial, receitas, restricoes, c
                 ))
               )}
             </div>
+            {ementa.length > 0 && (
+              <label className="flex items-start gap-2.5 p-3 bg-amber-50 rounded-lg border border-amber-200 cursor-pointer">
+                <input
+                  type="checkbox"
+                  checked={substituirExistente}
+                  onChange={(e) => setSubstituirExistente(e.target.checked)}
+                  className="mt-0.5 h-4 w-4 accent-[#2D5016]"
+                />
+                <span className="text-sm text-amber-800">
+                  <span className="font-semibold">Substituir plano existente</span>
+                  <span className="block text-xs text-amber-600 mt-0.5">
+                    Remove os {ementa.length} pratos actuais antes de copiar. Sem isto, os pratos são adicionados por cima e podem ficar duplicados.
+                  </span>
+                </span>
+              </label>
+            )}
           </div>
           <DialogFooter>
             <Button variant="outline" onClick={() => setCloneModalAberto(false)}>Cancelar</Button>

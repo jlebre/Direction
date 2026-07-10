@@ -1,19 +1,20 @@
 'use client'
 
 import { useState, useEffect, useMemo, useRef } from 'react'
-import { ShoppingCart, Plus, X, Copy } from 'lucide-react'
+import { ShoppingCart, Plus, X, Share2 } from 'lucide-react'
 import { createClient } from '@/lib/supabase/client'
 import { toast } from 'sonner'
 import { Button } from '@/components/ui/button'
 import { Badge } from '@/components/ui/badge'
 import { Checkbox } from '@/components/ui/checkbox'
-import type { Campo } from '@/types/shared'
+import type { Campo, SeccaoTipo } from '@/types/shared'
 import {
   type ListaCompras,
   type ListaComprasItem,
   type ZonaSupermercado,
   type ArmazenamentoTipo,
   ZONA_LABELS,
+  calcularQuantidade,
 } from '@/types/mamas'
 import { cn, formatQuantidade, formatCurrency } from '@/lib/utils'
 
@@ -148,6 +149,7 @@ export function ListaComprasView({ campo, listas, campoId, gerarDia, gerarRefeic
   }
 
   async function removerItem(itemId: string) {
+    const snapshot = listasState
     setListasState((prev) =>
       prev.map((lista) => ({
         ...lista,
@@ -157,7 +159,7 @@ export function ListaComprasView({ campo, listas, campoId, gerarDia, gerarRefeic
     const { error } = await supabase.from('lista_compras_items').delete().eq('id', itemId)
     if (error) {
       toast.error('Erro ao remover item')
-      window.location.reload()
+      setListasState(snapshot)
     }
   }
 
@@ -242,8 +244,9 @@ export function ListaComprasView({ campo, listas, campoId, gerarDia, gerarRefeic
         fatoresMap[f.tipo_produto] = f.fator
       }
 
-      const pessoasCampo = campo?.num_animados ?? 58
+      const pessoasCampo = (campo?.num_animados ?? 0) + (campo?.num_animadores ?? 0) || 58
       const pessoasBase = 58
+      const seccao = (campo?.seccao ?? 'aranhicos') as SeccaoTipo
 
       const agregados: Record<string, SelecaoItem> = {}
 
@@ -262,12 +265,18 @@ export function ListaComprasView({ campo, listas, campoId, gerarDia, gerarRefeic
           }
         }> })?.receita_ingredientes ?? []
         for (const item of ri) {
-          // Usa quantidade_aranh_melgas como referência base (Melgas = 1.00 em escalao_fatores_quantidade)
-          const qtdMelgas = item.quantidade_aranh_melgas ?? item.quantidade_cam_trem ?? item.quantidade_mosquitos
-          if (!qtdMelgas) continue
           const tipoProduto = item.ingrediente?.tipo_produto ?? 'outro'
           const fator = fatoresMap[tipoProduto] ?? fatoresMap['outro'] ?? 1.0
-          const qty = Math.ceil((qtdMelgas * pessoasCampo * fator) / pessoasBase * 100) / 100
+          const qty = calcularQuantidade(
+            seccao,
+            item.quantidade_mosquitos,
+            item.quantidade_aranh_melgas,
+            item.quantidade_cam_trem,
+            pessoasCampo,
+            pessoasBase,
+            fator
+          )
+          if (!qty) continue
           const key = item.ingrediente_id
           if (agregados[key]) {
             agregados[key].quantidade += qty
@@ -342,9 +351,33 @@ export function ListaComprasView({ campo, listas, campoId, gerarDia, gerarRefeic
         await supabase.from('lista_compras_items').insert(dbItems)
       }
 
+      // Atualiza estado local sem reload de página
+      const { data: freshItems } = await supabase
+        .from('lista_compras_items')
+        .select('*, ingrediente:ingredientes(*)')
+        .eq('lista_id', listaId)
+
+      if (selecaoState.existingListaId) {
+        setListasState((prev) =>
+          prev.map((l) =>
+            l.id === listaId ? { ...l, items: (freshItems ?? []) as ListaComprasItem[] } : l
+          )
+        )
+      } else {
+        setListasState((prev) => [
+          ...prev,
+          {
+            id: listaId,
+            campo_id: campoId,
+            tipo: 'despensa' as ArmazenamentoTipo,
+            gerada_em: new Date().toISOString(),
+            items: (freshItems ?? []) as ListaComprasItem[],
+          },
+        ])
+      }
+
       setSelecaoState(null)
       toast.success(`${dbItems.length} ingredientes adicionados à lista!`)
-      window.location.reload()
     } catch (e: unknown) {
       toast.error(e instanceof Error ? e.message : 'Erro ao guardar lista')
     } finally {
@@ -383,9 +416,19 @@ export function ListaComprasView({ campo, listas, campoId, gerarDia, gerarRefeic
     return linhas.join('\n')
   }
 
-  async function copiarMensagem() {
+  async function partilharOuCopiar() {
+    const texto = gerarMensagem()
+    if (typeof navigator !== 'undefined' && navigator.share) {
+      try {
+        await navigator.share({ text: texto })
+        return
+      } catch (e) {
+        if ((e as Error).name === 'AbortError') return
+        // Outro erro: cai para clipboard
+      }
+    }
     try {
-      await navigator.clipboard.writeText(gerarMensagem())
+      await navigator.clipboard.writeText(texto)
       toast.success('Lista copiada para a área de transferência')
     } catch {
       toast.error('Não foi possível copiar automaticamente')
@@ -437,11 +480,11 @@ export function ListaComprasView({ campo, listas, campoId, gerarDia, gerarRefeic
         </p>
         <div className="flex items-center gap-2">
           <button
-            onClick={copiarMensagem}
+            onClick={partilharOuCopiar}
             className="flex items-center gap-1.5 text-xs font-medium text-[#36454F] border border-[#E7E8D1] rounded-lg px-2.5 py-1.5 hover:bg-[#f8f8f4] transition-colors"
           >
-            <Copy className="h-3.5 w-3.5" />
-            Copiar
+            <Share2 className="h-3.5 w-3.5" />
+            Partilhar
           </button>
           <Button variant="outline" size="sm" onClick={() => gerarLista()} disabled={gerandoLista}>
             {gerandoLista ? 'A gerar...' : 'Atualizar lista'}
