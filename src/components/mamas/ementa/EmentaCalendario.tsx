@@ -27,6 +27,19 @@ import { cn as cnUtil } from '@/lib/utils'
 
 const REFEICOES: RefeicaoTipo[] = ['pequeno_almoco', 'almoco', 'lanche', 'jantar', 'ceia']
 
+function getPillLabel(dia: number, campoDias: CampoDia[]): string {
+  const cd = campoDias.find((d) => d.ordem === dia)
+  if (cd) {
+    if (cd.tipo === 'fds_preparacao') return 'FDS'
+    if (cd.tipo === 'precampo') return `P${Math.abs(dia)}`
+    if (cd.tipo === 'extra') return `E${dia}`
+    return `D${dia}`
+  }
+  // fallback legado
+  if (dia < 0) return dia === -2 ? 'P-2' : 'P-1'
+  return `D${dia}`
+}
+
 type CorEscalao = { bg: string; text: string; light: string; border: string }
 const COR_FALLBACK: CorEscalao = { bg: '#2D5016', text: '#1a3009', light: '#E7F3DD', border: '#86efac' }
 
@@ -641,7 +654,7 @@ export function EmentaCalendario({ campo, ementaInicial, receitas, restricoes, c
                           : undefined
                     }
                   >
-                    <span>{dia < 0 ? (dia === -2 ? 'P-2' : 'P-1') : `D${dia}`}</span>
+                    <span>{getPillLabel(dia, campoDias)}</span>
                   </button>
                 )
               })}
