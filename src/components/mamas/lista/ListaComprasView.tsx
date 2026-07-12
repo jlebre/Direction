@@ -8,6 +8,7 @@ import { Button } from '@/components/ui/button'
 import { Badge } from '@/components/ui/badge'
 import { Checkbox } from '@/components/ui/checkbox'
 import type { Campo, SeccaoTipo } from '@/types/shared'
+import { getSeccao } from '@/types/shared'
 import {
   type ListaCompras,
   type ListaComprasItem,
@@ -234,7 +235,7 @@ export function ListaComprasView({ campo, listas, campoId, gerarDia, gerarRefeic
         supabase
           .from('escalao_fatores_quantidade')
           .select('tipo_produto, fator')
-          .eq('escalao', campo?.seccao ?? 'melgas'),
+          .eq('escalao', campo ? getSeccao(campo) : 'melgas'),
         supabase
           .from('ingrediente_embalagens')
           .select('ingrediente_id, unidade_receita, unidade_compra, quantidade_por_embalagem, regra_arredondamento'),
@@ -260,7 +261,7 @@ export function ListaComprasView({ campo, listas, campoId, gerarDia, gerarRefeic
 
       const pessoasCampo = (campo?.num_animados ?? 0) + (campo?.num_animadores ?? 0) || 58
       const pessoasBase = 58
-      const seccao = (campo?.seccao ?? 'aranhicos') as SeccaoTipo
+      const seccao: SeccaoTipo = campo ? getSeccao(campo) : 'aranhicos'
 
       const agregados: Record<string, SelecaoItem & { unidade: string }> = {}
 

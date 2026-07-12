@@ -69,3 +69,15 @@ export function getDiaLabel(dia: number): string {
 export function getNumDias(seccao?: SeccaoTipo): number {
   return seccao === 'mosquitos' ? 7 : 10
 }
+
+export const ESCALAO_TO_SECCAO: Record<string, SeccaoTipo> = {
+  'Mosquito': 'mosquitos',
+  'Aranhiço': 'aranhicos',
+  'Melga': 'melgas',
+  'Tremelga': 'tremelgas',
+  'Camaleão': 'camaleoes',
+}
+
+export function getSeccao(campo: { seccao?: SeccaoTipo | null; escalao: string }): SeccaoTipo {
+  return campo.seccao ?? ESCALAO_TO_SECCAO[campo.escalao] ?? 'aranhicos'
+}

@@ -2,8 +2,8 @@ import { createClient } from '@/lib/supabase/server'
 import { notFound } from 'next/navigation'
 import Link from 'next/link'
 import { ChevronLeft, Calculator, ShoppingCart } from 'lucide-react'
-import type { Campo, SeccaoTipo } from '@/types/shared'
-import { ESCALAO_COR, getDiaLabel, getNumDias } from '@/types/shared'
+import type { Campo } from '@/types/shared'
+import { ESCALAO_COR, getDiaLabel, getNumDias, getSeccao } from '@/types/shared'
 import { calcularQuantidade, REFEICAO_LABELS } from '@/types/mamas'
 import type { OrcamentoItem, EstimativaItem, CampoDia, DiaBreakdown, RefeicaoTipo } from '@/types/mamas'
 import { OrcamentoView } from '@/components/mamas/orcamento/OrcamentoView'
@@ -106,7 +106,7 @@ export default async function OrcamentoPage({ params }: { params: Promise<{ id: 
   ])
 
   const mult = (multData as { multiplicador: number } | null)?.multiplicador ?? 1.0
-  const seccao = (c.seccao ?? 'aranhicos') as SeccaoTipo
+  const seccao = getSeccao(c)
   const numPessoasCampo = (c.num_animados ?? 0) + (c.num_animadores ?? 0) || 58
 
   const precosCombinados: PrecoRow[] = [

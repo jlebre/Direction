@@ -6,6 +6,7 @@ import { formatQuantidade } from '@/lib/utils'
 import type { SeccaoTipo } from '@/types/shared'
 import { SECCAO_LABELS } from '@/types/shared'
 import { calcularQuantidade } from '@/types/mamas'
+import { arredondarPratico } from '@/lib/mamas/fatores-escalao'
 
 interface IngredienteRow {
   id: string
@@ -75,7 +76,7 @@ export function IngredientesTable({ ingredientes, seccao, totalPessoas, naoVerif
                       col.isAtivo ? 'text-[#B85042]' : 'text-gray-400'
                     )}
                   >
-                    {col.label}{col.isAtivo && ' (atual)'}
+                    {col.isAtivo ? `${seccaoLabel} (atual)` : col.label}
                   </th>
                 ))}
               </tr>
@@ -89,9 +90,6 @@ export function IngredientesTable({ ingredientes, seccao, totalPessoas, naoVerif
                   </td>
                   {colunas.map((col) => {
                     const raw = getQtdNativa(ri, col.key)
-                    const qty = col.isAtivo
-                      ? calcularQuantidade(seccao, ri.quantidade_mosquitos, ri.quantidade_aranh_melgas, ri.quantidade_cam_trem, totalPessoas)
-                      : raw
                     return (
                       <td
                         key={col.key}
@@ -100,7 +98,7 @@ export function IngredientesTable({ ingredientes, seccao, totalPessoas, naoVerif
                           col.isAtivo ? 'text-[#B85042] font-bold' : 'text-gray-400'
                         )}
                       >
-                        {raw ? formatQuantidade(qty, ri.unidade) : '—'}
+                        {raw ? formatQuantidade(raw, ri.unidade) : '—'}
                       </td>
                     )
                   })}
@@ -135,13 +133,14 @@ export function IngredientesTable({ ingredientes, seccao, totalPessoas, naoVerif
           const temQtdAlguma = ri.quantidade_mosquitos || ri.quantidade_aranh_melgas || ri.quantidade_cam_trem
           const qtdNativa = getQtdNativa(ri, banda)
           const calculada = !qtdNativa && !!temQtdAlguma
-          const qty = calcularQuantidade(
+          const qtyEscalada = calcularQuantidade(
             seccao,
             ri.quantidade_mosquitos,
             ri.quantidade_aranh_melgas,
             ri.quantidade_cam_trem,
             totalPessoas,
           )
+          const qty = arredondarPratico(qtyEscalada, ri.unidade)
           return (
             <div key={ri.id} className="flex items-start justify-between py-2.5 gap-3">
               <div className="min-w-0 flex-1">

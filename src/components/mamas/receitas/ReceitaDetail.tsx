@@ -14,7 +14,8 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@
 import { IngredientesTable } from '@/components/mamas/receitas/IngredientesTable'
 import { CATEGORIA_LABELS, CATEGORIA_CORES } from '@/types/mamas'
 import type { Receita, ReceitaIngrediente, CategoriaReceita } from '@/types/mamas'
-import type { Campo, SeccaoTipo } from '@/types/shared'
+import type { Campo } from '@/types/shared'
+import { getSeccao } from '@/types/shared'
 import { cn } from '@/lib/utils'
 import { calcularBandas, arredondarPratico } from '@/lib/mamas/fatores-escalao'
 import type { TipoProduto, EscalaoFator } from '@/lib/mamas/fatores-escalao'
@@ -236,9 +237,9 @@ export function ReceitaDetail({ receita, campo, precosReferencia }: Props) {
     const u = novoIng.unidade
     setNovoIng((n) => ({
       ...n,
-      qtd_mosquitos: String(arredondarPratico(mosquitos, u)),
-      qtd_aranh_melgas: String(arredondarPratico(aranh_melgas, u)),
-      qtd_cam_trem: String(arredondarPratico(cam_trem, u)),
+      qtd_mosquitos: n.qtd_mosquitos.trim() || String(arredondarPratico(mosquitos, u)),
+      qtd_aranh_melgas: n.qtd_aranh_melgas.trim() || String(arredondarPratico(aranh_melgas, u)),
+      qtd_cam_trem: n.qtd_cam_trem.trim() || String(arredondarPratico(cam_trem, u)),
     }))
     setAutoCalcado(true)
     if (fallback) toast.info('Sem fator específico para este tipo. Foi usado 1.00.')
@@ -694,7 +695,7 @@ export function ReceitaDetail({ receita, campo, precosReferencia }: Props) {
                   notas: ri.notas,
                   ingrediente: ri.ingrediente ? { nome: ri.ingrediente.nome } : undefined,
                 }))}
-                seccao={(campo.seccao ?? 'aranhicos') as SeccaoTipo}
+                seccao={getSeccao(campo)}
                 totalPessoas={totalPessoas}
                 naoVerificada={!verificada}
               />
@@ -992,7 +993,7 @@ export function ReceitaDetail({ receita, campo, precosReferencia }: Props) {
               </div>
 
               <div className="bg-white rounded-lg p-2 space-y-1.5 border border-[#E7E8D1]">
-                <p className="text-[10px] font-semibold text-gray-400 uppercase tracking-wider">Calcular por escalão</p>
+                <p className="text-[10px] font-semibold text-gray-400 uppercase tracking-wider">Calcular por escalão <span className="normal-case font-normal text-gray-400">· só preenche campos vazios</span></p>
                 <div className="flex items-center gap-1.5">
                   <Input placeholder="Qtd" type="number" min="0.01" step="0.01"
                     value={refQtd}
@@ -1013,7 +1014,7 @@ export function ReceitaDetail({ receita, campo, precosReferencia }: Props) {
                 </div>
               </div>
 
-              {autoCalcado && <p className="text-[10px] text-[#2D5016]">✓ Calculado automaticamente · edita à vontade</p>}
+              {autoCalcado && <p className="text-[10px] text-[#2D5016]">✓ Calculado · campos já preenchidos mantidos intactos · edita à vontade</p>}
 
               <div className="grid grid-cols-4 gap-1.5">
                 <Input placeholder="Mosquitos" type="number" value={novoIng.qtd_mosquitos}

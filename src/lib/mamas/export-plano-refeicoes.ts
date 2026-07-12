@@ -1,6 +1,6 @@
 import * as XLSX from 'xlsx'
-import type { Campo, SeccaoTipo } from '@/types/shared'
-import { getDiaLabel } from '@/types/shared'
+import type { Campo } from '@/types/shared'
+import { getDiaLabel, getSeccao } from '@/types/shared'
 import { REFEICAO_LABELS, TIPO_PRATO_LABELS, type EmentaItem, type CampoDia, calcularQuantidade } from '@/types/mamas'
 import { exportOrShareFile } from '@/lib/export-share'
 
@@ -156,7 +156,7 @@ export async function exportPlanoRefeicoes(
   XLSX.utils.book_append_sheet(wb, ws2, 'Resumo')
 
   // ── Sheet 3: Ingredientes calculados ─────────────────────────────────────
-  const seccao = (campo.seccao ?? 'aranhicos') as SeccaoTipo
+  const seccao = getSeccao(campo)
   const numPessoas = (campo.num_animados ?? 0) + (campo.num_animadores ?? 0) || 58
 
   const agregados = new Map<string, { nome: string; categoria: string; qty: number; unidade: string }>()
