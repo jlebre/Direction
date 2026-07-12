@@ -17,6 +17,7 @@ import {
   calcularQuantidade,
 } from '@/types/mamas'
 import { cn, formatQuantidade, formatCurrency } from '@/lib/utils'
+import { arredondarPratico } from '@/lib/mamas/fatores-escalao'
 
 interface ListaComprasViewProps {
   campo: Campo | null
@@ -29,8 +30,10 @@ interface ListaComprasViewProps {
 interface SelecaoItem {
   ingrediente_id: string
   nome: string
-  quantidade: number
-  unidade: string
+  quantidade: number   // em unidade de receita, já arredondado
+  unidade: string      // unidade de receita
+  qtdCompra?: number   // embalagens a comprar (se houver conversão)
+  unidadeCompra?: string
   zona: ZonaSupermercado
   selecionado: boolean
 }
@@ -226,12 +229,15 @@ export function ListaComprasView({ campo, listas, campoId, gerarDia, gerarRefeic
       if (filter?.dia !== undefined) ementaQuery = ementaQuery.eq('dia', filter.dia)
       if (filter?.refeicao) ementaQuery = ementaQuery.eq('refeicao', filter.refeicao)
 
-      const [{ data: ementa }, { data: fatoresData }] = await Promise.all([
+      const [{ data: ementa }, { data: fatoresData }, { data: embalagensData }] = await Promise.all([
         ementaQuery,
         supabase
           .from('escalao_fatores_quantidade')
           .select('tipo_produto, fator')
           .eq('escalao', campo?.seccao ?? 'melgas'),
+        supabase
+          .from('ingrediente_embalagens')
+          .select('ingrediente_id, unidade_receita, unidade_compra, quantidade_por_embalagem, regra_arredondamento'),
       ])
 
       if (!ementa || ementa.length === 0) {
@@ -245,14 +251,31 @@ export function ListaComprasView({ campo, listas, campoId, gerarDia, gerarRefeic
         fatoresMap[f.tipo_produto] = f.fator
       }
 
+      // Mapa ingrediente_id::unidade_receita → embalagem
+      type EmbalagemRow = { ingrediente_id: string; unidade_receita: string; unidade_compra: string; quantidade_por_embalagem: number; regra_arredondamento: string }
+      const embalagensMap = new Map<string, EmbalagemRow>()
+      for (const e of (embalagensData ?? []) as EmbalagemRow[]) {
+        embalagensMap.set(`${e.ingrediente_id}::${e.unidade_receita.toLowerCase()}`, e)
+      }
+
       const pessoasCampo = (campo?.num_animados ?? 0) + (campo?.num_animadores ?? 0) || 58
       const pessoasBase = 58
       const seccao = (campo?.seccao ?? 'aranhicos') as SeccaoTipo
 
-      const agregados: Record<string, SelecaoItem> = {}
+      const agregados: Record<string, SelecaoItem & { unidade: string }> = {}
 
-      for (const slot of ementa) {
-        const ri = (slot.receita as unknown as { receita_ingredientes?: Array<{
+      for (const slot of ementa as Array<{
+        is_alternativa?: boolean
+        num_animados?: number | null
+        num_animadores?: number | null
+        receita?: unknown
+      }>) {
+        // Alternativas: usar a contagem específica de pessoas com restrição
+        const pessoasSlot = (slot.is_alternativa && ((slot.num_animados ?? 0) + (slot.num_animadores ?? 0)) > 0)
+          ? (slot.num_animados ?? 0) + (slot.num_animadores ?? 0)
+          : pessoasCampo
+
+        const ri = (slot.receita as { receita_ingredientes?: Array<{
           ingrediente_id: string
           quantidade_mosquitos: number | null
           quantidade_aranh_melgas: number | null
@@ -264,7 +287,8 @@ export function ListaComprasView({ campo, listas, campoId, gerarDia, gerarRefeic
             tipo_armazenamento: string
             tipo_produto?: string
           }
-        }> })?.receita_ingredientes ?? []
+        }> } | null)?.receita_ingredientes ?? []
+
         for (const item of ri) {
           const tipoProduto = item.ingrediente?.tipo_produto ?? 'outro'
           const fator = fatoresMap[tipoProduto] ?? fatoresMap['outro'] ?? 1.0
@@ -273,7 +297,7 @@ export function ListaComprasView({ campo, listas, campoId, gerarDia, gerarRefeic
             item.quantidade_mosquitos,
             item.quantidade_aranh_melgas,
             item.quantidade_cam_trem,
-            pessoasCampo,
+            pessoasSlot,
             pessoasBase,
             fator
           )
@@ -294,10 +318,20 @@ export function ListaComprasView({ campo, listas, campoId, gerarDia, gerarRefeic
         }
       }
 
-      const items = Object.values(agregados).map((item) => ({
-        ...item,
-        quantidade: Math.ceil(item.quantidade * 100) / 100,
-      }))
+      const items = Object.values(agregados).map((item) => {
+        const qtdFinal = arredondarPratico(item.quantidade, item.unidade)
+        const emb = embalagensMap.get(`${item.ingrediente_id}::${item.unidade.toLowerCase()}`)
+        let qtdCompra: number | undefined
+        let unidadeCompra: string | undefined
+        if (emb && emb.quantidade_por_embalagem > 0) {
+          const raw = qtdFinal / emb.quantidade_por_embalagem
+          if (emb.regra_arredondamento === 'cima') qtdCompra = Math.ceil(raw)
+          else if (emb.regra_arredondamento === 'baixo') qtdCompra = Math.floor(raw)
+          else qtdCompra = Math.round(raw)
+          unidadeCompra = emb.unidade_compra
+        }
+        return { ...item, quantidade: qtdFinal, qtdCompra, unidadeCompra }
+      })
 
       if (items.length === 0) {
         toast.info('Nenhum ingrediente encontrado na ementa')
@@ -872,9 +906,16 @@ function GerarListaSelecaoSheet({
                 className="shrink-0 h-4 w-4 rounded border-gray-300 text-[#2D5016] focus:ring-[#2D5016]"
               />
               <span className="flex-1 text-sm text-[#36454F] font-medium">{item.nome}</span>
-              <span className="text-sm font-bold text-[#B85042] shrink-0">
-                {item.quantidade} {item.unidade}
-              </span>
+              <div className="text-right shrink-0">
+                <p className="text-sm font-bold text-[#B85042]">
+                  {item.quantidade} {item.unidade}
+                </p>
+                {item.qtdCompra !== undefined && item.unidadeCompra && (
+                  <p className="text-[10px] text-gray-400 font-medium">
+                    → {item.qtdCompra} {item.unidadeCompra}
+                  </p>
+                )}
+              </div>
             </label>
           ))}
         </div>

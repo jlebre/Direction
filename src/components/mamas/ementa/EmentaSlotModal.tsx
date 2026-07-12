@@ -40,6 +40,7 @@ interface PratoEdit {
   receita_versao_nome?: string
   receita_nome_custom?: string
   notas?: string
+  is_alternativa?: boolean
 }
 
 export interface PratoSave {
@@ -48,6 +49,7 @@ export interface PratoSave {
   receita_versao_id?: string
   receita_nome_custom?: string
   notas?: string
+  is_alternativa?: boolean
 }
 
 type PickerEtapa = 'receita' | 'versao' | 'nova_versao'
@@ -104,6 +106,7 @@ function fromExistingItems(items: EmentaItem[]): PratoEdit[] {
     receita_versao_nome: item.versao && !item.versao.is_default ? item.versao.nome_versao : undefined,
     receita_nome_custom: item.receita_nome_custom,
     notas: item.notas,
+    is_alternativa: item.is_alternativa ?? false,
   }))
 }
 
@@ -533,6 +536,7 @@ export function EmentaSlotModal({
           receita_nome_custom:
             p.modo === 'custom' ? (p.receita_nome_custom?.trim() || undefined) : undefined,
           notas: p.notas?.trim() || undefined,
+          is_alternativa: p.is_alternativa ?? false,
         })),
         saveNumPessoas,
         saveNumAnimados,
@@ -955,6 +959,20 @@ export function EmentaSlotModal({
                       </button>
                     </div>
                   )}
+
+                  {/* Toggle: prato alternativo para restrições */}
+                  <button
+                    type="button"
+                    onClick={() => upd(idx, { is_alternativa: !prato.is_alternativa })}
+                    className={cnUtil(
+                      'text-[10px] font-semibold px-2 py-0.5 rounded-full border transition-colors',
+                      prato.is_alternativa
+                        ? 'bg-blue-50 text-blue-600 border-blue-300'
+                        : 'text-gray-300 border-transparent hover:text-blue-400 hover:border-blue-200'
+                    )}
+                  >
+                    {prato.is_alternativa ? '● Alternativo (restrições)' : '+ Marcar como alternativo'}
+                  </button>
                 </div>
               ))}
             </div>
@@ -964,7 +982,8 @@ export function EmentaSlotModal({
               <Label className="text-xs font-bold text-gray-500 uppercase tracking-wider">Pratos</Label>
               <div className="space-y-2">
                 {pratos.map((prato, idx) => (
-                  <div key={prato.tempId} className="flex items-start gap-2">
+                  <div key={prato.tempId} className="space-y-1">
+                    <div className="flex items-start gap-2">
                     {/* Tipo de prato */}
                     <select
                       value={prato.tipo_prato}
@@ -1042,6 +1061,21 @@ export function EmentaSlotModal({
                     >
                       <X className="h-4 w-4" />
                     </button>
+                    </div>
+
+                  {/* Toggle: prato alternativo para restrições */}
+                  <button
+                    type="button"
+                    onClick={() => upd(idx, { is_alternativa: !prato.is_alternativa })}
+                    className={cnUtil(
+                      'text-[10px] font-semibold px-2 py-0.5 rounded-full border transition-colors',
+                      prato.is_alternativa
+                        ? 'bg-blue-50 text-blue-600 border-blue-300'
+                        : 'text-gray-300 border-transparent hover:text-blue-400 hover:border-blue-200'
+                    )}
+                  >
+                    {prato.is_alternativa ? '● Alternativo (restrições)' : '+ Marcar como alternativo'}
+                  </button>
                   </div>
                 ))}
               </div>

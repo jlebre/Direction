@@ -126,22 +126,46 @@ export function EmentaCalendario({ campo, ementaInicial, receitas, restricoes, c
     return 'parcial'
   }
 
+  function getNomePessoa(r: { crianca_nome?: string | null; animado?: { nome: string } | null }): string {
+    return r.crianca_nome ?? r.animado?.nome ?? 'Animado'
+  }
+
   function getAlertasSlot(dia: number, refeicao: RefeicaoTipo): string[] {
-    const slots = getSlots(dia, refeicao)
+    // Ignorar alternativas no cálculo de alertas — elas resolvem os conflitos
+    const slots = getSlots(dia, refeicao).filter((s) => !s.is_alternativa)
     const alertas: string[] = []
+
     slots.forEach((slot) => {
       if (!slot.receita) return
+      const ri = (slot.receita as unknown as {
+        receita_ingredientes?: { ingrediente_id: string; ingrediente?: { nome: string } }[]
+      })?.receita_ingredientes ?? []
+      const idSet = new Set(ri.map((x) => x.ingrediente_id))
+
       restricoes.forEach((r) => {
+        const nome = getNomePessoa(r)
+
+        // FK-based (primário): usa ingredientes ligados ao catálogo
+        const linked = (r as { ingredientes_linked?: { ingrediente_id: string; ingrediente?: { nome: string } }[] }).ingredientes_linked ?? []
+        if (linked.length > 0) {
+          const conflito = linked.find((l) => idSet.has(l.ingrediente_id))
+          if (conflito) {
+            alertas.push(`${nome} — ${conflito.ingrediente?.nome ?? 'ingrediente'}`)
+          }
+          return
+        }
+
+        // Fallback textual: compara ingredientes_proibidos com nomes dos ingredientes
         const proibidos = r.ingredientes_proibidos ?? []
         if (proibidos.length === 0) return
-        const receitaIngredientes = (slot.receita as unknown as { receita_ingredientes?: { ingrediente?: { nome: string } }[] })?.receita_ingredientes ?? []
-        const match = receitaIngredientes.some((ri) => {
-          const nomeIng = ri.ingrediente?.nome?.toLowerCase() ?? ''
-          return proibidos.some((p) => nomeIng.includes(p.toLowerCase()))
+        const conflito = ri.find((x) => {
+          const n = x.ingrediente?.nome?.toLowerCase() ?? ''
+          return proibidos.some((p) => n.includes(p.toLowerCase()) || p.toLowerCase().includes(n))
         })
-        if (match) alertas.push(`${r.animado?.nome ?? 'Animado'} — ${r.descricao}`)
+        if (conflito) alertas.push(`${nome} — ${conflito.ingrediente?.nome ?? r.descricao}`)
       })
     })
+
     return alertas
   }
 
@@ -178,10 +202,11 @@ export function EmentaCalendario({ campo, ementaInicial, receitas, restricoes, c
               num_pessoas: numPessoas ?? null,
               num_animados: numAnimados ?? null,
               num_animadores: numAnimadores ?? null,
+              is_alternativa: p.is_alternativa ?? false,
               ordem: i,
             }))
           )
-          .select('*, receita:receitas(id, nome, categoria, tags), versao:receita_versoes(id, nome_versao, is_default)')
+          .select('*, receita:receitas(id, nome, categoria, tags, receita_ingredientes(ingrediente_id, ingrediente:ingredientes(id, nome))), versao:receita_versoes(id, nome_versao, is_default)')
         if (error) throw error
         setEmenta((prev) => [
           ...prev.filter((e) => !(e.dia === dia && e.refeicao === refeicao)),
@@ -379,12 +404,18 @@ export function EmentaCalendario({ campo, ementaInicial, receitas, restricoes, c
           <div className="space-y-0.5">
             {slots.map((slot) => (
               <div key={slot.id} className="flex items-baseline gap-1.5 min-w-0">
-                <span className={cnUtil('text-[10px] font-bold text-gray-400 uppercase shrink-0', compact && 'text-[9px]')}>
+                {slot.is_alternativa && (
+                  <span className="text-[9px] text-blue-400 shrink-0">alt.</span>
+                )}
+                <span className={cnUtil('text-[10px] font-bold text-gray-400 uppercase shrink-0', compact && 'text-[9px]', slot.is_alternativa && 'text-blue-300')}>
                   {TIPO_PRATO_LABELS[slot.tipo_prato ?? 'prato']}
                 </span>
-                <span className={cnUtil('text-xs font-medium text-[#36454F] truncate', compact && 'text-[11px]')}>
+                <span className={cnUtil('text-xs font-medium text-[#36454F] truncate', compact && 'text-[11px]', slot.is_alternativa && 'italic text-blue-600')}>
                   {slot.receita?.nome ?? slot.receita_nome_custom ?? '—'}
                 </span>
+                {slot.num_animados != null && slot.is_alternativa && (
+                  <span className="text-[9px] text-blue-400 shrink-0">({(slot.num_animados ?? 0) + (slot.num_animadores ?? 0)}p)</span>
+                )}
                 {slot.versao && !slot.versao.is_default && (
                   <span className={cnUtil('text-[10px] text-[#2D5016] shrink-0 font-medium', compact && 'text-[9px]')}>
                     ({slot.versao.nome_versao})

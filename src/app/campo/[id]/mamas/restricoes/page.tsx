@@ -10,13 +10,14 @@ export default async function RestricoesFarmaciaPage({ params }: { params: Promi
   const { id } = await params
   const supabase = createClient()
 
-  const [{ data: campo }, { data: restricoes }] = await Promise.all([
+  const [{ data: campo }, { data: restricoes }, { data: ingredientes }] = await Promise.all([
     supabase.from('campos').select('id, nome').eq('id', id).single(),
     supabase
       .from('restricoes_alimentares')
-      .select('*')
+      .select('*, ingredientes_linked:restricao_ingredientes(ingrediente_id, ingrediente:ingredientes(id, nome))')
       .eq('campo_id', id)
       .order('crianca_nome'),
+    supabase.from('ingredientes').select('id, nome').order('nome'),
   ])
 
   if (!campo) notFound()
@@ -27,6 +28,7 @@ export default async function RestricoesFarmaciaPage({ params }: { params: Promi
       <RestricoesList
         campoId={id}
         restricoesIniciais={(restricoes ?? []) as RestricaoAlimentar[]}
+        ingredientes={(ingredientes ?? []) as { id: string; nome: string }[]}
       />
     </>
   )

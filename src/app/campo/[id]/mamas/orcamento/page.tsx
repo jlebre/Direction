@@ -82,7 +82,7 @@ export default async function OrcamentoPage({ params }: { params: Promise<{ id: 
     supabase
       .from('ementa')
       .select(`
-        id, dia, refeicao, tipo_prato, num_pessoas,
+        id, dia, refeicao, tipo_prato, num_pessoas, is_alternativa, num_animados, num_animadores,
         receita:receitas(
           id, nome,
           receita_ingredientes(
@@ -134,10 +134,14 @@ export default async function OrcamentoPage({ params }: { params: Promise<{ id: 
   for (const slot of ementaRaw ?? []) {
     const s = slot as unknown as {
       dia: number; refeicao: string; num_pessoas?: number | null
+      is_alternativa?: boolean; num_animados?: number | null; num_animadores?: number | null
       receita: { receita_ingredientes?: RiRow[] } | null
     }
 
-    const slotNumPessoas = s.num_pessoas ?? numPessoasCampo
+    const pessoasAlt = (s.num_animados ?? 0) + (s.num_animadores ?? 0)
+    const slotNumPessoas = (s.is_alternativa && pessoasAlt > 0)
+      ? pessoasAlt
+      : (s.num_pessoas ?? numPessoasCampo)
     const slotKey = `${s.dia}-${s.refeicao}`
 
     if (!slotsMap.has(slotKey)) {

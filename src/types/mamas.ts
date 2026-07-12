@@ -109,6 +109,8 @@ export interface EmentaItem {
   num_pessoas?: number | null
   num_animados?: number | null
   num_animadores?: number | null
+  is_alternativa?: boolean
+  alternativa_para?: string | null
   receita?: Receita
   versao?: { id: string; nome_versao: string; is_default: boolean } | null
 }
@@ -161,6 +163,30 @@ export interface RestricaoAlimentar {
   ingredientes_proibidos: string[]
   notas?: string
   animado?: Animado
+  // Ligação FK a ingredientes reais (via restricao_ingredientes)
+  ingredientes_linked?: { ingrediente_id: string; ingrediente?: Pick<Ingrediente, 'id' | 'nome'> }[]
+}
+
+export interface IngredienteEmbalagem {
+  id: string
+  ingrediente_id: string
+  unidade_receita: string
+  unidade_compra: string
+  quantidade_por_embalagem: number
+  regra_arredondamento: 'cima' | 'baixo' | 'proximo'
+  notas?: string | null
+  ingrediente?: Pick<Ingrediente, 'id' | 'nome'>
+}
+
+// Conflito calculado para um slot (dia, refeicao)
+export interface ConflitosSlot {
+  restricaoId: string
+  nomePessoa: string
+  descricaoRestricao: string
+  tipo: RestricaoTipo
+  gravidade?: 'leve' | 'media' | 'grave' | null
+  ingredientesConflito: string[]  // nomes dos ingredientes problemáticos
+  receitasAfetadas: string[]      // nomes das receitas onde aparecem
 }
 
 export interface FarmaciaMedicacao {

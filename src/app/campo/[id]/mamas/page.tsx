@@ -14,13 +14,19 @@ export default async function MamasPage({ params }: { params: Promise<{ id: stri
   const { id } = await params
   const supabase = createClient()
 
-  const [{ data: campo }, { data: ementa }, { data: receitas }, { data: animados }, { data: campoDiasData }] = await Promise.all([
+  const [{ data: campo }, { data: ementa }, { data: receitas }, { data: restricoesData }, { data: campoDiasData }] = await Promise.all([
     supabase.from('campos').select('*').eq('id', id).single(),
-    supabase.from('ementa').select('*, receita:receitas(id, nome, categoria, tags), versao:receita_versoes(id, nome_versao, is_default)').eq('campo_id', id),
+    supabase.from('ementa').select(`
+      *,
+      receita:receitas(
+        id, nome, categoria, tags,
+        receita_ingredientes(ingrediente_id, ingrediente:ingredientes(id, nome))
+      ),
+      versao:receita_versoes(id, nome_versao, is_default)
+    `).eq('campo_id', id),
     supabase.from('receitas').select('id, nome, categoria, tags, is_oficial').is('deleted_at', null).order('nome'),
-    supabase
-      .from('animados')
-      .select('id, nome, restricoes:restricoes_alimentares(*, animado:animados(id, nome))')
+    supabase.from('restricoes_alimentares')
+      .select('*, ingredientes_linked:restricao_ingredientes(ingrediente_id, ingrediente:ingredientes(id, nome))')
       .eq('campo_id', id),
     supabase.from('campo_dias').select('id, campo_id, ordem, nome, data, tipo, ativo').eq('campo_id', id).eq('ativo', true).order('ordem'),
   ])
@@ -31,9 +37,7 @@ export default async function MamasPage({ params }: { params: Promise<{ id: stri
   const cor = ESCALAO_COR[c.escalao] ?? { bg: '#2D5016', text: '#1a3009', light: '#E7F3DD', border: '#86efac' }
   const primeiroNome = c.mama?.split(' ')[0] || 'Mamã'
 
-  const restricoes: RestricaoAlimentar[] = (animados ?? []).flatMap(
-    (a: { restricoes?: RestricaoAlimentar[] }) => a.restricoes ?? []
-  )
+  const restricoes: RestricaoAlimentar[] = (restricoesData ?? []) as RestricaoAlimentar[]
 
   const numDias = getNumDias(c.seccao)
   const campoDiasActive = (campoDiasData ?? []) as CampoDia[]
@@ -79,6 +83,12 @@ export default async function MamasPage({ params }: { params: Promise<{ id: stri
               className="flex items-center gap-1.5 bg-white/20 hover:bg-white/30 text-white text-sm font-semibold rounded-xl px-3 py-2 transition-colors"
             >
               Compras
+            </Link>
+            <Link
+              href={`/campo/${id}/mamas/embalagens`}
+              className="flex items-center gap-1.5 bg-white/20 hover:bg-white/30 text-white text-sm font-semibold rounded-xl px-3 py-2 transition-colors"
+            >
+              Embalagens
             </Link>
           </div>
         </div>
