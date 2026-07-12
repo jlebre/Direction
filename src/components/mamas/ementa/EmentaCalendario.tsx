@@ -3,12 +3,13 @@
 import { useState } from 'react'
 import Link from 'next/link'
 import { toast } from 'sonner'
-import { Plus, AlertTriangle, Info, Copy, ChevronLeft, ChevronRight, Calendar, LayoutGrid, ExternalLink, Settings2, Trash2, GripVertical } from 'lucide-react'
+import { Plus, AlertTriangle, Info, Copy, ChevronLeft, ChevronRight, Calendar, LayoutGrid, ExternalLink, Settings2, Trash2 } from 'lucide-react'
 import { createClient } from '@/lib/supabase/client'
 import { Button } from '@/components/ui/button'
 import { Badge } from '@/components/ui/badge'
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from '@/components/ui/dialog'
 import { Input } from '@/components/ui/input'
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
 import { EmentaSlotModal, type PratoSave } from './EmentaSlotModal'
 import type { Campo, SeccaoTipo } from '@/types/shared'
 import { getDiaLabel, getNumDias } from '@/types/shared'
@@ -53,6 +54,7 @@ export function EmentaCalendario({ campo, ementaInicial, receitas, restricoes, c
   const [diasModalAberto, setDiasModalAberto] = useState(false)
   const [diasEdit, setDiasEdit] = useState<CampoDia[]>([])
   const [salvanDias, setSalvandoDias] = useState(false)
+  const [novoTipo, setNovoTipo] = useState<string>('campo')
   const supabase = createClient()
 
   const numDias = getNumDias(campo.seccao as SeccaoTipo)
@@ -296,15 +298,38 @@ export function EmentaCalendario({ campo, ementaInicial, receitas, restricoes, c
   }
 
   function adicionarDia() {
-    const maxOrdem = diasEdit.reduce((m, d) => Math.max(m, d.ordem), 0)
-    const newOrdem = Math.max(maxOrdem + 1, 1)
+    const tipoParaOrdem = (): number => {
+      switch (novoTipo) {
+        case 'fds_preparacao': {
+          const ordens = diasEdit.filter((d) => d.tipo === 'fds_preparacao').map((d) => d.ordem)
+          return ordens.length ? Math.min(...ordens) - 1 : -20
+        }
+        case 'precampo': {
+          const ordens = diasEdit.filter((d) => d.tipo === 'precampo').map((d) => d.ordem)
+          return ordens.length ? Math.min(...ordens) - 1 : -1
+        }
+        case 'extra': {
+          const ordens = diasEdit.filter((d) => d.ordem > numDias).map((d) => d.ordem)
+          return ordens.length ? Math.max(...ordens) + 1 : numDias + 1
+        }
+        default: {
+          const ordens = diasEdit.filter((d) => d.tipo === 'campo').map((d) => d.ordem)
+          return ordens.length ? Math.max(...ordens) + 1 : 1
+        }
+      }
+    }
+    const ordem = tipoParaOrdem()
+    const nomeDefault =
+      novoTipo === 'precampo' ? 'Pré-campo' :
+      novoTipo === 'fds_preparacao' ? 'FDS Preparação' :
+      novoTipo === 'extra' ? 'Dia Extra' : null
     setDiasEdit((prev) => [...prev, {
       id: '',
       campo_id: campo.id,
-      ordem: newOrdem,
-      nome: `Dia ${newOrdem}`,
+      ordem,
+      nome: nomeDefault,
       data: null,
-      tipo: 'campo',
+      tipo: novoTipo,
       ativo: true,
     }])
   }
@@ -794,49 +819,73 @@ export function EmentaCalendario({ campo, ementaInicial, receitas, restricoes, c
           </DialogHeader>
           <div className="space-y-2">
             <p className="text-xs text-gray-500">
-              Personaliza os nomes dos dias. Podes adicionar dias extra ou remover dias sem refeições.
+              Personaliza os dias do campo. Os dias Pré-campo e FDS Preparação aparecem sempre antes do Dia 1.
             </p>
             <div className="space-y-1.5 max-h-72 overflow-y-auto">
-              {diasEdit.map((d, idx) => (
-                <div key={`${d.ordem}-${idx}`} className="flex items-center gap-2">
-                  <GripVertical className="h-4 w-4 text-gray-300 shrink-0" />
-                  <div className="w-12 shrink-0 text-[11px] font-semibold text-gray-400 text-center">
-                    {d.tipo === 'precampo' ? 'Pré' : `D${d.ordem}`}
+              {[...diasEdit].sort((a, b) => a.ordem - b.ordem).map((d, idx) => {
+                const realIdx = diasEdit.indexOf(d)
+                const tipoCor =
+                  d.tipo === 'fds_preparacao' ? 'bg-purple-100 text-purple-700' :
+                  d.tipo === 'precampo' ? 'bg-blue-100 text-blue-700' :
+                  d.tipo === 'extra' ? 'bg-gray-100 text-gray-500' :
+                  'bg-green-100 text-green-700'
+                const tipoLabel =
+                  d.tipo === 'fds_preparacao' ? 'FDS' :
+                  d.tipo === 'precampo' ? 'Pré' :
+                  d.tipo === 'extra' ? 'Extra' : `D${d.ordem}`
+                return (
+                  <div key={`${d.ordem}-${idx}`} className="flex items-center gap-2">
+                    <span className={cnUtil('shrink-0 text-[10px] font-bold px-1.5 py-0.5 rounded-md w-12 text-center', tipoCor)}>
+                      {tipoLabel}
+                    </span>
+                    <Input
+                      value={d.nome ?? ''}
+                      placeholder={getDiaLabel(d.ordem)}
+                      onChange={(e) =>
+                        setDiasEdit((prev) =>
+                          prev.map((item, i) => i === realIdx ? { ...item, nome: e.target.value } : item)
+                        )
+                      }
+                      className="text-sm h-8"
+                    />
+                    <button
+                      type="button"
+                      onClick={() => removerDiaEdit(realIdx)}
+                      className="shrink-0 p-1.5 rounded-lg hover:bg-red-50 text-gray-300 hover:text-red-500 transition-colors"
+                      title="Remover dia"
+                    >
+                      <Trash2 className="h-3.5 w-3.5" />
+                    </button>
                   </div>
-                  <Input
-                    value={d.nome ?? ''}
-                    placeholder={getDiaLabel(d.ordem)}
-                    onChange={(e) =>
-                      setDiasEdit((prev) =>
-                        prev.map((item, i) => i === idx ? { ...item, nome: e.target.value } : item)
-                      )
-                    }
-                    className="text-sm h-8"
-                  />
-                  <button
-                    type="button"
-                    onClick={() => removerDiaEdit(idx)}
-                    className="shrink-0 p-1.5 rounded-lg hover:bg-red-50 text-gray-300 hover:text-red-500 transition-colors"
-                    title="Remover dia"
-                  >
-                    <Trash2 className="h-3.5 w-3.5" />
-                  </button>
-                </div>
-              ))}
+                )
+              })}
               {diasEdit.length === 0 && (
                 <p className="text-sm text-gray-400 text-center py-4">
                   Nenhum dia definido — vai usar configuração padrão ({numDias} dias).
                 </p>
               )}
             </div>
-            <button
-              type="button"
-              onClick={adicionarDia}
-              className="w-full flex items-center justify-center gap-2 py-2 rounded-lg border-2 border-dashed border-[#E7E8D1] text-sm text-gray-400 hover:border-[#2D5016] hover:text-[#2D5016] transition-colors"
-            >
-              <Plus className="h-4 w-4" />
-              Adicionar dia extra
-            </button>
+            <div className="flex gap-2">
+              <Select value={novoTipo} onValueChange={setNovoTipo}>
+                <SelectTrigger className="flex-1 h-9 text-sm">
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="campo">Campo</SelectItem>
+                  <SelectItem value="precampo">Pré-campo</SelectItem>
+                  <SelectItem value="fds_preparacao">FDS Preparação</SelectItem>
+                  <SelectItem value="extra">Extra</SelectItem>
+                </SelectContent>
+              </Select>
+              <button
+                type="button"
+                onClick={adicionarDia}
+                className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg border-2 border-dashed border-[#E7E8D1] text-sm text-gray-400 hover:border-[#2D5016] hover:text-[#2D5016] transition-colors whitespace-nowrap"
+              >
+                <Plus className="h-4 w-4" />
+                Adicionar
+              </button>
+            </div>
           </div>
           <DialogFooter>
             <Button variant="outline" onClick={() => setDiasModalAberto(false)}>Cancelar</Button>

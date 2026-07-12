@@ -30,6 +30,7 @@ export interface Campo {
   orcamento_frutas_legumes?: number
   orcamento_diversos?: number
   periodo?: number
+  arquivado?: boolean
 }
 
 /** Campo sem o campo pin — tipo seguro para passar a componentes client */

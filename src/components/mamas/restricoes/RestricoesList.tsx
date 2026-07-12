@@ -1,7 +1,7 @@
 'use client'
 
-import { useState } from 'react'
-import { Plus, Trash2, AlertTriangle, User } from 'lucide-react'
+import { useState, useMemo } from 'react'
+import { Plus, Trash2, AlertTriangle, User, Search } from 'lucide-react'
 import { createClient } from '@/lib/supabase/client'
 import { toast } from 'sonner'
 import { Button } from '@/components/ui/button'
@@ -70,7 +70,26 @@ export function RestricoesList({
   const [form, setForm] = useState<RestricaoFormData>(formVazio)
   const [editId, setEditId] = useState<string | null>(null)
   const [saving, setSaving] = useState(false)
+  const [pesquisa, setPesquisa] = useState('')
+  const [filtroTipo, setFiltroTipo] = useState<RestricaoTipo | 'todos'>('todos')
+  const [confirmarApagar, setConfirmarApagar] = useState<{ id: string; nome: string } | null>(null)
   const supabase = createClient()
+
+  const restricoesFiltradas = useMemo(() => {
+    let lista = restricoes
+    if (filtroTipo !== 'todos') lista = lista.filter((r) => r.tipo === filtroTipo)
+    if (pesquisa.trim()) {
+      const q = pesquisa.toLowerCase()
+      lista = lista.filter(
+        (r) =>
+          getNomeCrianca(r).toLowerCase().includes(q) ||
+          r.descricao.toLowerCase().includes(q) ||
+          (r.ingredientes_proibidos ?? []).some((i) => i.toLowerCase().includes(q)) ||
+          (r.notas ?? '').toLowerCase().includes(q)
+      )
+    }
+    return lista
+  }, [restricoes, filtroTipo, pesquisa])
 
   function abrirNova() {
     setForm(formVazio)
@@ -133,11 +152,13 @@ export function RestricoesList({
     }
   }
 
-  async function remover(id: string) {
-    const { error } = await supabase.from('restricoes_alimentares').delete().eq('id', id)
+  async function removerConfirmado() {
+    if (!confirmarApagar) return
+    const { error } = await supabase.from('restricoes_alimentares').delete().eq('id', confirmarApagar.id)
     if (error) { toast.error('Erro ao remover'); return }
-    setRestricoes((prev) => prev.filter((r) => r.id !== id))
+    setRestricoes((prev) => prev.filter((r) => r.id !== confirmarApagar.id))
     toast.success('Removido')
+    setConfirmarApagar(null)
   }
 
   const contagem: Record<RestricaoTipo, number> = {
@@ -147,35 +168,69 @@ export function RestricoesList({
 
   return (
     <div className="p-4 space-y-4">
-      {/* Resumo */}
+      {/* Resumo / filtros por tipo */}
       {restricoes.length > 0 && (
         <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
           {(Object.entries(contagem) as [RestricaoTipo, number][])
             .filter(([, n]) => n > 0)
             .map(([tipo, n]) => (
-              <div key={tipo} className={cn('rounded-lg border p-3 text-center', TIPO_CORES[tipo])}>
+              <button
+                key={tipo}
+                onClick={() => setFiltroTipo(filtroTipo === tipo ? 'todos' : tipo)}
+                className={cn(
+                  'rounded-lg border p-3 text-center transition-all',
+                  TIPO_CORES[tipo],
+                  filtroTipo === tipo ? 'ring-2 ring-offset-1 ring-current' : 'opacity-80 hover:opacity-100'
+                )}
+              >
                 <p className="text-2xl font-bold">{n}</p>
                 <p className="text-xs font-semibold">{TIPO_LABELS[tipo]}{n !== 1 ? 's' : ''}</p>
-              </div>
+              </button>
             ))}
         </div>
       )}
 
-      <div className="flex justify-between items-center">
-        <p className="text-sm text-gray-500">{restricoes.length} restrição{restricoes.length !== 1 ? 'ões' : ''}</p>
-        <Button onClick={abrirNova} size="sm" className="gap-1">
+      <div className="flex gap-2 items-center">
+        <div className="relative flex-1">
+          <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 h-4 w-4 text-gray-400 pointer-events-none" />
+          <Input
+            value={pesquisa}
+            onChange={(e) => setPesquisa(e.target.value)}
+            placeholder="Pesquisar por nome ou descrição..."
+            className="pl-8"
+          />
+        </div>
+        <Button onClick={abrirNova} size="sm" className="gap-1 shrink-0">
           <Plus className="h-4 w-4" /> Adicionar
         </Button>
       </div>
 
-      {restricoes.length === 0 ? (
+      {filtroTipo !== 'todos' && (
+        <div className="flex items-center gap-2">
+          <span className="text-xs text-gray-500">Filtro:</span>
+          <button
+            onClick={() => setFiltroTipo('todos')}
+            className={cn('text-xs px-2 py-1 rounded-full border font-medium', TIPO_CORES[filtroTipo])}
+          >
+            {TIPO_LABELS[filtroTipo]} ×
+          </button>
+        </div>
+      )}
+
+      <p className="text-sm text-gray-500">
+        {restricoesFiltradas.length === restricoes.length
+          ? `${restricoes.length} restrição${restricoes.length !== 1 ? 'ões' : ''}`
+          : `${restricoesFiltradas.length} de ${restricoes.length} restrições`}
+      </p>
+
+      {restricoesFiltradas.length === 0 ? (
         <div className="text-center py-12 text-gray-400 space-y-2">
           <AlertTriangle className="h-10 w-10 mx-auto" />
-          <p>Sem restrições alimentares registadas</p>
+          <p>{restricoes.length === 0 ? 'Sem restrições alimentares registadas' : 'Nenhuma corresponde à pesquisa'}</p>
         </div>
       ) : (
         <div className="space-y-3">
-          {restricoes.map((r) => (
+          {restricoesFiltradas.map((r) => (
             <div key={r.id} className="bg-white rounded-xl border border-[#E7E8D1] p-4 space-y-2">
               <div className="flex items-start gap-2 justify-between">
                 <div className="flex items-center gap-2 min-w-0">
@@ -194,7 +249,10 @@ export function RestricoesList({
                   <button onClick={() => abrirEditar(r)} className="text-xs text-gray-400 hover:text-[#B85042] transition-colors">
                     Editar
                   </button>
-                  <button onClick={() => remover(r.id)} className="text-[#F96167] hover:opacity-70 transition-opacity">
+                  <button
+                    onClick={() => setConfirmarApagar({ id: r.id, nome: getNomeCrianca(r) })}
+                    className="text-[#F96167] hover:opacity-70 transition-opacity"
+                  >
                     <Trash2 className="h-4 w-4" />
                   </button>
                 </div>
@@ -222,7 +280,7 @@ export function RestricoesList({
         </div>
       )}
 
-      {/* Modal */}
+      {/* Modal edição/criação */}
       <Dialog open={modalAberto} onOpenChange={setModalAberto}>
         <DialogContent>
           <DialogHeader>
@@ -300,6 +358,23 @@ export function RestricoesList({
             <Button onClick={guardar} disabled={saving || !form.crianca_nome.trim() || !form.descricao.trim()}>
               {saving ? 'A guardar...' : 'Guardar'}
             </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* Modal confirmação de apagar */}
+      <Dialog open={!!confirmarApagar} onOpenChange={(o) => { if (!o) setConfirmarApagar(null) }}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Remover restrição</DialogTitle>
+          </DialogHeader>
+          <p className="text-sm text-gray-600">
+            Tens a certeza que queres remover a restrição de <strong>{confirmarApagar?.nome}</strong>?
+            Esta ação não pode ser desfeita.
+          </p>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setConfirmarApagar(null)}>Cancelar</Button>
+            <Button variant="destructive" onClick={removerConfirmado}>Remover</Button>
           </DialogFooter>
         </DialogContent>
       </Dialog>

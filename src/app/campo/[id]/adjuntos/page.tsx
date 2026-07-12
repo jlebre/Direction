@@ -188,6 +188,26 @@ export default async function AdjuntosDashboard({ params }: { params: Promise<{ 
           </section>
         )}
 
+        {/* Transportes */}
+        <section>
+          <h2 className="text-xs font-bold text-gray-500 uppercase tracking-wider mb-3">
+            Transportes
+          </h2>
+          <Link
+            href={`/campo/${id}/adjuntos/transportes`}
+            className="flex items-center justify-between bg-white rounded-xl border border-[#E7E8D1] px-4 py-3 hover:shadow-sm active:scale-[0.99] transition-all"
+          >
+            <div className="flex items-center gap-3">
+              <span className="text-xl">🚌</span>
+              <div>
+                <p className="text-sm font-medium text-[#36454F]">Gestão de Transportes</p>
+                <p className="text-xs text-gray-400">Autocarro, comboio, avião — com documentos PDF</p>
+              </div>
+            </div>
+            <span className="text-gray-300 text-xs">›</span>
+          </Link>
+        </section>
+
         {/* Link admin storage */}
         <div className="text-center pb-2">
           <Link href={`/campo/${id}/adjuntos/storage`} className="text-xs text-gray-300">
