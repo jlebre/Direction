@@ -29,8 +29,13 @@ const TIPO_CORES: Record<RestricaoTipo, string> = {
   outro: 'border-gray-300 bg-gray-50 text-gray-600',
 }
 
-const GRAVIDADE_LABELS = { leve: 'Leve', media: 'Média', grave: 'Grave' }
-const GRAVIDADE_CORES = {
+const GRAVIDADE_LABELS: Record<string, string> = {
+  leve: 'Leve',
+  media: 'Média',
+  grave: 'Grave',
+}
+
+const GRAVIDADE_CORES: Record<string, string> = {
   leve: 'bg-yellow-50 text-yellow-700 border-yellow-200',
   media: 'bg-orange-50 text-orange-700 border-orange-200',
   grave: 'bg-red-100 text-red-700 border-red-300',
@@ -45,7 +50,7 @@ interface RestricaoFormData {
   notas: string
 }
 
-const formVazio: RestricaoFormData = {
+const FORM_VAZIO: RestricaoFormData = {
   crianca_nome: '',
   tipo: 'alergia',
   gravidade: '',
@@ -67,7 +72,7 @@ export function RestricoesList({
 }) {
   const [restricoes, setRestricoes] = useState<RestricaoAlimentar[]>(restricoesIniciais)
   const [modalAberto, setModalAberto] = useState(false)
-  const [form, setForm] = useState<RestricaoFormData>(formVazio)
+  const [form, setForm] = useState<RestricaoFormData>(FORM_VAZIO)
   const [editId, setEditId] = useState<string | null>(null)
   const [saving, setSaving] = useState(false)
   const [pesquisa, setPesquisa] = useState('')
@@ -83,7 +88,7 @@ export function RestricoesList({
       lista = lista.filter(
         (r) =>
           getNomeCrianca(r).toLowerCase().includes(q) ||
-          r.descricao.toLowerCase().includes(q) ||
+          (r.descricao ?? '').toLowerCase().includes(q) ||
           (r.ingredientes_proibidos ?? []).some((i) => i.toLowerCase().includes(q)) ||
           (r.notas ?? '').toLowerCase().includes(q)
       )
@@ -92,7 +97,7 @@ export function RestricoesList({
   }, [restricoes, filtroTipo, pesquisa])
 
   function abrirNova() {
-    setForm(formVazio)
+    setForm(FORM_VAZIO)
     setEditId(null)
     setModalAberto(true)
   }
@@ -102,12 +107,18 @@ export function RestricoesList({
       crianca_nome: r.crianca_nome ?? r.animado?.nome ?? '',
       tipo: r.tipo,
       gravidade: r.gravidade ?? '',
-      descricao: r.descricao,
+      descricao: r.descricao ?? '',
       ingredientes_proibidos: (r.ingredientes_proibidos ?? []).join(', '),
       notas: r.notas ?? '',
     })
     setEditId(r.id)
     setModalAberto(true)
+  }
+
+  function fecharModal() {
+    setModalAberto(false)
+    // delay to let animation finish before resetting
+    setTimeout(() => { setForm(FORM_VAZIO); setEditId(null) }, 200)
   }
 
   async function guardar() {
@@ -134,6 +145,7 @@ export function RestricoesList({
           .single()
         if (error) throw error
         setRestricoes((prev) => prev.map((r) => (r.id === editId ? (updated as RestricaoAlimentar) : r)))
+        toast.success('Guardado')
       } else {
         const { data: nova, error } = await supabase
           .from('restricoes_alimentares')
@@ -142,11 +154,11 @@ export function RestricoesList({
           .single()
         if (error) throw error
         setRestricoes((prev) => [...prev, nova as RestricaoAlimentar])
+        toast.success('Restrição adicionada')
       }
-      toast.success('Guardado')
-      setModalAberto(false)
+      fecharModal()
     } catch (e: unknown) {
-      toast.error(e instanceof Error ? e.message : 'Erro ao guardar')
+      toast.error(e instanceof Error ? e.message : 'Não foi possível guardar a restrição alimentar.')
     } finally {
       setSaving(false)
     }
@@ -154,11 +166,19 @@ export function RestricoesList({
 
   async function removerConfirmado() {
     if (!confirmarApagar) return
-    const { error } = await supabase.from('restricoes_alimentares').delete().eq('id', confirmarApagar.id)
-    if (error) { toast.error('Erro ao remover'); return }
-    setRestricoes((prev) => prev.filter((r) => r.id !== confirmarApagar.id))
-    toast.success('Removido')
-    setConfirmarApagar(null)
+    try {
+      const { error } = await supabase
+        .from('restricoes_alimentares')
+        .delete()
+        .eq('id', confirmarApagar.id)
+      if (error) throw error
+      setRestricoes((prev) => prev.filter((r) => r.id !== confirmarApagar.id))
+      toast.success('Removido')
+    } catch (e: unknown) {
+      toast.error(e instanceof Error ? e.message : 'Erro ao remover')
+    } finally {
+      setConfirmarApagar(null)
+    }
   }
 
   const contagem: Record<RestricaoTipo, number> = {
@@ -176,6 +196,7 @@ export function RestricoesList({
             .map(([tipo, n]) => (
               <button
                 key={tipo}
+                type="button"
                 onClick={() => setFiltroTipo(filtroTipo === tipo ? 'todos' : tipo)}
                 className={cn(
                   'rounded-lg border p-3 text-center transition-all',
@@ -200,7 +221,7 @@ export function RestricoesList({
             className="pl-8"
           />
         </div>
-        <Button onClick={abrirNova} size="sm" className="gap-1 shrink-0">
+        <Button type="button" onClick={abrirNova} size="sm" className="gap-1 shrink-0">
           <Plus className="h-4 w-4" /> Adicionar
         </Button>
       </div>
@@ -209,6 +230,7 @@ export function RestricoesList({
         <div className="flex items-center gap-2">
           <span className="text-xs text-gray-500">Filtro:</span>
           <button
+            type="button"
             onClick={() => setFiltroTipo('todos')}
             className={cn('text-xs px-2 py-1 rounded-full border font-medium', TIPO_CORES[filtroTipo])}
           >
@@ -246,12 +268,17 @@ export function RestricoesList({
                       {GRAVIDADE_LABELS[r.gravidade]}
                     </Badge>
                   )}
-                  <button onClick={() => abrirEditar(r)} className="text-xs text-gray-400 hover:text-[#B85042] transition-colors">
+                  <button
+                    type="button"
+                    onClick={() => abrirEditar(r)}
+                    className="text-xs text-gray-400 hover:text-[#B85042] transition-colors min-h-[44px] px-1 flex items-center"
+                  >
                     Editar
                   </button>
                   <button
+                    type="button"
                     onClick={() => setConfirmarApagar({ id: r.id, nome: getNomeCrianca(r) })}
-                    className="text-[#F96167] hover:opacity-70 transition-opacity"
+                    className="text-[#F96167] hover:opacity-70 transition-opacity min-h-[44px] px-1 flex items-center"
                   >
                     <Trash2 className="h-4 w-4" />
                   </button>
@@ -260,7 +287,7 @@ export function RestricoesList({
 
               <Alert variant={r.tipo === 'alergia' ? 'destructive' : 'warning'} className="py-2">
                 <AlertTriangle className="h-4 w-4" />
-                <AlertDescription>{r.descricao}</AlertDescription>
+                <AlertDescription>{r.descricao ?? '—'}</AlertDescription>
               </Alert>
 
               {r.ingredientes_proibidos && r.ingredientes_proibidos.length > 0 && (
@@ -280,17 +307,17 @@ export function RestricoesList({
         </div>
       )}
 
-      {/* Modal edição/criação */}
-      <Dialog open={modalAberto} onOpenChange={setModalAberto}>
-        <DialogContent>
+      {/* Modal criação / edição — sem autoFocus para compatibilidade iOS Safari */}
+      <Dialog open={modalAberto} onOpenChange={(open) => { if (!open) fecharModal() }}>
+        <DialogContent className="w-[calc(100%-2rem)] max-w-md">
           <DialogHeader>
             <DialogTitle>{editId ? 'Editar restrição' : 'Nova restrição alimentar'}</DialogTitle>
           </DialogHeader>
-          <div className="space-y-4">
+          <div className="space-y-4 py-1">
             <div className="space-y-1">
-              <Label>Nome da criança</Label>
+              <Label htmlFor="crianca_nome">Nome da criança *</Label>
               <Input
-                autoFocus
+                id="crianca_nome"
                 placeholder="Maria, João..."
                 value={form.crianca_nome}
                 onChange={(e) => setForm((f) => ({ ...f, crianca_nome: e.target.value }))}
@@ -312,41 +339,46 @@ export function RestricoesList({
                 </Select>
               </div>
               <div className="space-y-1">
-                <Label>Gravidade <span className="text-gray-400 font-normal text-xs">(opcional)</span></Label>
+                <Label>Gravidade</Label>
                 <Select
-                  value={form.gravidade}
-                  onValueChange={(v) => setForm((f) => ({ ...f, gravidade: v as 'leve' | 'media' | 'grave' | '' }))}
+                  value={form.gravidade || 'none'}
+                  onValueChange={(v) => setForm((f) => ({ ...f, gravidade: v === 'none' ? '' : v as 'leve' | 'media' | 'grave' }))}
                 >
-                  <SelectTrigger><SelectValue placeholder="—" /></SelectTrigger>
+                  <SelectTrigger><SelectValue placeholder="Opcional" /></SelectTrigger>
                   <SelectContent>
-                    <SelectItem value="">—</SelectItem>
-                    {(Object.entries(GRAVIDADE_LABELS) as [string, string][]).map(([v, l]) => (
-                      <SelectItem key={v} value={v}>{l}</SelectItem>
-                    ))}
+                    <SelectItem value="none">Não especificada</SelectItem>
+                    <SelectItem value="leve">Leve</SelectItem>
+                    <SelectItem value="media">Média</SelectItem>
+                    <SelectItem value="grave">Grave</SelectItem>
                   </SelectContent>
                 </Select>
               </div>
             </div>
             <div className="space-y-1">
-              <Label>Descrição</Label>
+              <Label htmlFor="descricao">Descrição da restrição *</Label>
               <Input
+                id="descricao"
                 placeholder="Alergia a frutos secos, intolerância à lactose..."
                 value={form.descricao}
                 onChange={(e) => setForm((f) => ({ ...f, descricao: e.target.value }))}
               />
             </div>
             <div className="space-y-1">
-              <Label>Ingredientes proibidos <span className="text-gray-400 font-normal text-xs">(separados por vírgula)</span></Label>
+              <Label htmlFor="ingredientes">
+                Ingredientes a evitar <span className="text-gray-400 font-normal text-xs">(separados por vírgula)</span>
+              </Label>
               <Input
+                id="ingredientes"
                 placeholder="amendoins, nozes, cajus"
                 value={form.ingredientes_proibidos}
                 onChange={(e) => setForm((f) => ({ ...f, ingredientes_proibidos: e.target.value }))}
               />
-              <p className="text-xs text-gray-400">Estes ingredientes serão cruzados com a ementa para gerar alertas</p>
             </div>
             <div className="space-y-1">
-              <Label>Notas adicionais</Label>
+              <Label htmlFor="notas">Notas adicionais</Label>
               <Textarea
+                id="notas"
+                rows={2}
                 placeholder="Separar o molho no prato dele..."
                 value={form.notas}
                 onChange={(e) => setForm((f) => ({ ...f, notas: e.target.value }))}
@@ -354,8 +386,14 @@ export function RestricoesList({
             </div>
           </div>
           <DialogFooter>
-            <Button variant="outline" onClick={() => setModalAberto(false)}>Cancelar</Button>
-            <Button onClick={guardar} disabled={saving || !form.crianca_nome.trim() || !form.descricao.trim()}>
+            <Button type="button" variant="outline" onClick={fecharModal} disabled={saving}>
+              Cancelar
+            </Button>
+            <Button
+              type="button"
+              onClick={guardar}
+              disabled={saving || !form.crianca_nome.trim() || !form.descricao.trim()}
+            >
               {saving ? 'A guardar...' : 'Guardar'}
             </Button>
           </DialogFooter>
@@ -363,18 +401,22 @@ export function RestricoesList({
       </Dialog>
 
       {/* Modal confirmação de apagar */}
-      <Dialog open={!!confirmarApagar} onOpenChange={(o) => { if (!o) setConfirmarApagar(null) }}>
-        <DialogContent>
+      <Dialog open={!!confirmarApagar} onOpenChange={(open) => { if (!open) setConfirmarApagar(null) }}>
+        <DialogContent className="w-[calc(100%-2rem)] max-w-sm">
           <DialogHeader>
             <DialogTitle>Remover restrição</DialogTitle>
           </DialogHeader>
           <p className="text-sm text-gray-600">
-            Tens a certeza que queres remover a restrição de <strong>{confirmarApagar?.nome}</strong>?
-            Esta ação não pode ser desfeita.
+            Tens a certeza que queres remover a restrição de{' '}
+            <strong>{confirmarApagar?.nome}</strong>? Esta ação não pode ser desfeita.
           </p>
           <DialogFooter>
-            <Button variant="outline" onClick={() => setConfirmarApagar(null)}>Cancelar</Button>
-            <Button variant="destructive" onClick={removerConfirmado}>Remover</Button>
+            <Button type="button" variant="outline" onClick={() => setConfirmarApagar(null)}>
+              Cancelar
+            </Button>
+            <Button type="button" variant="destructive" onClick={removerConfirmado}>
+              Remover
+            </Button>
           </DialogFooter>
         </DialogContent>
       </Dialog>
