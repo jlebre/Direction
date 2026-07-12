@@ -15,8 +15,15 @@ export default async function AdjuntosDashboard({ params }: { params: Promise<{ 
   const { id } = await params
   const supabase = createClient()
 
-  const [{ data: campo }, { data: despesas }, { data: regularizacoes }, { data: devolucoes }] = await Promise.all([
-    supabase.from('campos').select('*').eq('id', id).single(),
+  const { data: campo } = await supabase.from('campos').select('*').eq('id', id).single()
+
+  if (!campo) notFound()
+  if (!campo.setup_completo) redirect(`/campo/${id}/setup`)
+
+  const c = campo as Campo
+  const ano = c.ano ?? 2026
+
+  const [{ data: despesas }, { data: regularizacoes }, { data: devolucoes }, { data: transporteStats }, { data: dbValores }] = await Promise.all([
     supabase
       .from('despesas')
       .select('id, campo_id, numero_recibo, data, valor, descricao, codigo, codigo_descricao, tipo, nif_confirmado, foto_path, is_regularizacao_nif, created_at')
@@ -31,12 +38,10 @@ export default async function AdjuntosDashboard({ params }: { params: Promise<{ 
       .select('id, campo_id, numero_devolucao, data, valor, descricao, codigo, codigo_descricao')
       .eq('campo_id', id)
       .order('numero_devolucao', { ascending: false }),
+    supabase.from('transportes').select('id, estado, is_slot_padrao').eq('campo_id', id),
+    supabase.from('valores_referencia').select('codigo, valor').eq('escalao', c.escalao).eq('ano', ano),
   ])
 
-  if (!campo) notFound()
-  if (!campo.setup_completo) redirect(`/campo/${id}/setup`)
-
-  const c = campo as Campo
   const cor = ESCALAO_COR[c.escalao] ?? { bg: '#B85042', text: '#5c1f15', light: '#FDECEA', border: '#F4A090' }
   const ds = (despesas ?? []) as Despesa[]
   const regs = (regularizacoes ?? []) as RegularizacaoNif[]
@@ -69,6 +74,18 @@ export default async function AdjuntosDashboard({ params }: { params: Promise<{ 
   const faturasSemNIF = ds.filter(
     (d) => d.tipo === 'despesa' && !d.nif_confirmado && !d.is_regularizacao_nif
   )
+
+  // Métricas de transportes
+  const transList = (transporteStats ?? []) as { id: string; estado: string; is_slot_padrao: boolean }[]
+  const transpPendentes = transList.filter((t) => t.estado === 'pendente').length
+  const transpConfirmados = transList.filter((t) => t.estado === 'confirmado').length
+  const transpPorConfigurar = transList.filter((t) => t.estado === 'por_configurar').length
+
+  // Valores de referência da DB (se existirem sobrepõem os hardcoded)
+  const valoresRefDb: Record<string, number> | undefined =
+    dbValores && dbValores.length > 0
+      ? Object.fromEntries(dbValores.map((v: { codigo: string; valor: string | number }) => [v.codigo, Number(v.valor)]))
+      : undefined
 
   return (
     <main className="min-h-screen pb-28">
@@ -115,13 +132,62 @@ export default async function AdjuntosDashboard({ params }: { params: Promise<{ 
         </div>
       </div>
 
+      {/* Tab Navigation */}
+      <div className="bg-white border-b border-[#E7E8D1] px-4">
+        <div className="max-w-lg mx-auto flex gap-1">
+          <span className="text-sm font-semibold px-4 py-3 border-b-2 text-[#2D5016]" style={{ borderColor: cor.bg }}>
+            Dashboard
+          </span>
+          <Link
+            href={`/campo/${id}/adjuntos/transportes`}
+            className="text-sm text-gray-500 px-4 py-3 hover:text-gray-800 transition-colors"
+          >
+            Transportes
+          </Link>
+        </div>
+      </div>
+
       <div className="max-w-lg mx-auto px-4 py-4 space-y-6">
+        {/* Métricas rápidas */}
+        <section>
+          <h2 className="text-xs font-bold text-gray-500 uppercase tracking-wider mb-3">Resumo</h2>
+          <div className="grid grid-cols-2 gap-3">
+            <div className="bg-white rounded-xl border border-[#E7E8D1] p-3">
+              <p className="text-2xl font-bold text-[#36454F]">{dsFinanceiras.filter((d) => d.tipo === 'despesa').length}</p>
+              <p className="text-xs text-gray-500 mt-0.5">Faturas</p>
+              {faturasSemNIF.length > 0 && (
+                <p className="text-xs text-amber-600 mt-1">{faturasSemNIF.length} sem NIF</p>
+              )}
+            </div>
+            <div className="bg-white rounded-xl border border-[#E7E8D1] p-3">
+              <p className="text-2xl font-bold text-[#36454F]">{devs.length}</p>
+              <p className="text-xs text-gray-500 mt-0.5">Devoluções</p>
+              {totalDevolucoes > 0 && (
+                <p className="text-xs text-green-600 mt-1">+€{totalDevolucoes.toFixed(2)}</p>
+              )}
+            </div>
+            {transList.length > 0 && (
+              <div className="bg-white rounded-xl border border-[#E7E8D1] p-3 col-span-2">
+                <div className="flex items-center justify-between">
+                  <p className="text-xs text-gray-500">Transportes</p>
+                  <Link href={`/campo/${id}/adjuntos/transportes`} className="text-xs text-[#2D5016] hover:opacity-70">Ver →</Link>
+                </div>
+                <div className="flex gap-4 mt-1">
+                  {transpPendentes > 0 && <p className="text-sm font-semibold text-yellow-700">{transpPendentes} pendente{transpPendentes !== 1 ? 's' : ''}</p>}
+                  {transpConfirmados > 0 && <p className="text-sm font-semibold text-green-700">{transpConfirmados} confirmado{transpConfirmados !== 1 ? 's' : ''}</p>}
+                  {transpPorConfigurar > 0 && <p className="text-sm font-semibold text-gray-400">{transpPorConfigurar} por configurar</p>}
+                </div>
+              </div>
+            )}
+          </div>
+        </section>
+
         {/* Orçamento por categoria */}
         <section>
           <h2 className="text-xs font-bold text-gray-500 uppercase tracking-wider mb-3">
             Orçamento por Categoria
           </h2>
-          <BudgetBar escalao={c.escalao} porCodigo={porCodigo} />
+          <BudgetBar escalao={c.escalao} porCodigo={porCodigo} valoresRefDb={valoresRefDb} />
         </section>
 
         {/* Bolsa NIF */}

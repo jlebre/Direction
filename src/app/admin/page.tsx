@@ -24,12 +24,12 @@ export default async function AdminPage() {
   const locaisUnicos = [...new Set(lista.map((c) => c.local).filter(Boolean))].sort()
 
   return (
-    <div className="min-h-screen bg-[#F8F8F4]">
+    <div>
       {/* Header */}
       <div className="bg-white border-b border-[#E7E8D1] px-4 py-4 flex items-center justify-between">
         <div>
-          <h1 className="text-xl font-bold text-[#36454F]">⚙️ Administração</h1>
-          <p className="text-xs text-gray-500 mt-0.5">Gestão de campos e configurações</p>
+          <h1 className="text-xl font-bold text-[#36454F]">⚙️ Campos</h1>
+          <p className="text-xs text-gray-500 mt-0.5">Gestão e configuração de campos</p>
         </div>
         <form action={sairAdmin}>
           <button

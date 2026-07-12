@@ -1,6 +1,6 @@
 import { createClient } from '@/lib/supabase/server'
 import Link from 'next/link'
-import { CalendarDays, MapPin, Clock, CheckCircle } from 'lucide-react'
+import { CalendarDays, MapPin, Clock, CheckCircle, Settings } from 'lucide-react'
 import { ContinueBanner } from '@/components/ContinueBanner'
 import { ESCALAO_COR } from '@/types/shared'
 import type { Campo } from '@/types/shared'
@@ -36,7 +36,14 @@ export default async function LandingPage() {
 
   return (
     <main className="min-h-screen">
-      <div className="bg-[#2D5016] text-white px-4 pt-8 pb-4 text-center">
+      <div className="bg-[#2D5016] text-white px-4 pt-8 pb-4 text-center relative">
+        <Link
+          href="/admin"
+          className="absolute top-4 right-4 p-2 rounded-lg bg-white/10 hover:bg-white/20 transition-colors"
+          title="Definições gerais"
+        >
+          <Settings className="h-5 w-5 text-white/80" />
+        </Link>
         <div className="mb-4 flex justify-center">
           <Image
             src="/logo.png"

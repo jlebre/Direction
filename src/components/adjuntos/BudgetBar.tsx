@@ -7,11 +7,12 @@ import { VALORES_REF_VERAO } from '@/lib/adjuntos/valores-referencia'
 interface Props {
   escalao: string
   porCodigo: Record<string, number>
+  valoresRefDb?: Record<string, number>
 }
 
-export default function BudgetBar({ escalao, porCodigo }: Props) {
+export default function BudgetBar({ escalao, porCodigo, valoresRefDb }: Props) {
   const [expanded, setExpanded] = useState<string | null>(null)
-  const refTable = VALORES_REF_VERAO[escalao] ?? {}
+  const refTable = valoresRefDb ?? VALORES_REF_VERAO[escalao] ?? {}
 
   return (
     <div className="space-y-2">
