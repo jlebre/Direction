@@ -4,6 +4,7 @@ import { useState, useMemo } from 'react'
 import { createClient } from '@/lib/supabase/client'
 import { toast } from 'sonner'
 import { Button } from '@/components/ui/button'
+import { parseMoney } from '@/lib/utils'
 import { Input } from '@/components/ui/input'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
 import { CODE_CATEGORIES } from '@/lib/adjuntos/codes'
@@ -59,7 +60,7 @@ export function ValoresRefClient({ valoresDb, escalaoOptions, escalaoDefaults, e
       escalao,
       ano,
       codigo,
-      valor: parseFloat(valor) || 0,
+      valor: parseMoney(valor) ?? 0,
     }))
     const { error } = await supabase.from('valores_referencia').upsert(rows, { onConflict: 'escalao,ano,codigo' })
     if (error) { toast.error('Erro ao guardar: ' + error.message) }
@@ -80,7 +81,7 @@ export function ValoresRefClient({ valoresDb, escalaoOptions, escalaoDefaults, e
   }
 
   // Soma total dos valores efectivos
-  const totalEfectivo = Object.values(effective).reduce((s, v) => s + (parseFloat(v) || 0), 0)
+  const totalEfectivo = Object.values(effective).reduce((s, v) => s + (parseMoney(v) ?? 0), 0)
 
   const cor = escalaoColors[escalao]
 
@@ -134,7 +135,7 @@ export function ValoresRefClient({ valoresDb, escalaoOptions, escalaoDefaults, e
       {/* Categorias */}
       <div className="space-y-4">
         {CODE_CATEGORIES.map((cat) => {
-          const catTotal = cat.codes.reduce((s, c) => s + (parseFloat(effective[c.code] ?? '0') || 0), 0)
+          const catTotal = cat.codes.reduce((s, c) => s + (parseMoney(effective[c.code] ?? '0') ?? 0), 0)
           return (
             <div key={cat.label} className="bg-white rounded-xl border border-[#E7E8D1] overflow-hidden">
               <div className="px-4 py-3 flex items-center justify-between border-b border-[#F0F0E8]">
@@ -154,9 +155,8 @@ export function ValoresRefClient({ valoresDb, escalaoOptions, escalaoDefaults, e
                     <div className="flex items-center gap-1.5 shrink-0">
                       <span className="text-gray-400 text-sm">€</span>
                       <Input
-                        type="number"
-                        step="1"
-                        min="0"
+                        type="text"
+                        inputMode="decimal"
                         value={effective[c.code] ?? '0'}
                         onChange={(e) => handleChange(c.code, e.target.value)}
                         className="w-24 h-8 text-sm text-right"

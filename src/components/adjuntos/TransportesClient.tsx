@@ -15,7 +15,7 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from '
 import type { Campo } from '@/types/shared'
 import type { Transporte, TransporteSegmento, TransporteSentido, TransporteTipo, TransporteEstado } from '@/types/transportes'
 import { TIPO_TRANSPORTE_LABELS, TIPO_TRANSPORTE_EMOJI, ESTADO_LABELS, ESTADO_CORES, SLOT_KEY_ORDER } from '@/types/transportes'
-import { cn } from '@/lib/utils'
+import { cn, parseMoney } from '@/lib/utils'
 
 interface TransporteFormData {
   sentido: 'ida' | 'volta'
@@ -205,7 +205,7 @@ export function TransportesClient({
       hora_chegada: isCombinado ? (ultimoSeg?.hora_chegada || null) : (form.hora_chegada || null),
       empresa: isCombinado ? null : (form.empresa.trim() || null),
       numero_referencia: isCombinado ? null : (form.numero_referencia.trim() || null),
-      preco: form.preco ? parseFloat(form.preco) : null,
+      preco: form.preco ? (parseMoney(form.preco) ?? null) : null,
       observacoes: form.observacoes.trim() || null,
       estado: form.estado,
       is_combinado: isCombinado,
@@ -609,7 +609,7 @@ export function TransportesClient({
             {/* Preço + Estado (comum) */}
             <div className="grid grid-cols-2 gap-3">
               <div className="space-y-1"><Label>Preço <span className="text-xs text-gray-400">(€)</span></Label>
-                <Input type="number" step="0.01" placeholder="0,00" value={form.preco}
+                <Input type="text" inputMode="decimal" placeholder="0,00" value={form.preco}
                   onChange={(e) => setForm((f) => ({ ...f, preco: e.target.value }))} /></div>
               <div className="space-y-1"><Label>Estado</Label>
                 <Select value={form.estado} onValueChange={(v) => setForm((f) => ({ ...f, estado: v as TransporteEstado }))}>

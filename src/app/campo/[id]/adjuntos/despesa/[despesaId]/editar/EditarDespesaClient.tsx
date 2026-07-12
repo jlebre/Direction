@@ -12,6 +12,7 @@ import type { Despesa } from '@/types/adjuntos'
 import CodeSelector from '@/components/adjuntos/CodeSelector'
 import PinDialog from '@/components/shared/PinDialog'
 import { toast } from 'sonner'
+import { parseMoney } from '@/lib/utils'
 import { CAMTIL_NIF } from '@/lib/adjuntos/codes'
 
 type PhotoState =
@@ -75,7 +76,7 @@ export default function EditarDespesaClient({ campo, hasPin, despesa, existingPh
   }
 
   function canSave() {
-    return !!valor && parseFloat(valor) > 0 && !!codigo
+    return !!valor && (parseMoney(valor) ?? 0) > 0 && !!codigo
   }
 
   async function handleSubmit() {
@@ -108,7 +109,7 @@ export default function EditarDespesaClient({ campo, hasPin, despesa, existingPh
       const { error: updateError } = await supabase
         .from('despesas')
         .update({
-          valor: parseFloat(valor),
+          valor: parseMoney(valor) ?? 0,
           descricao: descricao.trim() || null,
           data,
           codigo: codigo!,
@@ -243,10 +244,8 @@ export default function EditarDespesaClient({ campo, hasPin, despesa, existingPh
             <div className="flex items-center">
               <span className="text-xl text-gray-400 mr-1.5">€</span>
               <input
-                type="number"
+                type="text"
                 inputMode="decimal"
-                step="0.01"
-                min="0.01"
                 value={valor}
                 onChange={(e) => setValor(e.target.value)}
                 className="w-full text-2xl font-bold text-gray-900 focus:outline-none"

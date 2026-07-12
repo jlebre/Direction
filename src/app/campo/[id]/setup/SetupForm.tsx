@@ -9,6 +9,7 @@ import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import type { CampoPublico } from '@/types/shared'
+import { parseMoney } from '@/lib/utils'
 import { validatePin } from '@/actions/validatePin'
 import Link from 'next/link'
 
@@ -128,7 +129,7 @@ export default function SetupForm({ campo, hasPin }: { campo: CampoPublico; hasP
           local: form.local.trim() || null,
           num_animados: Number(form.num_animados) || 0,
           num_animadores: Number(form.num_animadores) || 0,
-          saldo_inicial: Number(form.saldo_inicial) || 0,
+          saldo_inicial: parseMoney(String(form.saldo_inicial)) ?? 0,
           // Só atualiza PIN se o utilizador tocou no campo — nunca sobrescreve silenciosamente
           ...(form.pinEditing ? { pin: form.pin.trim() || null } : {}),
           setup_completo: true,
@@ -237,9 +238,9 @@ export default function SetupForm({ campo, hasPin }: { campo: CampoPublico; hasP
             <div className="relative">
               <span className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400 text-sm">€</span>
               <Input
-                type="number"
-                min={0}
-                step={0.01}
+                type="text"
+                inputMode="decimal"
+                placeholder="0,00"
                 className="pl-7"
                 value={form.saldo_inicial}
                 onChange={(e) => upd('saldo_inicial', e.target.value)}

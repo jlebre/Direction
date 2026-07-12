@@ -10,7 +10,7 @@ import { Label } from '@/components/ui/label'
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from '@/components/ui/dialog'
 import { Badge } from '@/components/ui/badge'
 import { Tabs, TabsList, TabsTrigger, TabsContent } from '@/components/ui/tabs'
-import { cn, formatCurrency } from '@/lib/utils'
+import { cn, formatCurrency, parseMoney } from '@/lib/utils'
 import type { CampoPreco } from '@/types/mamas'
 
 interface PrecosViewProps {
@@ -52,7 +52,7 @@ export function PrecosView({ campoId, precosIniciais, precosReferencia = [] }: P
           campo_id: campoId,
           item: form.item.trim(),
           categoria: form.categoria.trim(),
-          preco: form.preco !== '' ? parseFloat(form.preco) : null,
+          preco: form.preco !== '' ? (parseMoney(form.preco) ?? null) : null,
           unidade: form.unidade.trim(),
           fornecedor: form.fornecedor.trim(),
           notas: form.notas.trim() || null,
@@ -193,9 +193,8 @@ export function PrecosView({ campoId, precosIniciais, precosReferencia = [] }: P
                 <div className="relative">
                   <span className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400 text-sm">€</span>
                   <Input
-                    type="number"
-                    min={0}
-                    step={0.01}
+                    type="text"
+                    inputMode="decimal"
                     className="pl-7"
                     placeholder="0,00"
                     value={form.preco}

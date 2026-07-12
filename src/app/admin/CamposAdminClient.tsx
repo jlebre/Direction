@@ -13,7 +13,7 @@ import { Badge } from '@/components/ui/badge'
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from '@/components/ui/dialog'
 import type { Campo, SeccaoTipo } from '@/types/shared'
 import { ESCALAO_COR } from '@/types/shared'
-import { cn } from '@/lib/utils'
+import { cn, parseMoney } from '@/lib/utils'
 
 const SECCAO_PARA_ESCALAO: Record<string, SeccaoTipo> = {
   Mosquito: 'mosquitos',
@@ -109,7 +109,7 @@ export function CamposAdminClient({
       adjunto: form.adjunto.trim(),
       mama: form.mama.trim(),
       pin: form.pin.trim(),
-      saldo_inicial: parseFloat(form.saldo_inicial) || 0,
+      saldo_inicial: parseMoney(form.saldo_inicial) ?? 0,
       datas: form.datas.trim() || '',
       pre_campo: form.pre_campo.trim() || null,
     }
@@ -312,7 +312,7 @@ export function CamposAdminClient({
             <div className="grid grid-cols-2 gap-3">
               <div className="space-y-1">
                 <Label>Saldo inicial (€)</Label>
-                <Input type="number" step="0.01" value={form.saldo_inicial}
+                <Input type="text" inputMode="decimal" placeholder="0,00" value={form.saldo_inicial}
                   onChange={(e) => setForm((f) => ({ ...f, saldo_inicial: e.target.value }))} />
               </div>
               <div className="space-y-1">

@@ -9,6 +9,7 @@ import { getCampoSlug, getPhotoFilename } from '@/lib/adjuntos/supabase-storage'
 import type { CampoPublico } from '@/types/shared'
 import { validatePin } from '@/actions/validatePin'
 import type { Despesa, RegularizacaoNif } from '@/types/adjuntos'
+import { parseMoney } from '@/lib/utils'
 import CodeSelector from '@/components/adjuntos/CodeSelector'
 import PinDialog from '@/components/shared/PinDialog'
 import Toast from '@/components/shared/Toast'
@@ -142,7 +143,7 @@ export default function RegularizarClient({ campo, hasPin, faturasSemNIF, regula
   }
 
   async function handleSubmit() {
-    if (!codigo || !valor || parseFloat(valor) <= 0 || selectedFaturas.length === 0) return
+    if (!codigo || !valor || (parseMoney(valor) ?? 0) <= 0 || selectedFaturas.length === 0) return
     setSubmitting(true)
     try {
       // 1. Número de recibo
@@ -169,7 +170,7 @@ export default function RegularizarClient({ campo, hasPin, faturasSemNIF, regula
       }
 
       // 3. Criar fatura de regularização
-      const totalValor = parseFloat(valor)
+      const totalValor = parseMoney(valor) ?? 0
       const { data: novaDespesa, error: insertError } = await supabase
         .from('despesas')
         .insert({
@@ -442,17 +443,15 @@ export default function RegularizarClient({ campo, hasPin, faturasSemNIF, regula
             <div className="flex items-center">
               <span className="text-xl text-gray-400 mr-1.5">€</span>
               <input
-                type="number"
+                type="text"
                 inputMode="decimal"
-                step="0.01"
-                min="0.01"
                 value={valor}
                 onChange={(e) => setValor(e.target.value)}
                 className="w-full text-2xl font-bold text-gray-900 focus:outline-none"
                 autoFocus
               />
             </div>
-            {parseFloat(valor) < totalSelecionado && parseFloat(valor) > 0 && (
+            {(parseMoney(valor) ?? 0) < totalSelecionado && (parseMoney(valor) ?? 0) > 0 && (
               <p className="text-xs text-orange-600 mt-1">
                 Regularização parcial — as faturas ficam com saldo em aberto.
               </p>
@@ -514,7 +513,7 @@ export default function RegularizarClient({ campo, hasPin, faturasSemNIF, regula
 
         <button
           type="button"
-          disabled={!codigo || !valor || parseFloat(valor) <= 0 || submitting}
+          disabled={!codigo || !valor || (parseMoney(valor) ?? 0) <= 0 || submitting}
           onClick={handleSubmit}
           className="w-full py-4 bg-[#B85042] text-white font-bold text-base rounded-xl disabled:opacity-40 active:opacity-90"
         >

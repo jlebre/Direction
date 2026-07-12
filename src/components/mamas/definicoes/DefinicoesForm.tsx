@@ -12,6 +12,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@
 import { Tabs, TabsList, TabsTrigger, TabsContent } from '@/components/ui/tabs'
 import { SECCAO_LABELS } from '@/types/shared'
 import type { Campo } from '@/types/shared'
+import { parseMoney } from '@/lib/utils'
 
 interface DefinicoesFormProps {
   campo: Campo | null
@@ -176,12 +177,11 @@ export function DefinicoesForm({ campo: campoInicial }: DefinicoesFormProps) {
                 <div className="relative">
                   <span className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400 text-sm">€</span>
                   <Input
-                    type="number"
-                    min={0}
-                    step={0.01}
+                    type="text"
+                    inputMode="decimal"
                     className="pl-7"
                     value={(campo as unknown as Record<string, number>)[key] ?? ''}
-                    onChange={(e) => update(key, e.target.value ? parseFloat(e.target.value) : null)}
+                    onChange={(e) => update(key, e.target.value ? (parseMoney(e.target.value) ?? null) : null)}
                     placeholder="0,00"
                   />
                 </div>

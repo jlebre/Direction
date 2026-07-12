@@ -18,6 +18,7 @@ import { useOcr } from '@/hooks/useOcr'
 import { QRScanner } from '@/components/adjuntos/QRScanner'
 import { parsearQrFatura, type QrFaturaData } from '@/lib/adjuntos/qr-parser'
 import { CAMTIL_NIF } from '@/lib/adjuntos/codes'
+import { parseMoney } from '@/lib/utils'
 
 type Step = 1 | 2 | 3 | 4
 
@@ -119,7 +120,7 @@ export default function NovaDespesaClient({ campo, hasPin }: { campo: CampoPubli
 
   function canGoNext(): boolean {
     if (step === 1) return true
-    if (step === 2) return !!form.valor && parseFloat(form.valor) > 0
+    if (step === 2) return !!form.valor && (parseMoney(form.valor) ?? 0) > 0
     if (step === 3) return !!form.codigo
     if (step === 4) return true
     return false
@@ -163,7 +164,7 @@ export default function NovaDespesaClient({ campo, hasPin }: { campo: CampoPubli
 
         const { data, error: insertError } = await supabase.from('despesas').insert({
           campo_id: campo.id, numero_recibo: numeroRecibo, data: form.data,
-          valor: parseFloat(form.valor), descricao: form.descricao.trim() || null,
+          valor: parseMoney(form.valor) ?? 0, descricao: form.descricao.trim() || null,
           codigo: form.codigo!, codigo_descricao: form.codigoDescricao!,
           tipo: 'despesa', nif_confirmado: form.nifConfirmado, foto_path: fotoPath,
           ocr_status: ocrStatus,
@@ -398,8 +399,7 @@ export default function NovaDespesaClient({ campo, hasPin }: { campo: CampoPubli
             {ocr.resultado?.total_detectado !== null &&
               ocr.resultado?.total_detectado !== undefined &&
               ocr.resultado.total_detectado > 0 &&
-              form.valor !== ocr.resultado.total_detectado.toFixed(2) &&
-              form.valor !== '' && (
+              form.valor !== '' && parseMoney(form.valor) !== ocr.resultado.total_detectado && (
                 <div className="mb-4 bg-green-50 border border-green-200 rounded-xl px-3 py-2 flex items-center justify-between gap-2">
                   <p className="text-xs text-green-700">
                     OCR detectou: <strong>€{ocr.resultado.total_detectado.toFixed(2).replace('.', ',')}</strong>
@@ -417,8 +417,7 @@ export default function NovaDespesaClient({ campo, hasPin }: { campo: CampoPubli
             {/* Banner se QR detectou um total diferente do campo actual */}
             {qrParsed?.qr_total !== null &&
               qrParsed?.qr_total !== undefined &&
-              form.valor !== qrParsed.qr_total.toFixed(2) &&
-              form.valor !== '' && (
+              form.valor !== '' && parseMoney(form.valor) !== qrParsed.qr_total && (
                 <div className="mb-4 bg-blue-50 border border-blue-200 rounded-xl px-3 py-2 flex items-center justify-between gap-2">
                   <p className="text-xs text-blue-700">
                     QR Code: <strong>€{qrParsed.qr_total.toFixed(2).replace('.', ',')}</strong>
@@ -439,7 +438,7 @@ export default function NovaDespesaClient({ campo, hasPin }: { campo: CampoPubli
                 <div className="relative">
                   <span className="absolute left-4 top-1/2 -translate-y-1/2 text-2xl text-gray-400">€</span>
                   <input
-                    type="number" inputMode="decimal" step="0.01" min="0.01"
+                    type="text" inputMode="decimal"
                     value={form.valor}
                     onChange={(e) => setForm((f) => ({ ...f, valor: e.target.value }))}
                     placeholder="0.00"
@@ -447,7 +446,7 @@ export default function NovaDespesaClient({ campo, hasPin }: { campo: CampoPubli
                     autoFocus
                   />
                 </div>
-                {form.valor !== '' && parseFloat(form.valor) <= 0 && (
+                {form.valor !== '' && (parseMoney(form.valor) === null || (parseMoney(form.valor) ?? 0) <= 0) && (
                   <p className="text-xs text-red-600 mt-1.5">O valor tem de ser maior que zero.</p>
                 )}
               </div>
@@ -500,7 +499,7 @@ export default function NovaDespesaClient({ campo, hasPin }: { campo: CampoPubli
               )}
               <div className="bg-white rounded-xl border border-gray-100 divide-y divide-gray-50">
                 {[
-                  ['Valor', `€${parseFloat(form.valor).toFixed(2)}`],
+                  ['Valor', `€${(parseMoney(form.valor) ?? 0).toFixed(2)}`],
                   ['Descrição', form.descricao],
                   ['Data', new Date(form.data + 'T00:00:00').toLocaleDateString('pt-PT')],
                   ['Código', form.codigo ?? ''],

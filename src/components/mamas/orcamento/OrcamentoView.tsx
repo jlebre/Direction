@@ -7,7 +7,7 @@ import { Plus, Trash2, X, AlertCircle, ChevronDown, ChevronUp, Download } from '
 import type { Campo } from '@/types/shared'
 import type { OrcamentoItem, EstimativaItem, DiaBreakdown } from '@/types/mamas'
 import { REFEICAO_LABELS } from '@/types/mamas'
-import { formatCurrency, formatQuantidade } from '@/lib/utils'
+import { formatCurrency, formatQuantidade, parseMoney } from '@/lib/utils'
 
 type CorEscalao = { bg: string; text: string; light: string; border: string }
 type GastoReal = { label: string; real: number; previsto: number }
@@ -91,7 +91,7 @@ export function OrcamentoView({
           campo_id: campo.id,
           categoria: form.categoria,
           nome: form.nome.trim(),
-          preco_unit: form.preco_total ? parseFloat(form.preco_total) : null,
+          preco_unit: form.preco_total ? (parseMoney(form.preco_total) ?? null) : null,
           notas: form.notas.trim() || null,
         })
         .select()
@@ -554,12 +554,11 @@ function AddExtraSheet({
               Custo estimado (€)
             </label>
             <input
-              type="number"
-              min="0"
-              step="0.01"
+              type="text"
+              inputMode="decimal"
               value={form.preco_total}
               onChange={(e) => setForm((f) => ({ ...f, preco_total: e.target.value }))}
-              placeholder="ex: 15.00"
+              placeholder="ex: 15,00"
               className="w-full border border-[#E7E8D1] rounded-xl px-4 py-3 text-sm text-[#36454F] focus:outline-none focus:border-[#2D5016]"
             />
           </div>

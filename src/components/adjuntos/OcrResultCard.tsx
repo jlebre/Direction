@@ -1,6 +1,7 @@
 'use client'
 
 import { CheckCircle, AlertCircle, ChevronDown, ChevronUp, ShieldCheck, ShieldX, Pencil, X as XIcon } from 'lucide-react'
+import { parseMoney } from '@/lib/utils'
 import { useState, useEffect } from 'react'
 import type { OcrStatus, OcrResultado } from '@/hooks/useOcr'
 import type { LinhaParsed } from '@/lib/adjuntos/ocr-parser'
@@ -127,7 +128,7 @@ export function OcrResultCard({ status, progress, statusMsg, resultado, onUsar }
         nome_produto_bruto: editForm.nome.trim() || l.nome_produto_bruto,
         quantidade: editForm.quantidade ? parseFloat(editForm.quantidade) : l.quantidade,
         unidade: editForm.unidade || l.unidade,
-        preco_total: editForm.precTotal ? parseFloat(editForm.precTotal.replace(',', '.')) : l.preco_total,
+        preco_total: editForm.precTotal ? (parseMoney(editForm.precTotal) ?? l.preco_total) : l.preco_total,
         categoria_linha: editForm.categoria || null,
       }))
       setEditIdx(null)
@@ -281,9 +282,10 @@ export function OcrResultCard({ status, progress, statusMsg, resultado, onUsar }
                         <div className="flex-1 relative">
                           <span className="absolute left-2.5 top-1/2 -translate-y-1/2 text-xs text-gray-400">€</span>
                           <input
+                            inputMode="decimal"
                             value={editForm.precTotal}
                             onChange={e => setEditForm(f => ({ ...f, precTotal: e.target.value }))}
-                            placeholder="Total"
+                            placeholder="0,00"
                             className="w-full text-sm border border-gray-200 rounded-lg pl-6 pr-2 py-2 focus:outline-none focus:border-green-400"
                           />
                         </div>

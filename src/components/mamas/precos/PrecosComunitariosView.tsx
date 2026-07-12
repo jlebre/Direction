@@ -5,7 +5,7 @@ import { Plus, X, Search, Edit2, Store, Trash2, RotateCcw, AlertTriangle } from 
 import { createClient } from '@/lib/supabase/client'
 import { toast } from 'sonner'
 import { Button } from '@/components/ui/button'
-import { cn } from '@/lib/utils'
+import { cn, parseMoney } from '@/lib/utils'
 
 interface Supermercado {
   id: string
@@ -255,7 +255,7 @@ export function PrecosComunitariosView({ precosIniciais, supermercadosIniciais }
       toast.error('Produto e supermercado são obrigatórios')
       return
     }
-    const precoVal = form.preco.trim() ? parseFloat(form.preco) : null
+    const precoVal = form.preco.trim() ? (parseMoney(form.preco) ?? null) : null
     setSaving(true)
     localStorage.setItem('precos_nome', form.criado_por)
     try {
@@ -618,10 +618,10 @@ export function PrecosComunitariosView({ precosIniciais, supermercadosIniciais }
                   <label className="text-xs font-semibold text-gray-500 block mb-1">
                     Preço (€){sheet === 'add' ? '' : ' *'}
                   </label>
-                  <input type="number" min="0" step="0.01"
+                  <input type="text" inputMode="decimal"
                     value={form.preco}
                     onChange={(e) => upd('preco', e.target.value)}
-                    placeholder="1.23 (ou deixa vazio)"
+                    placeholder="1,23 (ou deixa vazio)"
                     className="w-full border border-[#E7E8D1] rounded-xl px-4 py-3 text-sm text-[#36454F] focus:outline-none focus:ring-2 focus:ring-[#2D5016]/30 focus:border-[#2D5016]"
                   />
                 </div>

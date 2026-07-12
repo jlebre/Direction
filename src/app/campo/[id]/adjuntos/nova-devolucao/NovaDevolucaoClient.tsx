@@ -6,6 +6,7 @@ import Link from 'next/link'
 import { ChevronLeft } from 'lucide-react'
 import { createClient } from '@/lib/supabase/client'
 import { toast } from 'sonner'
+import { parseMoney } from '@/lib/utils'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { Button } from '@/components/ui/button'
@@ -51,7 +52,7 @@ export default function NovaDevolucaoClient({ campo, faturas }: Props) {
 
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault()
-    if (!valor || parseFloat(valor) <= 0) { toast.error('Valor inválido'); return }
+    if (!valor || (parseMoney(valor) ?? 0) <= 0) { toast.error('Valor inválido'); return }
     setSubmitting(true)
     try {
       // Insert row first to claim numero_devolucao atomically.
@@ -76,7 +77,7 @@ export default function NovaDevolucaoClient({ campo, faturas }: Props) {
             campo_id: campo.id,
             numero_devolucao: numeroDevolucao,
             data,
-            valor: parseFloat(valor),
+            valor: parseMoney(valor) ?? 0,
             descricao: descricao.trim() || null,
             codigo: codigo || null,
             codigo_descricao: codigoDescricao || null,
@@ -175,14 +176,12 @@ export default function NovaDevolucaoClient({ campo, faturas }: Props) {
             <div className="relative">
               <span className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400">€</span>
               <Input
-                type="number"
-                min="0.01"
-                step="0.01"
+                type="text"
+                inputMode="decimal"
                 className="pl-7"
-                placeholder="0.00"
+                placeholder="0,00"
                 value={valor}
                 onChange={(e) => setValor(e.target.value)}
-                required
               />
             </div>
           </div>
