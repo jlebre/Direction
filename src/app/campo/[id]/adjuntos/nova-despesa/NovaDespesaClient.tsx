@@ -140,7 +140,7 @@ export default function NovaDespesaClient({ campo, hasPin }: { campo: CampoPubli
         // mas o foto_path no DB aponta sempre para o ficheiro real, que existe)
         const { data: lastForPhoto } = await supabase
           .from('despesas').select('numero_recibo').eq('campo_id', campo.id)
-          .order('numero_recibo', { ascending: false }).limit(1).single()
+          .order('numero_recibo', { ascending: false }).limit(1).maybeSingle()
         const provNum = (lastForPhoto?.numero_recibo ?? 0) + 1
         const filename = getPhotoFilename(campo.nome, provNum)
         const slug = getCampoSlug(campo.nome)
@@ -159,7 +159,7 @@ export default function NovaDespesaClient({ campo, hasPin }: { campo: CampoPubli
       for (let attempt = 0; attempt < 3; attempt++) {
         const { data: lastDespesa } = await supabase
           .from('despesas').select('numero_recibo').eq('campo_id', campo.id)
-          .order('numero_recibo', { ascending: false }).limit(1).single()
+          .order('numero_recibo', { ascending: false }).limit(1).maybeSingle()
         numeroRecibo = (lastDespesa?.numero_recibo ?? 0) + 1
 
         const { data, error: insertError } = await supabase.from('despesas').insert({
@@ -441,7 +441,7 @@ export default function NovaDespesaClient({ campo, hasPin }: { campo: CampoPubli
                     type="text" inputMode="decimal"
                     value={form.valor}
                     onChange={(e) => setForm((f) => ({ ...f, valor: e.target.value }))}
-                    placeholder="0.00"
+                    placeholder="0,00"
                     className="w-full border-2 border-gray-200 rounded-xl pl-10 pr-4 py-4 text-2xl font-bold focus:outline-none focus:border-[#B85042]"
                     autoFocus
                   />

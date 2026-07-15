@@ -153,7 +153,7 @@ export default function RegularizarClient({ campo, hasPin, faturasSemNIF, regula
         .eq('campo_id', campo.id)
         .order('numero_recibo', { ascending: false })
         .limit(1)
-        .single()
+        .maybeSingle()
       const numeroRecibo = (lastDespesa?.numero_recibo ?? 0) + 1
 
       // 2. Upload da foto (opcional)

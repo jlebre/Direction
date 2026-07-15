@@ -104,11 +104,18 @@ export function DespesaLinhasClient({ linhasIniciais, despesaId }: DespesaLinhas
     setEditandoId(null)
 
     // Guarda na BD
-    await supabase.from('despesa_linhas').update({
+    const { error } = await supabase.from('despesa_linhas').update({
       nome_produto_bruto: novoNome,
       estado: 'corrigido',
       updated_at: new Date().toISOString(),
     }).eq('id', original.id)
+
+    if (error) {
+      toast.error('Erro ao guardar edição')
+      setLinhas(linhasIniciais)
+      markSaving(original.id, false)
+      return
+    }
 
     // Guarda alias para sugestão futura (Fase 5)
     if (nomeAlterado) {

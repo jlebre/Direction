@@ -27,7 +27,7 @@ export default async function StoragePage({
   const supabase = createClient()
   const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL!
 
-  const [{ data: campo }, { data: despesasRaw }] = await Promise.all([
+  const [{ data: campo }, { data: despesasRaw }, { data: devolucoesRaw }] = await Promise.all([
     supabase.from('campos').select('*').eq('id', id).single(),
     supabase
       .from('despesas')
@@ -35,6 +35,11 @@ export default async function StoragePage({
       .eq('campo_id', id)
       .not('foto_path', 'is', null)
       .order('numero_recibo', { ascending: true }),
+    supabase
+      .from('devolucoes')
+      .select('foto_path')
+      .eq('campo_id', id)
+      .not('foto_path', 'is', null),
   ])
 
   if (!campo) notFound()
@@ -59,6 +64,13 @@ export default async function StoragePage({
     foto_path: d.foto_path as string,
     filename: (d.foto_path as string).split('/').pop() ?? '',
   }))
+
+  // Filenames de devoluções com foto (para não as classificar como órfãs)
+  const devolucaoFilenames = new Set(
+    (devolucoesRaw ?? [])
+      .map((d) => (d.foto_path as string).split('/').pop() ?? '')
+      .filter(Boolean)
+  )
 
   const storageFilenames = new Set(files.map((f) => f.name))
   const despesaFilenames = new Set(despesasComFoto.map((d) => d.filename))
@@ -92,9 +104,9 @@ export default async function StoragePage({
       filename: d.filename,
     }))
 
-  // Imagens órfãs: ficheiro no storage sem despesa a referenciar
+  // Imagens órfãs: ficheiro no storage sem despesa nem devolução a referenciar
   const orphans: OrphanItem[] = files
-    .filter((f) => !despesaFilenames.has(f.name))
+    .filter((f) => !despesaFilenames.has(f.name) && !devolucaoFilenames.has(f.name))
     .map((f) => ({
       filename: f.name,
       url: publicUrl(supabaseUrl, slug, f.name),

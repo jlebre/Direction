@@ -2,6 +2,7 @@
 
 import { useState, useRef, useEffect } from 'react'
 import { supabase } from '@/lib/supabase/client'
+import { toast } from 'sonner'
 import { generateExcel } from '@/lib/adjuntos/export-excel'
 import { generateZip } from '@/lib/adjuntos/export-zip'
 import type { Campo } from '@/types/shared'
@@ -64,6 +65,8 @@ export default function ExportButton({ campo }: { campo: Campo }) {
     try {
       const { despesas, regularizacoes, linhas, devolucoes } = await fetchData()
       await generateExcel(campo, despesas, regularizacoes, linhas, devolucoes)
+    } catch {
+      toast.error('Erro ao gerar Excel. Tenta de novo.')
     } finally {
       setLoading(null)
     }
@@ -75,6 +78,8 @@ export default function ExportButton({ campo }: { campo: Campo }) {
     try {
       const { despesas, regularizacoes, linhas, devolucoes } = await fetchData()
       await generateZip(campo, despesas, regularizacoes, linhas, devolucoes)
+    } catch {
+      toast.error('Erro ao gerar ZIP. Tenta de novo.')
     } finally {
       setLoading(null)
     }

@@ -15,7 +15,9 @@ import Link from 'next/link'
 
 interface DryRunResult {
   countDespesas: number
-  countComFoto: number
+  countDevolucoes: number
+  countRegularizacoes: number
+  countImagens: number
   fotoPaths: string[]
 }
 
@@ -44,7 +46,7 @@ export default function SetupForm({ campo, hasPin }: { campo: CampoPublico; hasP
   const [dryRunLoading, setDryRunLoading] = useState(false)
   const [deleting, setDeleting] = useState(false)
 
-  const CONFIRMACAO_TEXTO = 'LIMPAR FATURAS'
+  const CONFIRMACAO_TEXTO = 'APAGAR'
   // PIN validado async em handleLimparFaturas; aqui só checamos texto e dry-run
   const dangerReady =
     dangerConfirm === CONFIRMACAO_TEXTO &&
@@ -58,17 +60,29 @@ export default function SetupForm({ campo, hasPin }: { campo: CampoPublico; hasP
     setDryRunLoading(true)
     setDryRun(null)
     try {
-      const { data: despesasData } = await supabase
-        .from('despesas')
-        .select('id, foto_path')
-        .eq('campo_id', campo.id)
+      const [{ data: despesasData }, { data: devoData }, { data: regsData }] = await Promise.all([
+        supabase.from('despesas').select('id, foto_path').eq('campo_id', campo.id),
+        supabase.from('devolucoes').select('id, foto_path').eq('campo_id', campo.id),
+        supabase.from('regularizacoes_nif').select('id').eq('campo_id', campo.id),
+      ])
 
-      const all = despesasData ?? []
-      const comFoto = all.filter((d: { foto_path: string | null }) => d.foto_path)
+      const allDespesas = despesasData ?? []
+      const allDevos = devoData ?? []
+      const allRegs = regsData ?? []
+
+      const despesaFotos = allDespesas
+        .filter((d: { foto_path: string | null }) => d.foto_path)
+        .map((d: { foto_path: string }) => d.foto_path)
+      const devoFotos = allDevos
+        .filter((d: { foto_path: string | null }) => d.foto_path)
+        .map((d: { foto_path: string }) => d.foto_path)
+
       setDryRun({
-        countDespesas: all.length,
-        countComFoto: comFoto.length,
-        fotoPaths: comFoto.map((d: { foto_path: string }) => d.foto_path),
+        countDespesas: allDespesas.length,
+        countDevolucoes: allDevos.length,
+        countRegularizacoes: allRegs.length,
+        countImagens: despesaFotos.length + devoFotos.length,
+        fotoPaths: [...despesaFotos, ...devoFotos],
       })
     } catch {
       toast.error('Erro ao calcular preview. Tenta de novo.')
@@ -85,29 +99,35 @@ export default function SetupForm({ campo, hasPin }: { campo: CampoPublico; hasP
     }
     setDeleting(true)
     try {
-      // 1. Apagar despesas (CASCADE elimina regularizacoes_nif associadas automaticamente)
-      const { error: despesasError } = await supabase
-        .from('despesas')
-        .delete()
-        .eq('campo_id', campo.id)
-      if (despesasError) throw despesasError
+      // 1. Apagar regularizacoes_nif (CASCADE de despesas, mas explícito para segurança)
+      await supabase.from('regularizacoes_nif').delete().eq('campo_id', campo.id)
 
-      // 2. Apagar liquidacoes_nif (sem CASCADE — precisa de delete explícito)
+      // 2. Apagar liquidacoes_nif (sem CASCADE de despesas — delete explícito obrigatório)
       await supabase.from('liquidacoes_nif').delete().eq('campo_id', campo.id)
 
-      // 3. Apagar imagens do storage (falha silenciosa por ficheiro)
+      // 3. Apagar devoluções
+      const { error: devosError } = await supabase.from('devolucoes').delete().eq('campo_id', campo.id)
+      if (devosError) throw devosError
+
+      // 4. Apagar despesas (CASCADE elimina despesa_linhas automaticamente)
+      const { error: despesasError } = await supabase.from('despesas').delete().eq('campo_id', campo.id)
+      if (despesasError) throw despesasError
+
+      // 5. Apagar imagens do storage (faturas e comprovativos de devoluções — falha silenciosa)
       if (dryRun.fotoPaths.length > 0) {
         await supabase.storage.from('faturas').remove(dryRun.fotoPaths)
       }
 
-      toast.success(`${dryRun.countDespesas} faturas eliminadas com sucesso.`)
+      toast.success(
+        `Dados financeiros apagados: ${dryRun.countDespesas} faturas, ${dryRun.countDevolucoes} devoluções, ${dryRun.countImagens} imagens.`
+      )
       setDangerOpen(false)
       setDangerConfirm('')
       setDangerPin('')
       setDryRun(null)
       router.refresh()
     } catch (e: unknown) {
-      toast.error(e instanceof Error ? e.message : 'Erro ao eliminar faturas')
+      toast.error(e instanceof Error ? e.message : 'Erro ao apagar dados financeiros')
     } finally {
       setDeleting(false)
     }
@@ -306,11 +326,18 @@ export default function SetupForm({ campo, hasPin }: { campo: CampoPublico; hasP
 
             {dangerOpen && (
               <div className="p-4 space-y-4 bg-white">
-                <p className="text-xs text-gray-500 leading-relaxed">
-                  Esta área permite <strong>eliminar todas as faturas</strong> deste campo.
-                  Os dados da configuração do campo e da área das mamãs não são afectados.
-                  Esta acção <strong className="text-red-600">não pode ser desfeita</strong>.
-                </p>
+                <div className="text-xs text-gray-500 leading-relaxed space-y-1">
+                  <p>Esta área apaga <strong>todos os dados financeiros</strong> deste campo:</p>
+                  <ul className="list-disc list-inside space-y-0.5 ml-1 text-red-600">
+                    <li>Faturas e despesas</li>
+                    <li>Devoluções e notas de crédito</li>
+                    <li>Regularizações da Bolsa NIF</li>
+                    <li>Linhas OCR e produtos extraídos</li>
+                    <li>Imagens e comprovativos associados</li>
+                  </ul>
+                  <p className="mt-2">O orçamento base e as restantes configurações são mantidos.</p>
+                  <p className="text-red-600 font-semibold">Esta acção não pode ser desfeita.</p>
+                </div>
 
                 {/* Preview / dry-run */}
                 <div>
@@ -322,17 +349,18 @@ export default function SetupForm({ campo, hasPin }: { campo: CampoPublico; hasP
                     disabled={dryRunLoading}
                     className="w-full border-gray-300 text-gray-600 text-xs"
                   >
-                    {dryRunLoading ? 'A calcular...' : '🔍 Preview — ver o que será eliminado'}
+                    {dryRunLoading ? 'A calcular...' : '🔍 Preview — ver o que será apagado'}
                   </Button>
 
                   {dryRun !== null && (
                     <div className="mt-3 bg-red-50 border border-red-200 rounded-xl p-3 space-y-1 text-xs">
-                      <p className="font-bold text-red-700 mb-2">O que vai ser eliminado:</p>
-                      <p className="text-red-600">🧾 {dryRun.countDespesas} fatura(s) / registo(s) de despesa</p>
-                      <p className="text-red-600">📷 {dryRun.countComFoto} imagem(ns) no storage</p>
-                      <p className="text-red-600">📋 Regularizações e liquidações NIF associadas</p>
-                      {dryRun.countDespesas === 0 && (
-                        <p className="text-green-600 mt-2 font-medium">✓ Não há faturas para este campo.</p>
+                      <p className="font-bold text-red-700 mb-2">O que vai ser apagado:</p>
+                      <p className="text-red-600">🧾 {dryRun.countDespesas} fatura(s) / despesa(s)</p>
+                      <p className="text-red-600">↩️ {dryRun.countDevolucoes} devolução(ões)</p>
+                      <p className="text-red-600">📋 {dryRun.countRegularizacoes} regularização(ões) NIF</p>
+                      <p className="text-red-600">📷 {dryRun.countImagens} imagem(ns) no storage</p>
+                      {dryRun.countDespesas === 0 && dryRun.countDevolucoes === 0 && (
+                        <p className="text-green-600 mt-2 font-medium">✓ Não há dados financeiros para este campo.</p>
                       )}
                     </div>
                   )}
@@ -357,13 +385,13 @@ export default function SetupForm({ campo, hasPin }: { campo: CampoPublico; hasP
 
                   <div className="space-y-1">
                     <Label className="text-xs text-red-700">
-                      Escreve <span className="font-mono font-bold">LIMPAR FATURAS</span> para confirmar
+                      Escreve <span className="font-mono font-bold">APAGAR</span> para confirmar
                     </Label>
                     <Input
                       type="text"
                       value={dangerConfirm}
                       onChange={(e) => setDangerConfirm(e.target.value)}
-                      placeholder="LIMPAR FATURAS"
+                      placeholder="APAGAR"
                       className="border-red-300 font-mono"
                     />
                   </div>
@@ -376,7 +404,7 @@ export default function SetupForm({ campo, hasPin }: { campo: CampoPublico; hasP
                   className="w-full bg-red-600 hover:bg-red-700 text-white disabled:opacity-40"
                 >
                   <AlertTriangle className="h-4 w-4 mr-2" />
-                  {deleting ? 'A eliminar...' : 'Eliminar todas as faturas'}
+                  {deleting ? 'A apagar...' : 'Apagar dados financeiros'}
                 </Button>
               </div>
             )}
