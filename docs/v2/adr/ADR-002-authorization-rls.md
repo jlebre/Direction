@@ -1,17 +1,17 @@
 # ADR-002 — Authorization and RLS
 
-**Status:** PROPOSED
+**Status:** **ACCEPTED (modelo/naming, Gate A)** — as policies concretas descritas abaixo continuam **PROPOSED**; implementação (subfase 2.4) bloqueada por falta de ambiente de teste seguro (ver relatório de execução da Fase 2).
 
 ## Context
 Hoje, 36/36 tabelas e 2 buckets de Storage têm RLS `USING (true) WITH CHECK (true)` — acesso total com a chave anon pública (auditoria, achado CRITICAL). Não existe conceito de "este utilizador pertence a este campo" em lado nenhum do código ou da BD.
 
 ## Options considered
-1. **`profiles` + `field_memberships` + policies por `camp_id`** (proposto).
+1. **`profiles` + `camp_memberships` + policies por `camp_id`** (aceite).
 2. **Roles como tabela separada** (`roles` genérica, N:N com profiles) em vez de coluna `global_role` fixa.
 3. **Autorização só na aplicação**, RLS a continuar permissivo — descartado imediatamente: é exatamente o problema atual, e a chave anon está sempre exposta ao cliente por definição.
 
-## Proposed decision
-`profiles.global_role` (enum fixo: admin/tesoureiro/direcao/null) + `field_memberships` (role de campo, hoje só `adjunto`) + RLS por tabela conforme a matriz em [AUTHORIZATION.md](../AUTHORIZATION.md#policies-conceptuais-rls). Roles como enum fixo em vez de tabela `roles` genérica — só 4 valores, mudança de role é uma decisão arquitetural rara, não justifica a indireção de uma tabela extra.
+## Decision (ACCEPTED — modelo/naming)
+`profiles.global_role` (enum fixo: `admin`/`treasurer`/`viewer`/null) + `camp_memberships` (role de campo: `adjunto`/`field_viewer`, status `invited`/`active`/`revoked`) + RLS por tabela conforme a matriz em [AUTHORIZATION.md](../AUTHORIZATION.md#policies-conceptuais-rls). Roles como enum fixo em vez de tabela `roles` genérica — poucos valores, mudança de role é uma decisão arquitetural rara, não justifica a indireção de uma tabela extra. Funções helper SQL propostas para as policies (não implementadas): `is_admin()`, `is_treasurer()`, `is_viewer()`, `has_camp_access(camp_id)`, `can_edit_camp(camp_id)` — a implementar com `SECURITY DEFINER` e `search_path` fixo explícito, para nunca introduzir um bypass acidental de RLS.
 
 ## Benefits
 - Fecha o achado CRITICAL de forma estrutural, não só cosmética.

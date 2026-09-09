@@ -1,6 +1,6 @@
 # TESTING STRATEGY — CAMTIL Finance V2
 
-Status: **PROPOSED.** Hoje: zero testes automatizados, zero lint configurado (e o Next 16 removeu `next lint` — ver auditoria, Secção 9). Esta estratégia parte de zero deliberadamente pequena e sustentável, não de uma pirâmide de testes ambiciosa que ninguém vai manter.
+Status: **PARCIALMENTE IMPLEMENTADO (subfase 2.1 da Fase 2).** O harness existe e corre (`npm test` → Vitest): `tests/unit/` (helpers puros), `tests/security/anon-read-baseline.test.ts` (6 sondas só-leitura contra produção, hoje todas "EXPECTED FAIL" — documentam o achado CRITICAL em execução automatizada) e `tests/security/rls-matrix.test.ts` (a matriz completa pedida — `anon`/`adjunto_A`/`adjunto_B`/`field_viewer`/`treasurer`/`viewer`/`admin` × Camp A/Camp B — escrita e completa, mas em `SKIP` porque este ambiente não tem Docker nem um projeto Supabase de Development; ver relatório de execução da Fase 2 para as opções de desbloqueio). Zero lint configurado ainda (e o Next 16 removeu `next lint` — ver auditoria, Secção 9).
 
 ## Unit
 **Alvo:** cálculos financeiros puros, parsers, normalização.

@@ -1,18 +1,19 @@
 # ADR-001 — Authentication
 
-**Status:** PROPOSED (depende do Gate A — ver [ARCHITECTURE.md §19](../ARCHITECTURE.md#19-human-decision-gates))
+**Status:** **ACCEPTED** (Gate A fechado no arranque da Fase 2 — ver [AUTHORIZATION.md](../AUTHORIZATION.md#gate-a--decisão-fechada))
 
 ## Context
 Hoje não existe autenticação real (auditoria, Secção 5): a app usa só a chave anon do Supabase, e o "acesso" é um PIN de 4 dígitos por campo, guardado em texto simples e legível via API direta. Isto é o achado CRITICAL mais importante do sistema atual.
 
 ## Options considered
 1. **Magic Link (Supabase Auth, email)** — sem password, um clique.
-2. **Email + Password** — modelo clássico.
-3. **OTP por SMS** — código por mensagem.
-4. **Manter PIN, só reforçado** (ex. hash em vez de texto simples) — mitigação parcial, não resolve a falta de identidade por utilizador.
+2. **Email OTP (Supabase Auth, email)** — sem password, código de uso único.
+3. **Email + Password** — modelo clássico.
+4. **OTP por SMS** — código por mensagem.
+5. **Manter PIN, só reforçado** (ex. hash em vez de texto simples) — mitigação parcial, não resolve a falta de identidade por utilizador.
 
-## Proposed decision
-Magic Link como método principal, com um mecanismo de link de acesso temporário assinado (gerado por Admin/Tesoureiro) como plano B para adjuntos sem email de confiança. Ver comparação completa em [AUTHORIZATION.md](../AUTHORIZATION.md#authentication-design).
+## Decision (ACCEPTED)
+**Email OTP** via Supabase Auth, sem password, como método principal — identidade individual por pessoa, sem contas partilhadas por campo. `camps.pin` deixa de autenticar/autorizar (pode continuar no schema só por compatibilidade histórica, nunca a proteger dados). Magic Link fica disponível como extensão futura sem impacto no modelo de autorização (mesma tabela `profiles`/sessão). Ver comparação completa em [AUTHORIZATION.md](../AUTHORIZATION.md#authentication-design).
 
 ## Benefits
 - Elimina passwords para gerir/esquecer numa base de utilizadores sazonal.
@@ -27,6 +28,6 @@ Magic Link como método principal, com um mecanismo de link de acesso temporári
 - Cobertura de rede fraca em locais de campo pode atrasar o primeiro login — mitigado por sessão longa (30 dias) para não exigir re-autenticação frequente.
 - Se o email de um adjunto for comprometido, o acesso ao campo também fica comprometido — mitigado por revogação rápida de `field_memberships` em `/admin`.
 
-## Open questions
-- Os adjuntos têm todos email pessoal fiável? (pergunta do Gate A)
-- Precisa de self-service já na V2, ou convite manual pelo Admin chega para o primeiro ano?
+## Open questions (resolvidas pelo Gate A)
+- ~~Os adjuntos têm todos email pessoal fiável?~~ — assumido que sim, para efeitos de arranque da Fase 2; a implementação real (subfases 2.2+) fica bloqueada por falta de ambiente de teste seguro (ver relatório de execução da Fase 2), não por esta questão.
+- ~~Precisa de self-service já na V2?~~ — não; convite manual pelo Admin/Treasurer via `camp_memberships` (`status='invited'`), sem signup público.
