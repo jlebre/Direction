@@ -1,6 +1,6 @@
 # ADR-002 — Authorization and RLS
 
-**Status:** **ACCEPTED (modelo/naming, Gate A)** — as policies concretas descritas abaixo continuam **PROPOSED**; implementação (subfase 2.4) bloqueada por falta de ambiente de teste seguro (ver relatório de execução da Fase 2).
+**Status:** **ACCEPTED e IMPLEMENTADO em produção** (migrations 038-042). RLS restritiva aplicada às 6 tabelas financeiras core, com o mecanismo adicional de transição por campo (`legacy_anon_access`, ver AUTHORIZATION.md) — não previsto neste ADR originalmente, adicionado durante a implementação por necessidade real (havia utilização ativa real num campo no momento do corte). Storage RLS (buckets) continua **PROPOSED** — bucket `faturas` é público, RLS não se aplica à leitura pública; ver AUTHORIZATION.md § Storage.
 
 ## Context
 Hoje, 36/36 tabelas e 2 buckets de Storage têm RLS `USING (true) WITH CHECK (true)` — acesso total com a chave anon pública (auditoria, achado CRITICAL). Não existe conceito de "este utilizador pertence a este campo" em lado nenhum do código ou da BD.

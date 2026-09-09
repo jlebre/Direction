@@ -1,28 +1,33 @@
 # AUTHORIZATION — Authentication, Roles & RLS
 
-Status: **Gate A — ACCEPTED**, e parcialmente **IMPLEMENTADO em produção**: `profiles`, `camp_memberships`, funções auxiliares (`is_admin()` etc.) e o login real (Email OTP) já existem e foram testados com um login humano real. A RLS restritiva das tabelas financeiras core (`campos`/`despesas`/`despesa_linhas`/`devolucoes`/`regularizacoes_nif`/`liquidacoes_nif`) **ainda não foi aplicada** — ver a secção seguinte, "Fase de compatibilidade", para o porquê e o critério exato de quando isso pode avançar.
+Status: **Gate A — ACCEPTED e IMPLEMENTADO em produção.** `profiles`, `camp_memberships`, funções auxiliares (`is_admin()`, `has_camp_access()`, etc.) e o login real (Email OTP) existem e foram testados com um login humano real. A RLS restritiva das tabelas financeiras core (`campos`/`despesas`/`despesa_linhas`/`devolucoes`/`regularizacoes_nif`/`liquidacoes_nif`) **já está aplicada** (migration 042) — mas com uma exceção explícita, por campo, para os 11 campos reais (ver "Transição por campo" abaixo). Storage (`faturas`) continua deliberadamente fora deste mecanismo — ver a nota no fim desta secção.
 
-## Fase de compatibilidade (transitória — Fase 2)
+## Transição por campo (mecanismo ativo — não é mais "tudo ou nada")
 
-Enquanto esta secção existir, **dois mecanismos de acesso coexistem deliberadamente**:
+Desde a migration 041/042, cada campo tem uma coluna `campos.legacy_anon_access` (boolean, default `false`). As policies de RLS das 6 tabelas financeiras core passaram de `USING (true)` (sem exceção, aberto a qualquer pessoa) para:
 
-| | Legacy access | Authenticated access |
-|---|---|---|
-| Mecanismo | PIN por campo (`campos.pin`, texto simples) + cookie `admin_auth` para `/admin` | Supabase Auth (Email OTP) + `camp_memberships`/`profiles.global_role` |
-| Onde ainda vive | `src/actions/validatePin.ts`, `src/app/admin/actions.ts`/`layout.tsx` — marcados `LEGACY ACCESS` no código | `src/lib/supabase/session-*.ts`, `src/proxy.ts`, `/login`, `/admin/memberships` |
-| Protege hoje | Todos os campos reais (nenhum tem membership real ainda) | Só `/tesouraria/*` (rota nova, sem utilizadores reais nela ainda) |
-| RLS por baixo | `USING (true)` — totalmente aberta nas tabelas financeiras core | Restritiva em `profiles`/`camp_memberships` (migrations 038-040), ainda não nas restantes |
+```
+USING ( has_camp_access(campo_id)  -- authenticated access, real
+        OR has_legacy_anon_access(campo_id) )  -- exceção explícita, por campo
+```
 
-**Regra explícita:** esta fase não deve crescer — não se adicionam novos usos do PIN legacy, só se documentam/isolam os que já existem, até deixarem de ser precisos.
+**Nunca um `OR true` global.** A exceção é sempre avaliada campo a campo, contra a linha real de `campos`.
 
-### Critério para fechar a RLS restritiva (subfase 2.4)
+**Estado atual (decisão explícita de José):** os 11 campos reais de 2026 têm todos `legacy_anon_access = true` — nenhum fechou ainda. Qualquer campo novo (incluindo os `[TEST] Camp A/B` do harness) nasce com `false`. Fechar um campo específico é uma única `UPDATE campos SET legacy_anon_access = false WHERE id = ...` — sem nova migration, reversível instantaneamente.
 
-A vaga restritiva só avança quando **uma** destas condições se verificar:
+**Critério para fechar cada campo (Gate A/B, por campo):**
+- **Gate A:** o campo tem pelo menos uma `camp_memberships` `adjunto` `active` e não expirada (ver `/admin/memberships`); **ou**
+- **Gate B:** José confirma explicitamente que aquele campo específico está fechado/inativo.
 
-- **Gate A (readiness):** todos os campos ainda ativos (ver `/admin/memberships` — coluna "Estado de migração") têm pelo menos uma membership `adjunto` `active` e não expirada; **ou**
-- **Gate B (fecho explícito):** José confirma explicitamente que os campos restantes sem membership estão fechados/inativos e podem perder o acesso legacy sem impacto real.
+**Critério para remover o mecanismo por completo (contract, ver MIGRATION_STRATEGY.md):** quando todos os 11 campos reais tiverem `legacy_anon_access = false`, a coluna, a função `has_legacy_anon_access()` e o ramo `OR has_legacy_anon_access(...)` de cada policy são removidos numa migration de limpeza — nunca fica como arquitetura permanente.
 
-Estado ao vivo consultável em `/admin/memberships` (coluna READY/NOT READY por campo — construído a partir de `camp_memberships` + atividade recente em `despesas`/`devolucoes`).
+## PIN legacy (continua a existir, sem crescer)
+
+`campos.pin` e o cookie `admin_auth` continuam a existir (`src/actions/validatePin.ts`, `src/app/admin/actions.ts`/`layout.tsx`, marcados `LEGACY ACCESS` no código) — mas **já não são a fronteira de segurança real**: são só um gate de UI. A fronteira real é agora a RLS (com ou sem a exceção por campo). **Regra explícita:** não se adicionam novos usos do PIN; só se documentam/isolam os que já existem, até deixarem de ser precisos.
+
+## Storage (`faturas`) — deliberadamente fora deste mecanismo por agora
+
+O bucket `faturas` está marcado `public: true` no Supabase — esse flag serve qualquer ficheiro por URL pública **sem passar pela RLS**, seja qual for a policy. Não há meio-termo "público para uns campos, privado para outros" enquanto o flag for `true` a nível de bucket. Decisão explícita (José): manter público por agora — zero isolamento por campo no Storage nesta fase, para não arriscar o fluxo ativo (upload/edição de faturas) de quem ainda está a trabalhar. Migrar para signed URLs (pré-requisito para tornar o bucket privado) fica para uma iteração futura, fora desta ronda da subfase 2.5 — ver MIGRATION_STRATEGY.md.
 
 ## Gate A — decisão fechada
 
