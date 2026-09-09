@@ -97,7 +97,9 @@ test('Danger Zone: apaga só os dados financeiros do campo-alvo, nunca do campo 
   await page.goto(`/campo/${dangerCampId}/setup`)
   await expect(page.getByRole('heading', { name: 'Editar Setup' })).toBeVisible()
 
-  await page.getByText('Danger Zone').click()
+  // getByText('Danger Zone') seria ambíguo: o nome do campo fixture também
+  // contém "Danger Zone" — o botão de abrir a secção é o alvo específico.
+  await page.getByRole('button', { name: 'Danger Zone', exact: false }).click()
   await expect(page.getByText('Esta área apaga')).toBeVisible()
 
   await page.getByRole('button', { name: /Preview/ }).click()

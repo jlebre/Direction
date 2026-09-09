@@ -1,6 +1,21 @@
 # TESTING STRATEGY — CAMTIL Finance V2
 
-Status: **PARCIALMENTE IMPLEMENTADO (subfase 2.1 da Fase 2).** O harness existe e corre (`npm test` → Vitest): `tests/unit/` (helpers puros), `tests/security/anon-read-baseline.test.ts` (6 sondas só-leitura contra produção, hoje todas "EXPECTED FAIL" — documentam o achado CRITICAL em execução automatizada) e `tests/security/rls-matrix.test.ts` (a matriz completa pedida — `anon`/`adjunto_A`/`adjunto_B`/`field_viewer`/`treasurer`/`viewer`/`admin` × Camp A/Camp B — escrita e completa, mas em `SKIP` porque este ambiente não tem Docker nem um projeto Supabase de Development; ver relatório de execução da Fase 2 para as opções de desbloqueio). Zero lint configurado ainda (e o Next 16 removeu `next lint` — ver auditoria, Secção 9).
+Status: **IMPLEMENTADO (subfases 2.1–2.6 da Fase 2).**
+- `npm test` (Vitest) — `tests/unit/` (helpers puros) + `tests/security/*` (matriz RLS, baseline anon, transição legacy, profiles, camp_memberships), todos a correr contra produção com fixtures `[TEST]`/`.invalid` sintéticas (nunca Docker/projeto dedicado — decisão revista: produção com fixtures claramente marcadas é o alvo sancionado, ver `tests/security/fixtures.ts`). 33/33 a passar na última corrida.
+- `npm run test:e2e` (Playwright) — `tests/e2e/*`, contra a app **deployada** (nunca localhost). Cobre devoluções (CRUD + foto + cross-camp), regularização NIF (com despesa fixture dedicada) e a Danger Zone (`/campo/[id]/setup`). Ver "Política de testes" abaixo.
+- `npm run typecheck` / `npm run build` — verificados a cada incremento.
+- Zero lint configurado ainda (Next 16 removeu `next lint` — ver auditoria, Secção 9).
+
+## Política de testes (regra do utilizador, vinculativa)
+**Não se pede a um humano para testar manualmente algo que pode ser testado automaticamente.** Testes manuais ficam reservados só para o que é genuinamente impossível ou insensato de automatizar: confirmar a receção real de um email OTP, avaliação subjetiva de UX, comportamento físico de câmara/telemóvel sem alternativa razoável. CRUD, autorização, uploads, edição, eliminação, navegação e regressão são sempre automatizados antes de uma subfase ser considerada concluída.
+
+**Sessões de teste E2E:** o fluxo real de Adjunto hoje em produção não usa sessão Supabase Auth — usa PIN de campo + a exceção `legacy_anon_access` (decisão "todos os 11 campos, por agora"). Os fixtures E2E de Adjunto (`tests/e2e/lib/e2e-fixtures.ts`) replicam exactamente esse mecanismo (campos `[TEST] E2E Camp A/B` com `legacy_anon_access=true`), em vez de simular uma sessão autenticada que a app ainda não usa nesse caminho. Para os papéis já autenticados (admin/treasurer/viewer/field_viewer via `camp_memberships`), a infraestrutura para injetar uma sessão real como cookie `@supabase/ssr` (via `signInWithPassword`, nunca `service_role`, nunca no browser) já existe em `tests/e2e/lib/session-cookies.ts`, pronta para a próxima ronda de cobertura por papel.
+
+**Guardrails técnicos** (não só comentários) — `tests/e2e/lib/guardrails.ts`: confirma o project ref autorizado antes de qualquer coisa; recusa qualquer `camp_id` que corresponda a um dos 11 campos reais (carregados da BD, nunca de uma lista estática); recusa qualquer `camp_id` cujo nome na BD não comece por `[TEST]`, revalidado no momento, nunca só confiado de uma fixture criada minutos antes.
+
+**Limpeza garantida** — `global-teardown.ts` apaga campos de teste (cascata cobre despesas/devoluções/regularizações/liquidações) e ficheiros de Storage sob os seus slugs, e falha alto se sobrar alguma coisa. Rede de segurança independente: `npm run test:e2e:cleanup` varre por padrão `[TEST]`/`test-*` (nunca por ID de uma corrida), para o caso de uma suite morrer antes do seu próprio teardown.
+
+**Separação de CI:** `npm test`/`typecheck`/`build` podem correr em qualquer push (não usam nada que um contribuidor sem acesso a produção devesse ter). `npm run test:e2e` usa `NEXT_PUBLIC_SUPABASE_URL`/`ANON_KEY` de produção para autenticar fixtures via `supabase db query --linked` — nunca deve correr automaticamente em cada push; fica reservado a execução manual ou a um futuro `workflow_dispatch` dedicado com os seus próprios secrets.
 
 ## Unit
 **Alvo:** cálculos financeiros puros, parsers, normalização.
