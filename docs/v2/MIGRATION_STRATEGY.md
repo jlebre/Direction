@@ -13,13 +13,16 @@ Um backup íntegro e validado tem de existir e estar acessível **antes** de cor
 ## Fases
 
 ### Fase 2 — Segurança & Autenticação
-- **Expand:** criar `profiles`, `field_memberships` a par das tabelas existentes (`campos` continua a existir e a ser a fonte de dados enquanto isto acontece).
-- **Migrate:** popular `field_memberships` manualmente para os campos de 2026 (11 campos, dados já no backup) com base em quem foi Adjunto de cada um — trabalho humano, não automatizável (a app de hoje não regista essa associação em lado nenhum).
-- **Verify:** confirmar com cada Adjunto que consegue autenticar-se e vê exatamente o(s) seu(s) campo(s), nada mais.
-- **Switch reads:** páginas passam a usar Server Components com sessão real.
-- **Switch writes:** Server Actions substituem os inserts diretos do browser.
-- **Archive legacy:** `campos.pin` deixa de ser lido pela app (mas a coluna não é apagada nesta fase — ver Fase 4/Contract).
-- **Rollback:** manter o PIN a funcionar em paralelo até o Gate A estar confirmado em produção com utilizadores reais; só desligar o caminho antigo depois de pelo menos um campo completo (dados reais) ter corrido só com Auth real.
+
+**Estado real (atualizado durante a execução):**
+- **Expand — feito:** `profiles` (038), `profiles.email` (040), `camp_memberships` + funções auxiliares (039) criados em produção, a par das tabelas existentes.
+- **Migrate — em curso, manual por natureza:** popular `camp_memberships` para os 11 campos reais exige saber quem são os adjuntos ainda ativos — a app nunca registou essa associação, e não se deve inferir emails. Ferramenta pronta em `/admin/memberships` (Server Actions `inviteUserToCamp`/`revokeMembership`/etc.) para o admin fazer isto assim que tiver os emails.
+- **Verify — parcial:** login OTP confirmado ponta-a-ponta com uma conta real (admin). Falta confirmar por adjunto real.
+- **Switch reads/writes — não feito ainda para as tabelas financeiras.** `/tesouraria/*` (rota nova, sem dados ainda) já lê/escreve só com sessão real; `/campo/*` continua 100% legacy.
+- **Archive legacy — não feito.** `campos.pin` continua a ser a única forma de acesso real aos 11 campos.
+- **Rollback:** SQL de rollback documentado por migration em `supabase/rollbacks/`. Manter o PIN a funcionar em paralelo até o critério de fecho (ver `docs/v2/AUTHORIZATION.md` § Fase de compatibilidade — Gate A/B) estar satisfeito; só aí a subfase 2.4 (RLS restritiva) avança.
+
+**Porque a ordem "Expand primeiro, Switch depois" importa aqui mais do que nas outras fases:** ao contrário de uma tabela nova sem utilizadores, `campos`/`despesas` têm utilização real e ativa (confirmado: despesas criadas horas antes desta escrita). Fechar RLS sem memberships reais bloquearia essa utilização imediatamente — daí a fase de compatibilidade explícita antes da subfase 2.4.
 
 ### Fase 3 — Mamãs / Legacy cleanup
 - Seguir exatamente o plano já detalhado na auditoria (Secção 7): dividir `types/shared.ts` primeiro, remover código Mamãs, **arquivar** (não `DROP`) as colunas/tabelas Mamãs — mover para um schema `mamas_archive` ou apenas deixar de ser referenciadas, mantendo os dados de 2026 consultáveis por SQL direto se algum dia forem precisos.

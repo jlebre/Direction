@@ -1,6 +1,28 @@
 # AUTHORIZATION — Authentication, Roles & RLS
 
-Status: **Gate A — ACCEPTED** (decisão fechada no arranque da Fase 2). O resto deste documento (policies conceptuais, fronteira de confiança) continua **PROPOSED** — só a decisão de auth/naming abaixo está fechada; nenhuma policy/migration/config de Auth foi ainda implementada (ver relatório de execução da Fase 2, subfases 2.2+ bloqueadas por falta de ambiente de teste seguro).
+Status: **Gate A — ACCEPTED**, e parcialmente **IMPLEMENTADO em produção**: `profiles`, `camp_memberships`, funções auxiliares (`is_admin()` etc.) e o login real (Email OTP) já existem e foram testados com um login humano real. A RLS restritiva das tabelas financeiras core (`campos`/`despesas`/`despesa_linhas`/`devolucoes`/`regularizacoes_nif`/`liquidacoes_nif`) **ainda não foi aplicada** — ver a secção seguinte, "Fase de compatibilidade", para o porquê e o critério exato de quando isso pode avançar.
+
+## Fase de compatibilidade (transitória — Fase 2)
+
+Enquanto esta secção existir, **dois mecanismos de acesso coexistem deliberadamente**:
+
+| | Legacy access | Authenticated access |
+|---|---|---|
+| Mecanismo | PIN por campo (`campos.pin`, texto simples) + cookie `admin_auth` para `/admin` | Supabase Auth (Email OTP) + `camp_memberships`/`profiles.global_role` |
+| Onde ainda vive | `src/actions/validatePin.ts`, `src/app/admin/actions.ts`/`layout.tsx` — marcados `LEGACY ACCESS` no código | `src/lib/supabase/session-*.ts`, `src/proxy.ts`, `/login`, `/admin/memberships` |
+| Protege hoje | Todos os campos reais (nenhum tem membership real ainda) | Só `/tesouraria/*` (rota nova, sem utilizadores reais nela ainda) |
+| RLS por baixo | `USING (true)` — totalmente aberta nas tabelas financeiras core | Restritiva em `profiles`/`camp_memberships` (migrations 038-040), ainda não nas restantes |
+
+**Regra explícita:** esta fase não deve crescer — não se adicionam novos usos do PIN legacy, só se documentam/isolam os que já existem, até deixarem de ser precisos.
+
+### Critério para fechar a RLS restritiva (subfase 2.4)
+
+A vaga restritiva só avança quando **uma** destas condições se verificar:
+
+- **Gate A (readiness):** todos os campos ainda ativos (ver `/admin/memberships` — coluna "Estado de migração") têm pelo menos uma membership `adjunto` `active` e não expirada; **ou**
+- **Gate B (fecho explícito):** José confirma explicitamente que os campos restantes sem membership estão fechados/inativos e podem perder o acesso legacy sem impacto real.
+
+Estado ao vivo consultável em `/admin/memberships` (coluna READY/NOT READY por campo — construído a partir de `camp_memberships` + atividade recente em `despesas`/`devolucoes`).
 
 ## Gate A — decisão fechada
 
