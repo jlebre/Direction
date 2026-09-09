@@ -7,6 +7,7 @@ import { compressImage } from '@/lib/adjuntos/image-utils'
 import { getCampoSlug, getPhotoFilename } from '@/lib/adjuntos/supabase-storage'
 import type { CampoPublico } from '@/types/shared'
 import { validatePin } from '@/actions/validatePin'
+import { createDespesa } from '@/actions/despesas'
 import PhotoCapture from '@/components/adjuntos/PhotoCapture'
 import CodeSelector from '@/components/adjuntos/CodeSelector'
 import PinDialog from '@/components/shared/PinDialog'
@@ -153,66 +154,52 @@ export default function NovaDespesaClient({ campo, hasPin }: { campo: CampoPubli
 
       const ocrStatus = ocr.resultado ? 'processado' : (ocr.status === 'error' ? 'falhou' : 'nenhum')
 
-      // Retry loop — em caso de conflito de numero_recibo (único por campo), tenta 3 vezes
-      let novaDespesa: { id: string } | null = null
-      let numeroRecibo = 0
-      for (let attempt = 0; attempt < 3; attempt++) {
-        const { data: lastDespesa } = await supabase
-          .from('despesas').select('numero_recibo').eq('campo_id', campo.id)
-          .order('numero_recibo', { ascending: false }).limit(1).maybeSingle()
-        numeroRecibo = (lastDespesa?.numero_recibo ?? 0) + 1
-
-        const { data, error: insertError } = await supabase.from('despesas').insert({
-          campo_id: campo.id, numero_recibo: numeroRecibo, data: form.data,
-          valor: parseMoney(form.valor) ?? 0, descricao: form.descricao.trim() || null,
-          codigo: form.codigo!, codigo_descricao: form.codigoDescricao!,
-          tipo: 'despesa', nif_confirmado: form.nifConfirmado, foto_path: fotoPath,
-          ocr_status: ocrStatus,
-          ocr_texto: ocr.resultado?.texto_bruto ?? null,
-          ocr_fornecedor: ocr.resultado?.fornecedor ?? null,
-          ocr_total: ocr.resultado?.total_detectado ?? null,
-          ocr_data: ocr.resultado?.data_detectada ?? null,
-          origem_dados: origemDados,
-          nif_visivel: form.nifVisivel,
-          qr_raw: qrParsed?.qr_raw ?? null,
-          qr_total: qrParsed?.qr_total ?? null,
-          qr_data: qrParsed?.qr_data ?? null,
-          qr_nif_emitente: qrParsed?.qr_nif_emitente ?? null,
-          qr_nif_adquirente: qrParsed?.qr_nif_adquirente ?? null,
-          qr_numero_documento: qrParsed?.qr_numero_documento ?? null,
-          qr_atcud: qrParsed?.qr_atcud ?? null,
-          qr_tipo_documento: qrParsed?.qr_tipo_documento ?? null,
-        }).select('id').single()
-
-        if (!insertError) { novaDespesa = data; break }
-        // Código 23505 = unique_violation — aguarda e retenta com número actualizado
-        if (insertError.code !== '23505' || attempt === 2) throw insertError
-        await new Promise((r) => setTimeout(r, 100 * (attempt + 1)))
-      }
-
-      if (!novaDespesa) throw new Error('Falha ao obter ID da despesa')
-
+      // Fronteira de servidor (Fase 2.6) — Storage (acima) continua do lado
+      // do cliente (2.5); a escrita na BD (despesa + linhas, com o mesmo
+      // retry de numero_recibo de sempre) passa a vir da Server Action.
       const linhasParaGuardar = linhasOcrEditadas ?? ocr.resultado?.linhas ?? []
-      if (novaDespesa?.id && linhasParaGuardar.length > 0) {
-        const linhasParaInserir = linhasParaGuardar
-          .filter((l) => l.preco_total !== null && l.tipo_linha === 'produto')
-          .map((l) => ({
-            despesa_id: novaDespesa.id,
-            texto_linha_original: l.texto_linha_original,
-            nome_produto_bruto: l.nome_produto_bruto,
-            quantidade: l.quantidade,
-            unidade: l.unidade,
-            preco_unitario: l.preco_unitario,
-            preco_total: l.preco_total,
-            confianca: l.confianca,
-            estado: 'sugerido' as const,
-            tipo_linha: l.tipo_linha,
-            categoria_linha: l.categoria_linha,
-          }))
-        if (linhasParaInserir.length > 0) {
-          await supabase.from('despesa_linhas').insert(linhasParaInserir)
-        }
+      const resultado = await createDespesa({
+        campoId: campo.id,
+        data: form.data,
+        valor: parseMoney(form.valor) ?? 0,
+        descricao: form.descricao.trim() || null,
+        codigo: form.codigo!,
+        codigoDescricao: form.codigoDescricao!,
+        nifConfirmado: form.nifConfirmado,
+        fotoPath,
+        ocrStatus,
+        ocrTexto: ocr.resultado?.texto_bruto ?? null,
+        ocrFornecedor: ocr.resultado?.fornecedor ?? null,
+        ocrTotal: ocr.resultado?.total_detectado ?? null,
+        ocrData: ocr.resultado?.data_detectada ?? null,
+        origemDados,
+        nifVisivel: form.nifVisivel,
+        qrRaw: qrParsed?.qr_raw ?? null,
+        qrTotal: qrParsed?.qr_total ?? null,
+        qrData: qrParsed?.qr_data ?? null,
+        qrNifEmitente: qrParsed?.qr_nif_emitente ?? null,
+        qrNifAdquirente: qrParsed?.qr_nif_adquirente ?? null,
+        qrNumeroDocumento: qrParsed?.qr_numero_documento ?? null,
+        qrAtcud: qrParsed?.qr_atcud ?? null,
+        qrTipoDocumento: qrParsed?.qr_tipo_documento ?? null,
+        linhas: linhasParaGuardar.map((l) => ({
+          texto_linha_original: l.texto_linha_original,
+          nome_produto_bruto: l.nome_produto_bruto,
+          quantidade: l.quantidade,
+          unidade: l.unidade,
+          preco_unitario: l.preco_unitario,
+          preco_total: l.preco_total,
+          confianca: l.confianca,
+          estado: 'sugerido' as const,
+          tipo_linha: l.tipo_linha,
+          categoria_linha: l.categoria_linha,
+        })),
+      })
+
+      if (resultado.error || !resultado.despesaId) {
+        throw new Error(resultado.error ?? 'Falha ao obter ID da despesa')
       }
+      const numeroRecibo = resultado.numeroRecibo!
 
       setToast({ msg: `Despesa #${numeroRecibo} registada!`, type: 'success' })
       setTimeout(() => { router.push(`/campo/${campo.id}/adjuntos`); router.refresh() }, 800)

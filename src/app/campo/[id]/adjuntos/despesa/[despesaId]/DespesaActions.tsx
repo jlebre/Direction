@@ -6,6 +6,7 @@ import { createClient } from '@/lib/supabase/client'
 import { toast } from 'sonner'
 import type { CampoPublico } from '@/types/shared'
 import { validatePin } from '@/actions/validatePin'
+import { deleteDespesa } from '@/actions/despesas'
 import type { Despesa } from '@/types/adjuntos'
 import PinDialog from '@/components/shared/PinDialog'
 
@@ -30,8 +31,9 @@ export default function DespesaActions({ despesa, campo, hasPin }: { despesa: De
 
   async function handleDelete() {
     setDeleting(true)
-    // Delete DB row first — if it fails, the photo is still intact
-    const { error } = await supabase.from('despesas').delete().eq('id', despesa.id)
+    // Delete DB row first (via Server Action — fronteira de servidor,
+    // Fase 2.6) — if it fails, the photo is still intact
+    const { error } = await deleteDespesa({ despesaId: despesa.id, campoId: campo.id })
     if (error) {
       toast.error('Erro ao eliminar despesa')
       setDeleting(false)

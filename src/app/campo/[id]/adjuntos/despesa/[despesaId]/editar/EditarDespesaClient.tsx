@@ -8,6 +8,7 @@ import { compressImage } from '@/lib/adjuntos/image-utils'
 import { getCampoSlug, getPhotoFilename } from '@/lib/adjuntos/supabase-storage'
 import type { CampoPublico } from '@/types/shared'
 import { validatePin } from '@/actions/validatePin'
+import { updateDespesa } from '@/actions/despesas'
 import type { Despesa } from '@/types/adjuntos'
 import CodeSelector from '@/components/adjuntos/CodeSelector'
 import PinDialog from '@/components/shared/PinDialog'
@@ -106,20 +107,21 @@ export default function EditarDespesaClient({ campo, hasPin, despesa, existingPh
         fotoPath = null
       }
 
-      const { error: updateError } = await supabase
-        .from('despesas')
-        .update({
-          valor: parseMoney(valor) ?? 0,
-          descricao: descricao.trim() || null,
-          data,
-          codigo: codigo!,
-          codigo_descricao: codigoDescricao!,
-          nif_confirmado: nifConfirmado,
-          foto_path: fotoPath,
-        })
-        .eq('id', despesa.id)
+      // Fronteira de servidor (Fase 2.6) — Storage continua do lado do
+      // cliente (2.5), só a escrita na BD passa pela Server Action.
+      const { error: updateErrorMsg } = await updateDespesa({
+        despesaId: despesa.id,
+        campoId: campo.id,
+        valor: parseMoney(valor) ?? 0,
+        descricao: descricao.trim() || null,
+        data,
+        codigo: codigo!,
+        codigoDescricao: codigoDescricao!,
+        nifConfirmado,
+        fotoPath,
+      })
 
-      if (updateError) throw updateError
+      if (updateErrorMsg) throw new Error(updateErrorMsg)
 
       toast.success('Despesa atualizada!')
       router.push(`/campo/${campo.id}/adjuntos/despesa/${despesa.id}`)
