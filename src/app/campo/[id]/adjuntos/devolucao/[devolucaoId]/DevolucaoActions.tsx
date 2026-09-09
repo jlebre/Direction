@@ -6,6 +6,7 @@ import { createClient } from '@/lib/supabase/client'
 import { toast } from 'sonner'
 import type { CampoPublico } from '@/types/shared'
 import { validatePin } from '@/actions/validatePin'
+import { deleteDevolucao } from '@/actions/devolucoes'
 import type { Devolucao } from '@/types/adjuntos'
 import PinDialog from '@/components/shared/PinDialog'
 
@@ -38,7 +39,7 @@ export default function DevolucaoActions({
 
   async function handleDelete() {
     setDeleting(true)
-    const { error } = await supabase.from('devolucoes').delete().eq('id', devolucao.id)
+    const { error } = await deleteDevolucao({ devolucaoId: devolucao.id, campoId: campo.id })
     if (error) {
       toast.error('Erro ao eliminar devolução')
       setDeleting(false)

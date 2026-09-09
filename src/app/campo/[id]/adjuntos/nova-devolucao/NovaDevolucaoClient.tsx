@@ -13,6 +13,7 @@ import { Button } from '@/components/ui/button'
 import CodeSelector from '@/components/adjuntos/CodeSelector'
 import { compressImage } from '@/lib/adjuntos/image-utils'
 import { getCampoSlug } from '@/lib/adjuntos/supabase-storage'
+import { attachDevolucaoFoto, createDevolucao } from '@/actions/devolucoes'
 import type { CampoPublico } from '@/types/shared'
 import type { Despesa } from '@/types/adjuntos'
 
@@ -55,46 +56,26 @@ export default function NovaDevolucaoClient({ campo, faturas }: Props) {
     if (!valor || (parseMoney(valor) ?? 0) <= 0) { toast.error('Valor inválido'); return }
     setSubmitting(true)
     try {
-      // Insert row first to claim numero_devolucao atomically.
-      // Retry up to 5x on unique constraint violation (23505) caused by concurrent inserts.
-      let insertedId: string | null = null
-      let numeroDevolucao = 0
+      // Fronteira de servidor (Fase 2.6) — cria a devolução via Server
+      // Action (mesmo retry de numero_devolucao de sempre, movido para o
+      // servidor). Storage (upload da foto) continua do lado do cliente
+      // (2.5) — só depois de ter o número confirmado, tal como antes.
+      const created = await createDevolucao({
+        campoId: campo.id,
+        data,
+        valor: parseMoney(valor) ?? 0,
+        descricao: descricao.trim() || null,
+        codigo: codigo || null,
+        codigoDescricao: codigoDescricao || null,
+        faturaOriginalId: faturaId || null,
+        notas: notas.trim() || null,
+      })
 
-      for (let attempt = 0; attempt < 5; attempt++) {
-        const { data: lastDev } = await supabase
-          .from('devolucoes')
-          .select('numero_devolucao')
-          .eq('campo_id', campo.id)
-          .order('numero_devolucao', { ascending: false })
-          .limit(1)
-          .maybeSingle()
-
-        numeroDevolucao = (lastDev?.numero_devolucao ?? 0) + 1
-
-        const { data: inserted, error: insertError } = await supabase
-          .from('devolucoes')
-          .insert({
-            campo_id: campo.id,
-            numero_devolucao: numeroDevolucao,
-            data,
-            valor: parseMoney(valor) ?? 0,
-            descricao: descricao.trim() || null,
-            codigo: codigo || null,
-            codigo_descricao: codigoDescricao || null,
-            fatura_original_id: faturaId || null,
-            notas: notas.trim() || null,
-            foto_path: null,
-            origem_dados: 'manual',
-          })
-          .select('id')
-          .single()
-
-        if (!insertError && inserted) { insertedId = inserted.id; break }
-        if (insertError?.code === '23505' && attempt < 4) continue
-        throw insertError
+      if (created.error || !created.devolucaoId) {
+        throw new Error(created.error ?? 'Não foi possível criar número de devolução único')
       }
-
-      if (!insertedId) throw new Error('Não foi possível criar número de devolução único')
+      const insertedId = created.devolucaoId
+      const numeroDevolucao = created.numeroDevolucao!
 
       // Upload photo now that we have the confirmed numero
       if (photoFile) {
@@ -105,7 +86,7 @@ export default function NovaDevolucaoClient({ campo, faturas }: Props) {
           .from('faturas')
           .upload(path, photoFile, { contentType: 'image/jpeg', upsert: true })
         if (!uploadErr) {
-          await supabase.from('devolucoes').update({ foto_path: path }).eq('id', insertedId)
+          await attachDevolucaoFoto({ devolucaoId: insertedId, campoId: campo.id, fotoPath: path })
         }
       }
 

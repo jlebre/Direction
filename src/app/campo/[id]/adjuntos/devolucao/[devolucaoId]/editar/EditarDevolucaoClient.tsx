@@ -15,6 +15,7 @@ import { getCampoSlug } from '@/lib/adjuntos/supabase-storage'
 import { getPhotoUrl } from '@/lib/adjuntos/supabase-storage'
 import type { CampoPublico } from '@/types/shared'
 import { validatePin } from '@/actions/validatePin'
+import { updateDevolucao } from '@/actions/devolucoes'
 import type { Devolucao, Despesa } from '@/types/adjuntos'
 import PinDialog from '@/components/shared/PinDialog'
 
@@ -106,20 +107,21 @@ export default function EditarDevolucaoClient({ campo, hasPin, devolucao, fatura
         fotoPath = null
       }
 
-      const { error } = await supabase
-        .from('devolucoes')
-        .update({
-          data,
-          valor: parseMoney(valor) ?? 0,
-          descricao: descricao.trim() || null,
-          codigo: codigo || null,
-          codigo_descricao: codigoDescricao || null,
-          fatura_original_id: faturaId || null,
-          notas: notas.trim() || null,
-          foto_path: fotoPath,
-        })
-        .eq('id', devolucao.id)
-      if (error) throw error
+      // Fronteira de servidor (Fase 2.6) — Storage (acima) continua do
+      // lado do cliente (2.5), só a escrita na BD passa pela Server Action.
+      const { error: errorMsg } = await updateDevolucao({
+        devolucaoId: devolucao.id,
+        campoId: campo.id,
+        data,
+        valor: parseMoney(valor) ?? 0,
+        descricao: descricao.trim() || null,
+        codigo: codigo || null,
+        codigoDescricao: codigoDescricao || null,
+        faturaOriginalId: faturaId || null,
+        notas: notas.trim() || null,
+        fotoPath,
+      })
+      if (errorMsg) throw new Error(errorMsg)
       toast.success('Devolução atualizada!')
       router.push(`/campo/${campo.id}/adjuntos/devolucao/${devolucao.id}`)
       router.refresh()

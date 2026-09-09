@@ -8,6 +8,7 @@ import { compressImage } from '@/lib/adjuntos/image-utils'
 import { getCampoSlug, getPhotoFilename } from '@/lib/adjuntos/supabase-storage'
 import type { CampoPublico } from '@/types/shared'
 import { validatePin } from '@/actions/validatePin'
+import { createRegularizacao } from '@/actions/regularizacoes'
 import type { Despesa, RegularizacaoNif } from '@/types/adjuntos'
 import { parseMoney } from '@/lib/utils'
 import CodeSelector from '@/components/adjuntos/CodeSelector'
@@ -146,7 +147,9 @@ export default function RegularizarClient({ campo, hasPin, faturasSemNIF, regula
     if (!codigo || !valor || (parseMoney(valor) ?? 0) <= 0 || selectedFaturas.length === 0) return
     setSubmitting(true)
     try {
-      // 1. Número de recibo
+      // 1. Número de recibo provisório, só para o nome do ficheiro da foto
+      //    (Storage continua do lado do cliente — decisão da subfase 2.5).
+      //    O número REAL é decidido no servidor, na Server Action abaixo.
       const { data: lastDespesa } = await supabase
         .from('despesas')
         .select('numero_recibo')
@@ -154,12 +157,12 @@ export default function RegularizarClient({ campo, hasPin, faturasSemNIF, regula
         .order('numero_recibo', { ascending: false })
         .limit(1)
         .maybeSingle()
-      const numeroRecibo = (lastDespesa?.numero_recibo ?? 0) + 1
+      const numeroReciboProvisorio = (lastDespesa?.numero_recibo ?? 0) + 1
 
       // 2. Upload da foto (opcional)
       let fotoPath: string | null = null
       if (photoFile) {
-        const filename = getPhotoFilename(campo.nome, numeroRecibo)
+        const filename = getPhotoFilename(campo.nome, numeroReciboProvisorio)
         const slug = getCampoSlug(campo.nome)
         const path = `${slug}/${filename}`
         const compressed = await compressImage(photoFile)
@@ -169,47 +172,29 @@ export default function RegularizarClient({ campo, hasPin, faturasSemNIF, regula
         if (!uploadError) fotoPath = path
       }
 
-      // 3. Criar fatura de regularização
+      // 3-5. Fronteira de servidor (Fase 2.6) — cria a fatura de
+      // regularização + as ligações regularizacoes_nif via Server Action.
       const totalValor = parseMoney(valor) ?? 0
-      const { data: novaDespesa, error: insertError } = await supabase
-        .from('despesas')
-        .insert({
-          campo_id: campo.id,
-          numero_recibo: numeroRecibo,
-          data,
-          valor: totalValor,
-          descricao: descricao.trim() || null,
-          codigo: codigo!,
-          codigo_descricao: codigoDescricao!,
-          tipo: 'despesa',
-          nif_confirmado: true,
-          is_regularizacao_nif: true,
-          foto_path: fotoPath,
-        })
-        .select('id')
-        .single()
-
-      if (insertError || !novaDespesa) throw insertError ?? new Error('Despesa não criada')
-
-      // 4. Calcular alocações proporcionais
       const totalPendente = selectedFaturas.reduce((s, f) => s + f.valorPendente, 0)
       const allocations = computeAllocations(selectedFaturas, totalValor, totalPendente)
 
-      // 5. Inserir ligações de regularização
-      if (allocations.length > 0) {
-        const { error: regError } = await supabase.from('regularizacoes_nif').insert(
-          allocations.map((a) => ({
-            campo_id: campo.id,
-            despesa_regularizacao_id: novaDespesa.id,
-            despesa_original_id: a.faturaId,
-            valor: a.valor,
-          }))
-        )
-        if (regError) throw regError
+      const resultado = await createRegularizacao({
+        campoId: campo.id,
+        data,
+        valor: totalValor,
+        descricao: descricao.trim() || null,
+        codigo: codigo!,
+        codigoDescricao: codigoDescricao!,
+        fotoPath,
+        allocations: allocations.map((a) => ({ despesaOriginalId: a.faturaId, valor: a.valor })),
+      })
+
+      if (resultado.error) {
+        throw new Error(resultado.error)
       }
 
       setToast({
-        msg: `Fatura #${numeroRecibo} criada · ${selectedFaturas.length} fatura(s) regularizada(s)`,
+        msg: `Fatura #${resultado.numeroRecibo} criada · ${selectedFaturas.length} fatura(s) regularizada(s)`,
         type: 'success',
       })
       setTimeout(() => {
