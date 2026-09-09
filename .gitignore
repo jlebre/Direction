@@ -39,3 +39,10 @@ yarn-error.log*
 # typescript
 *.tsbuildinfo
 next-env.d.ts
+
+# Fase 0.5 — backups financeiros gerados localmente (dados reais + PINs em texto
+# simples). Nunca deve ir para o git nem para um remoto partilhado sem cuidado extra.
+/backup/
+
+# Supabase CLI — estado local da ferramenta (ex. versão descarregada), não do projeto.
+/supabase/.temp/

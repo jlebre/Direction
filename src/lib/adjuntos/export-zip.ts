@@ -23,13 +23,21 @@ function imageFilenameForDespesa(d: Despesa): string {
   return `recibo_${String(d.numero_recibo).padStart(4, '0')}.${ext}`
 }
 
-export async function generateZip(
+// ── Fase 0.5 (backup integral) ───────────────────────────────────────────────
+// `buildZip` foi extraído de `generateZip` para poder ser reutilizado pelo
+// script de backup administrativo (scripts/backup/run-backup.ts), que corre em
+// Node e não pode chamar `exportOrShareFile` (usa APIs de browser — Web Share/
+// <a download>). `generateZip` mantém exatamente o mesmo comportamento de
+// sempre: chama `buildZip` com outputType 'blob' e depois partilha/descarrega
+// o resultado, tal como fazia antes desta extração.
+export async function buildZip(
   campo: Campo,
   despesas: Despesa[],
   regularizacoes: RegularizacaoNif[] = [],
   despesaLinhas: DespesaLinha[] = [],
-  devolucoes: Devolucao[] = []
-): Promise<void> {
+  devolucoes: Devolucao[] = [],
+  outputType: 'blob' | 'nodebuffer' = 'blob'
+): Promise<Blob | Buffer> {
   const zip = new JSZip()
 
   const safeName = sanitizeFilename(campo.nome)
@@ -50,19 +58,36 @@ export async function generateZip(
         const url = getPhotoUrl(d.foto_path!)
         const response = await fetch(url)
         if (!response.ok) return
-        const imgBlob = await response.blob()
-        imgFolder.file(imageFilenameForDespesa(d), imgBlob)
+        // ArrayBuffer em vez de Blob: mesmos bytes no ZIP final, mas suportado
+        // pelo JSZip tanto no browser como em Node (usado pelo script de
+        // backup — Node não tem sempre um Blob que o JSZip reconheça).
+        const imgBuf = await response.arrayBuffer()
+        imgFolder.file(imageFilenameForDespesa(d), imgBuf)
       } catch {
         // Falha silenciosa por imagem — o ZIP é gerado mesmo sem ela
       }
     })
   )
 
-  const zipBlob = await zip.generateAsync({
-    type: 'blob',
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  return zip.generateAsync({
+    type: outputType as any,
     compression: 'DEFLATE',
     compressionOptions: { level: 6 },
-  })
+  }) as Promise<Blob | Buffer>
+}
+
+export async function generateZip(
+  campo: Campo,
+  despesas: Despesa[],
+  regularizacoes: RegularizacaoNif[] = [],
+  despesaLinhas: DespesaLinha[] = [],
+  devolucoes: Devolucao[] = []
+): Promise<void> {
+  const safeName = sanitizeFilename(campo.nome)
+  const dateStr = new Date().toISOString().split('T')[0]
+
+  const zipBlob = (await buildZip(campo, despesas, regularizacoes, despesaLinhas, devolucoes, 'blob')) as Blob
 
   const { exportOrShareFile } = await import('@/lib/export-share')
   await exportOrShareFile(zipBlob, `relatorio-contas-${safeName}-${dateStr}.zip`)
