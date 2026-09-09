@@ -7,8 +7,12 @@
     "build": "next build",
     "start": "next start",
     "backup": "tsx scripts/backup/run-backup.ts",
+    "typecheck": "tsc --noEmit",
     "test": "vitest run",
-    "test:watch": "vitest"
+    "test:watch": "vitest",
+    "test:e2e": "playwright test",
+    "test:e2e:ui": "playwright test --ui",
+    "test:e2e:cleanup": "tsx scripts/e2e-cleanup.ts"
   },
   "dependencies": {
     "@dnd-kit/core": "^6.3.1",
@@ -48,6 +52,7 @@
     "zod": "^4.5.4"
   },
   "devDependencies": {
+    "@playwright/test": "^1.63.0",
     "@tailwindcss/postcss": "^4",
     "@types/node": "^20",
     "@types/react": "^19",

@@ -12,6 +12,14 @@
 
 # testing
 /coverage
+/test-results
+/playwright-report
+/blob-report
+/playwright/.cache
+# Fase 2 E2E: sessões sintéticas de teste (cookies com access/refresh token
+# de fixtures [TEST], nunca de utilizadores reais) + manifest da corrida.
+# Nunca commitar mesmo sendo sintético — hábito de segurança, não excepção.
+/tests/e2e/.auth
 
 # next.js
 /.next/

@@ -169,13 +169,18 @@ export async function createFixtures(cfg: TestSupabaseConfig): Promise<CreatedFi
   }
 }
 
+/** O que o teardown precisa de facto — permite reconstruir a partir de um
+ * manifest gravado em disco (ex. tests/e2e/global-teardown.ts) sem ter de
+ * transportar `clients` (sessões vivas) entre processos. */
+export type FixtureTeardownInput = Pick<CreatedFixtures, 'camps' | 'userIds'>
+
 /**
  * Apaga só os IDs que esta suite criou (nunca por padrão de nome — isso
  * podia, em teoria, apanhar dados reais). Confirma sempre por leitura que
  * ficaram mesmo apagados; se sobrar alguma coisa, falha explicitamente com
  * exatamente o que sobrou, em vez de terminar em silêncio.
  */
-export async function teardownFixtures(created: CreatedFixtures): Promise<void> {
+export async function teardownFixtures(created: FixtureTeardownInput): Promise<void> {
   const userIdList = Object.values(created.userIds)
   const campIdList = Object.values(created.camps)
 

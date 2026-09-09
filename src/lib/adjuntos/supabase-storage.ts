@@ -9,7 +9,17 @@ const PREFIXES: Record<string, string> = {
 }
 
 export function getCampoSlug(nome: string): string {
-  return nome.toLowerCase().normalize('NFD').replace(/[̀-ͯ]/g, '').replace(/\s+/g, '-')
+  // Storage do Supabase rejeita chaves com certos caracteres (confirmado:
+  // "Invalid key" para `[`/`]`, ex. em nomes de fixtures de teste "[TEST] ...").
+  // Nenhum dos 11 campos reais tem nome fora de letras/números/espaços, por
+  // isso este passo extra não altera o slug de nenhum campo existente —
+  // só passa a sanear nomes fora desse padrão (fixtures de teste incluídas).
+  return nome
+    .toLowerCase()
+    .normalize('NFD')
+    .replace(/[̀-ͯ]/g, '')
+    .replace(/\s+/g, '-')
+    .replace(/[^a-z0-9-]/g, '')
 }
 
 export function getPhotoFilename(campoNome: string, numeroRecibo: number): string {

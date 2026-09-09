@@ -16,6 +16,10 @@ describe('getCampoSlug', () => {
     expect(slug).not.toMatch(/\s/)
     expect(slug.toLowerCase()).toBe(slug)
   })
+  it('sanea caracteres que o Storage do Supabase rejeita como chave (achado real da suite E2E — "[TEST] ..." dava "Invalid key")', () => {
+    expect(getCampoSlug('[TEST] E2E Camp A 1yzxgz')).toBe('test-e2e-camp-a-1yzxgz')
+    expect(getCampoSlug('[TEST] E2E Camp A 1yzxgz')).not.toMatch(/[[\]]/)
+  })
 })
 
 describe('getPhotoFilename', () => {
