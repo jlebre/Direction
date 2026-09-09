@@ -187,7 +187,7 @@ test.describe.serial('Devoluções — CRUD ponta-a-ponta', () => {
     for (const id of [devolucaoSemFotoId, devolucaoComFotoId]) {
       await page.goto(`/campo/${campA}/adjuntos/devolucao/${id}`)
       await page.getByRole('button', { name: 'Eliminar Devolução' }).click()
-      await page.getByRole('button', { name: 'Eliminar' }).click()
+      await page.getByRole('button', { name: 'Eliminar', exact: true }).click()
       await page.waitForURL(`**/campo/${campA}/adjuntos`)
 
       expect(await dbDevolucao(id)).toBeNull()

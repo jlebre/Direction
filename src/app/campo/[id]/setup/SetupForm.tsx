@@ -10,7 +10,7 @@ import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import type { CampoPublico } from '@/types/shared'
 import { parseMoney } from '@/lib/utils'
-import { validatePin } from '@/actions/validatePin'
+import { clearCampFinancials } from '@/actions/dangerZone'
 import Link from 'next/link'
 
 interface DryRunResult {
@@ -47,8 +47,12 @@ export default function SetupForm({ campo, hasPin }: { campo: CampoPublico; hasP
   const [deleting, setDeleting] = useState(false)
 
   const CONFIRMACAO_TEXTO = 'APAGAR'
-  // PIN validado async em handleLimparFaturas; aqui só checamos texto e dry-run
+  // PIN revalidado no servidor em handleLimparFaturas (nunca só aqui); a
+  // Danger Zone fica indisponível por completo sem PIN configurado — ver
+  // src/actions/dangerZone.ts para o porquê.
   const dangerReady =
+    hasPin &&
+    dangerPin.length === 4 &&
     dangerConfirm === CONFIRMACAO_TEXTO &&
     dryRun !== null
 
@@ -93,33 +97,35 @@ export default function SetupForm({ campo, hasPin }: { campo: CampoPublico; hasP
 
   async function handleLimparFaturas() {
     if (!dangerReady || !dryRun) return
-    if (hasPin) {
-      const valid = await validatePin(campo.id, dangerPin)
-      if (!valid) { toast.error('PIN incorreto'); return }
+    // Danger Zone exige PIN configurado — sem isso, "escrever APAGAR" seria
+    // a única fricção possível para apagar tudo. `hasPin` vem do servidor
+    // (nunca confiar num valor do cliente para isto), mas a Server Action
+    // revalida de novo a existência e o valor do PIN, sempre.
+    if (!hasPin) {
+      toast.error('Este campo não tem PIN configurado — configura um PIN antes de usar a Danger Zone.')
+      return
     }
     setDeleting(true)
     try {
-      // 1. Apagar regularizacoes_nif (CASCADE de despesas, mas explícito para segurança)
-      await supabase.from('regularizacoes_nif').delete().eq('campo_id', campo.id)
+      // Fronteira de servidor (Fase 2.6) — a Danger Zone deixou de apagar
+      // diretamente do cliente. `clearCampFinancials` faz os 4 DELETEs numa
+      // única transação (RPC `danger_zone_clear_financials`, migration 043)
+      // e revalida o PIN no servidor antes de apagar nada.
+      const resultado = await clearCampFinancials({
+        campoId: campo.id,
+        confirmText: 'APAGAR',
+        pin: dangerPin,
+      })
+      if (resultado.error) throw new Error(resultado.error)
 
-      // 2. Apagar liquidacoes_nif (sem CASCADE de despesas — delete explícito obrigatório)
-      await supabase.from('liquidacoes_nif').delete().eq('campo_id', campo.id)
-
-      // 3. Apagar devoluções
-      const { error: devosError } = await supabase.from('devolucoes').delete().eq('campo_id', campo.id)
-      if (devosError) throw devosError
-
-      // 4. Apagar despesas (CASCADE elimina despesa_linhas automaticamente)
-      const { error: despesasError } = await supabase.from('despesas').delete().eq('campo_id', campo.id)
-      if (despesasError) throw despesasError
-
-      // 5. Apagar imagens do storage (faturas e comprovativos de devoluções — falha silenciosa)
-      if (dryRun.fotoPaths.length > 0) {
-        await supabase.storage.from('faturas').remove(dryRun.fotoPaths)
+      // Storage não é transacional com a BD — só remove depois de a
+      // transação da BD ter confirmado (nunca antes, nunca em paralelo).
+      if (resultado.fotoPaths && resultado.fotoPaths.length > 0) {
+        await supabase.storage.from('faturas').remove(resultado.fotoPaths)
       }
 
       toast.success(
-        `Dados financeiros apagados: ${dryRun.countDespesas} faturas, ${dryRun.countDevolucoes} devoluções, ${dryRun.countImagens} imagens.`
+        `Dados financeiros apagados: ${resultado.countDespesas} faturas, ${resultado.countDevolucoes} devoluções, ${resultado.fotoPaths?.length ?? 0} imagens.`
       )
       setDangerOpen(false)
       setDangerConfirm('')
@@ -339,73 +345,85 @@ export default function SetupForm({ campo, hasPin }: { campo: CampoPublico; hasP
                   <p className="text-red-600 font-semibold">Esta acção não pode ser desfeita.</p>
                 </div>
 
-                {/* Preview / dry-run */}
-                <div>
-                  <Button
-                    type="button"
-                    variant="outline"
-                    size="sm"
-                    onClick={runDryRun}
-                    disabled={dryRunLoading}
-                    className="w-full border-gray-300 text-gray-600 text-xs"
-                  >
-                    {dryRunLoading ? 'A calcular...' : '🔍 Preview — ver o que será apagado'}
-                  </Button>
+                {!hasPin ? (
+                  <div className="bg-amber-50 border border-amber-200 rounded-xl p-3 text-xs text-amber-800">
+                    <p className="font-bold mb-1">Danger Zone desativada</p>
+                    <p>
+                      Este campo não tem PIN configurado. Configura um PIN na secção acima e guarda as
+                      alterações — sem PIN, não há forma de confirmar quem está a apagar os dados.
+                    </p>
+                  </div>
+                ) : (
+                  <>
+                    {/* Preview / dry-run */}
+                    <div>
+                      <Button
+                        type="button"
+                        variant="outline"
+                        size="sm"
+                        onClick={runDryRun}
+                        disabled={dryRunLoading}
+                        className="w-full border-gray-300 text-gray-600 text-xs"
+                      >
+                        {dryRunLoading ? 'A calcular...' : '🔍 Preview — ver o que será apagado'}
+                      </Button>
 
-                  {dryRun !== null && (
-                    <div className="mt-3 bg-red-50 border border-red-200 rounded-xl p-3 space-y-1 text-xs">
-                      <p className="font-bold text-red-700 mb-2">O que vai ser apagado:</p>
-                      <p className="text-red-600">🧾 {dryRun.countDespesas} fatura(s) / despesa(s)</p>
-                      <p className="text-red-600">↩️ {dryRun.countDevolucoes} devolução(ões)</p>
-                      <p className="text-red-600">📋 {dryRun.countRegularizacoes} regularização(ões) NIF</p>
-                      <p className="text-red-600">📷 {dryRun.countImagens} imagem(ns) no storage</p>
-                      {dryRun.countDespesas === 0 && dryRun.countDevolucoes === 0 && (
-                        <p className="text-green-600 mt-2 font-medium">✓ Não há dados financeiros para este campo.</p>
+                      {dryRun !== null && (
+                        <div className="mt-3 bg-red-50 border border-red-200 rounded-xl p-3 space-y-1 text-xs">
+                          <p className="font-bold text-red-700 mb-2">O que vai ser apagado:</p>
+                          <p className="text-red-600">🧾 {dryRun.countDespesas} fatura(s) / despesa(s)</p>
+                          <p className="text-red-600">↩️ {dryRun.countDevolucoes} devolução(ões)</p>
+                          <p className="text-red-600">📋 {dryRun.countRegularizacoes} regularização(ões) NIF</p>
+                          <p className="text-red-600">📷 {dryRun.countImagens} imagem(ns) no storage</p>
+                          {dryRun.countDespesas === 0 && dryRun.countDevolucoes === 0 && (
+                            <p className="text-green-600 mt-2 font-medium">
+                              ✓ Não há dados financeiros para este campo.
+                            </p>
+                          )}
+                        </div>
                       )}
                     </div>
-                  )}
-                </div>
 
-                {/* Confirmação */}
-                <div className="space-y-3">
-                  {hasPin && (
-                    <div className="space-y-1">
-                      <Label className="text-xs text-red-700">PIN do campo</Label>
-                      <Input
-                        type="password"
-                        inputMode="numeric"
-                        maxLength={4}
-                        placeholder="• • • •"
-                        value={dangerPin}
-                        onChange={(e) => setDangerPin(e.target.value.replace(/\D/g, ''))}
-                        className="max-w-32 border-red-300"
-                      />
+                    {/* Confirmação */}
+                    <div className="space-y-3">
+                      <div className="space-y-1">
+                        <Label className="text-xs text-red-700">PIN do campo</Label>
+                        <Input
+                          type="password"
+                          inputMode="numeric"
+                          maxLength={4}
+                          placeholder="• • • •"
+                          value={dangerPin}
+                          onChange={(e) => setDangerPin(e.target.value.replace(/\D/g, ''))}
+                          className="max-w-32 border-red-300"
+                        />
+                      </div>
+
+                      <div className="space-y-1">
+                        <Label className="text-xs text-red-700">
+                          Escreve <span className="font-mono font-bold">APAGAR</span> para confirmar
+                        </Label>
+                        <Input
+                          type="text"
+                          value={dangerConfirm}
+                          onChange={(e) => setDangerConfirm(e.target.value)}
+                          placeholder="APAGAR"
+                          className="border-red-300 font-mono"
+                        />
+                      </div>
                     </div>
-                  )}
 
-                  <div className="space-y-1">
-                    <Label className="text-xs text-red-700">
-                      Escreve <span className="font-mono font-bold">APAGAR</span> para confirmar
-                    </Label>
-                    <Input
-                      type="text"
-                      value={dangerConfirm}
-                      onChange={(e) => setDangerConfirm(e.target.value)}
-                      placeholder="APAGAR"
-                      className="border-red-300 font-mono"
-                    />
-                  </div>
-                </div>
-
-                <Button
-                  type="button"
-                  onClick={handleLimparFaturas}
-                  disabled={!dangerReady || deleting}
-                  className="w-full bg-red-600 hover:bg-red-700 text-white disabled:opacity-40"
-                >
-                  <AlertTriangle className="h-4 w-4 mr-2" />
-                  {deleting ? 'A apagar...' : 'Apagar dados financeiros'}
-                </Button>
+                    <Button
+                      type="button"
+                      onClick={handleLimparFaturas}
+                      disabled={!dangerReady || deleting}
+                      className="w-full bg-red-600 hover:bg-red-700 text-white disabled:opacity-40"
+                    >
+                      <AlertTriangle className="h-4 w-4 mr-2" />
+                      {deleting ? 'A apagar...' : 'Apagar dados financeiros'}
+                    </Button>
+                  </>
+                )}
               </div>
             )}
           </div>
