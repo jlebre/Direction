@@ -15,6 +15,10 @@ export default defineConfig({
   test: {
     environment: 'node',
     include: ['tests/**/*.test.ts'],
+    // 5s (default) é apertado para testes que fazem 2-3 round-trips reais
+    // contra produção em sequência (seed → tentativa → verificação por
+    // admin) — ver tests/security/role-matrix.test.ts.
+    testTimeout: 15000,
     // Segurança > velocidade: os testes de RLS/segurança podem fazer chamadas
     // de rede reais (ver tests/security/env.ts) — sem paralelismo agressivo,
     // para nunca sobrecarregar/confundir o ambiente-alvo com corridas em paralelo.

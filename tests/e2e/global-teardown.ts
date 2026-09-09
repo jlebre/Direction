@@ -6,7 +6,9 @@
 import fs from 'node:fs'
 import { createClient } from '@supabase/supabase-js'
 import { PRODUCTION_URL, PRODUCTION_ANON_KEY } from '../security/env'
+import { teardownFixtures, findOrphanedTestFixtures } from '../security/fixtures'
 import { teardownE2ECampFixtures, findOrphanedE2ECamps } from './lib/e2e-fixtures'
+import { runSql } from '../security/sql'
 import { STATE_DIR, MANIFEST_PATH, type E2EManifest } from './global-setup'
 
 // Tem de replicar exactamente `getCampoSlug()` (src/lib/adjuntos/supabase-storage.ts)
@@ -48,11 +50,23 @@ async function globalTeardown() {
 
   teardownE2ECampFixtures(manifest)
 
-  const orphans = findOrphanedE2ECamps()
-  if (orphans.length > 0) {
+  // Fixtures de role (tests/security/fixtures.ts) — nomes não vêm no
+  // manifest (só os IDs), lidos aqui só para limpar Storage (a BD é
+  // limpa por teardownFixtures, que apaga por ID, nunca por nome).
+  const roleCampRows = runSql(
+    `select id::text as id, nome from campos where id in ('${manifest.roleFixtures.camps.campA}','${manifest.roleFixtures.camps.campB}');`
+  )
+  for (const row of roleCampRows) {
+    await cleanupStorageFolder(slugOf(row.nome as string))
+  }
+  await teardownFixtures(manifest.roleFixtures)
+
+  const orphanCamps = findOrphanedE2ECamps()
+  const orphanRoleFixtures = findOrphanedTestFixtures()
+  if (orphanCamps.length > 0 || orphanRoleFixtures.camps.length > 0 || orphanRoleFixtures.users.length > 0) {
     throw new Error(
-      `[e2e global-teardown] sobraram campos [TEST] E2E depois do teardown — intervenção manual necessária: ` +
-        JSON.stringify(orphans)
+      `[e2e global-teardown] sobraram fixtures [TEST] depois do teardown — intervenção manual necessária: ` +
+        JSON.stringify({ orphanCamps, orphanRoleFixtures })
     )
   }
 
