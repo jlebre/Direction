@@ -9,6 +9,7 @@ const NAV_ITEMS = [
   { href: '/admin/locais', label: 'Locais' },
   { href: '/admin/valores-referencia', label: 'Valores Ref.' },
   { href: '/admin/memberships', label: 'Utilizadores (V2)' },
+  { href: '/admin/campo-access', label: 'Links de acesso (V2)' },
 ]
 
 export function AdminNav() {

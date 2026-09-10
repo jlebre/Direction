@@ -1,4 +1,3 @@
-import { createSessionServerClient } from '@/lib/supabase/session-server'
 import { notFound } from 'next/navigation'
 import Link from 'next/link'
 import type { CampoPublico } from '@/types/shared'
@@ -7,6 +6,7 @@ import { getCodeColor } from '@/lib/adjuntos/codes'
 import { getSignedPhotoUrl } from '@/lib/adjuntos/supabase-storage'
 import DespesaActions from './DespesaActions'
 import { DespesaLinhasClient } from '@/components/adjuntos/DespesaLinhasClient'
+import { resolveActor, actorCanAccessCamp } from '@/lib/auth/actor'
 
 export const dynamic = 'force-dynamic'
 
@@ -16,18 +16,27 @@ export default async function DespesaDetailPage({
   params: Promise<{ id: string; despesaId: string }>
 }) {
   const { id, despesaId } = await params
-  const supabase = await createSessionServerClient()
+  const actor = await resolveActor()
+  if (actor.actorType === 'camp_access' && !actorCanAccessCamp(actor, id)) notFound()
+  const supabase = actor.supabase
+  const isCampAccess = actor.actorType === 'camp_access'
 
-  const [{ data: campo }, { data: despesa }, { data: linhas }] = await Promise.all([
-    supabase.from('campos').select('*').eq('id', id).single(),
-    supabase.from('despesas').select('*').eq('id', despesaId).eq('campo_id', id).single(),
-    supabase
-      .from('despesa_linhas')
-      .select('*')
-      .eq('despesa_id', despesaId)
-      .order('confianca')
-      .order('preco_total', { ascending: false }),
-  ])
+  const [{ data: campo }, { data: despesa }, { data: linhas }] = isCampAccess
+    ? await Promise.all([
+        supabase.rpc('camp_access_get_campo', { p_link_id: actor.linkId }).then((r) => ({ data: (r.data as unknown[])?.[0] ?? null })),
+        supabase.rpc('camp_access_get_despesa', { p_link_id: actor.linkId, p_despesa_id: despesaId }).then((r) => ({ data: (r.data as unknown[])?.[0] ?? null })),
+        supabase.rpc('camp_access_list_despesa_linhas', { p_link_id: actor.linkId, p_despesa_id: despesaId }),
+      ])
+    : await Promise.all([
+        supabase.from('campos').select('*').eq('id', id).single(),
+        supabase.from('despesas').select('*').eq('id', despesaId).eq('campo_id', id).single(),
+        supabase
+          .from('despesa_linhas')
+          .select('*')
+          .eq('despesa_id', despesaId)
+          .order('confianca')
+          .order('preco_total', { ascending: false }),
+      ])
 
   if (!campo || !despesa) notFound()
 
@@ -37,6 +46,7 @@ export default async function DespesaDetailPage({
   const dl = (linhas ?? []) as DespesaLinha[]
   const codeColor = getCodeColor(d.codigo)
   const photoUrl = d.foto_path ? await getSignedPhotoUrl(supabase, d.foto_path) : null
+  const hasPin = isCampAccess ? false : !!pin
 
   return (
     <main className="min-h-screen pb-8">
@@ -147,7 +157,7 @@ export default async function DespesaDetailPage({
         >
           Editar Despesa
         </Link>
-        <DespesaActions despesa={d} campo={c} hasPin={!!pin} />
+        <DespesaActions despesa={d} campo={c} hasPin={hasPin} />
       </div>
     </main>
   )

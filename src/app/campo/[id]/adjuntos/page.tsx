@@ -1,4 +1,3 @@
-import { createSessionServerClient } from '@/lib/supabase/session-server'
 import { notFound, redirect } from 'next/navigation'
 import Link from 'next/link'
 import type { Campo } from '@/types/shared'
@@ -8,14 +7,25 @@ import DespesaItem from '@/components/adjuntos/DespesaItem'
 import BudgetBar from '@/components/adjuntos/BudgetBar'
 import BolsaNIF from '@/components/adjuntos/BolsaNIF'
 import ExportButton from './ExportButton'
+import { resolveActor, actorCanAccessCamp } from '@/lib/auth/actor'
 
 export const dynamic = 'force-dynamic'
 
 export default async function AdjuntosDashboard({ params }: { params: Promise<{ id: string }> }) {
   const { id } = await params
-  const supabase = await createSessionServerClient()
 
-  const { data: campo } = await supabase.from('campos').select('*').eq('id', id).single()
+  // FASE 2 (Camp Access Links) — uma sessão de camp_access só lê o SEU
+  // campo, nunca o do URL sem mais. staff/anon-legacy continuam pela RLS
+  // normal (ver src/lib/supabase/session-server.ts) — esta verificação é a
+  // camada extra que falta para quem tem camp_access.
+  const actor = await resolveActor()
+  if (actor.actorType === 'camp_access' && !actorCanAccessCamp(actor, id)) notFound()
+  const supabase = actor.supabase
+
+  const isCampAccess = actor.actorType === 'camp_access'
+  const { data: campo } = isCampAccess
+    ? { data: (await supabase.rpc('camp_access_get_campo', { p_link_id: actor.linkId }))?.data?.[0] ?? null }
+    : await supabase.from('campos').select('*').eq('id', id).single()
 
   if (!campo) notFound()
   if (!campo.setup_completo) redirect(`/campo/${id}/setup`)
@@ -23,28 +33,37 @@ export default async function AdjuntosDashboard({ params }: { params: Promise<{ 
   const c = campo as Campo
   const ano = c.ano ?? 2026
 
-  const [{ data: despesas }, { data: regularizacoes }, { data: devolucoes }, { data: dbValores }] = await Promise.all([
-    supabase
-      .from('despesas')
-      .select('id, campo_id, numero_recibo, data, valor, descricao, codigo, codigo_descricao, tipo, nif_confirmado, foto_path, is_regularizacao_nif, created_at')
-      .eq('campo_id', id)
-      .order('numero_recibo', { ascending: false }),
-    supabase
-      .from('regularizacoes_nif')
-      .select('id, campo_id, despesa_original_id, despesa_regularizacao_id, valor, created_at')
-      .eq('campo_id', id),
-    supabase
-      .from('devolucoes')
-      .select('id, campo_id, numero_devolucao, data, valor, descricao, codigo, codigo_descricao')
-      .eq('campo_id', id)
-      .order('numero_devolucao', { ascending: false }),
-    supabase.from('valores_referencia').select('codigo, valor').eq('escalao', c.escalao).eq('ano', ano),
-  ])
+  const [{ data: despesas }, { data: regularizacoes }, { data: devolucoes }, { data: dbValores }] = isCampAccess
+    ? await Promise.all([
+        supabase.rpc('camp_access_list_despesas', { p_link_id: actor.linkId }),
+        supabase.rpc('camp_access_list_regularizacoes', { p_link_id: actor.linkId }),
+        supabase.rpc('camp_access_list_devolucoes', { p_link_id: actor.linkId }),
+        supabase.from('valores_referencia').select('codigo, valor').eq('escalao', c.escalao).eq('ano', ano),
+      ])
+    : await Promise.all([
+        supabase
+          .from('despesas')
+          .select('id, campo_id, numero_recibo, data, valor, descricao, codigo, codigo_descricao, tipo, nif_confirmado, foto_path, is_regularizacao_nif, created_at')
+          .eq('campo_id', id)
+          .order('numero_recibo', { ascending: false }),
+        supabase
+          .from('regularizacoes_nif')
+          .select('id, campo_id, despesa_original_id, despesa_regularizacao_id, valor, created_at')
+          .eq('campo_id', id),
+        supabase
+          .from('devolucoes')
+          .select('id, campo_id, numero_devolucao, data, valor, descricao, codigo, codigo_descricao')
+          .eq('campo_id', id)
+          .order('numero_devolucao', { ascending: false }),
+        supabase.from('valores_referencia').select('codigo, valor').eq('escalao', c.escalao).eq('ano', ano),
+      ])
 
   const cor = ESCALAO_COR[c.escalao] ?? { bg: '#B85042', text: '#5c1f15', light: '#FDECEA', border: '#F4A090' }
-  const ds = (despesas ?? []) as Despesa[]
+  // RPCs de camp_access (SETOF) não garantem ordem — ordenar sempre aqui em
+  // vez de depender do ORDER BY do caminho staff/RLS.
+  const ds = ((despesas ?? []) as Despesa[]).sort((a, b) => b.numero_recibo - a.numero_recibo)
   const regs = (regularizacoes ?? []) as RegularizacaoNif[]
-  const devs = (devolucoes ?? []) as Devolucao[]
+  const devs = ((devolucoes ?? []) as Devolucao[]).sort((a, b) => b.numero_devolucao - a.numero_devolucao)
 
   // Faturas de regularização não contam para o saldo (são documentos NIF, não novos custos)
   const dsFinanceiras = ds.filter((d) => !d.is_regularizacao_nif)

@@ -22,6 +22,7 @@
 import { z } from 'zod'
 import { createSessionServerClient } from '@/lib/supabase/session-server'
 import { revalidatePath } from 'next/cache'
+import { resolveActor, actorCanAccessCamp } from '@/lib/auth/actor'
 
 const linhaSchema = z.object({
   texto_linha_original: z.string(),
@@ -84,6 +85,27 @@ export async function createDespesa(input: CreateDespesaInput): Promise<CreateDe
     return { error: `Dados inválidos: ${parsed.error.issues.map((i) => i.message).join('; ')}` }
   }
   const d = parsed.data
+
+  // FASE 2 (Camp Access Links) — uma sessão de camp_access nunca escreve
+  // via RLS normal (não tem auth.uid()); passa sempre pela RPC
+  // SECURITY DEFINER dedicada, que revalida o link internamente. Staff e
+  // anon-legacy continuam exactamente no caminho de sempre, abaixo.
+  const actor = await resolveActor()
+  if (actor.actorType === 'camp_access') {
+    if (!actorCanAccessCamp(actor, d.campoId)) return { error: 'Sem permissão para este campo.' }
+    const { data, error } = await actor.supabase.rpc('camp_access_create_despesa', {
+      p_link_id: actor.linkId,
+      p_payload: d,
+    })
+    if (error || !data || data.length === 0) return { error: error?.message ?? 'Não foi possível registar a despesa.' }
+    const row = data[0] as { despesa_id: string; numero_recibo: number }
+    // despesa_linhas (linhas de produto OCR) fica fora do âmbito desta
+    // primeira ligação de Camp Access Links — o fluxo manual do Adjunto
+    // não as usa; só o pipeline de IA (ainda não construído) as gera.
+    revalidatePath(`/campo/${d.campoId}/adjuntos`)
+    return { despesaId: row.despesa_id, numeroRecibo: row.numero_recibo }
+  }
+
   const supabase = await createSessionServerClient()
 
   let despesaId: string | null = null
@@ -178,6 +200,21 @@ export async function updateDespesa(input: UpdateDespesaInput): Promise<{ error?
     return { error: `Dados inválidos: ${parsed.error.issues.map((i) => i.message).join('; ')}` }
   }
   const d = parsed.data
+
+  const actor = await resolveActor()
+  if (actor.actorType === 'camp_access') {
+    if (!actorCanAccessCamp(actor, d.campoId)) return { error: 'Sem permissão para este campo.' }
+    const { error } = await actor.supabase.rpc('camp_access_update_despesa', {
+      p_link_id: actor.linkId,
+      p_despesa_id: d.despesaId,
+      p_payload: d,
+    })
+    if (error) return { error: error.message }
+    revalidatePath(`/campo/${d.campoId}/adjuntos`)
+    revalidatePath(`/campo/${d.campoId}/adjuntos/despesa/${d.despesaId}`)
+    return {}
+  }
+
   const supabase = await createSessionServerClient()
 
   const { error } = await supabase
@@ -209,6 +246,19 @@ export async function deleteDespesa(input: z.input<typeof deleteDespesaSchema>):
   const parsed = deleteDespesaSchema.safeParse(input)
   if (!parsed.success) return { error: 'Dados inválidos.' }
   const d = parsed.data
+
+  const actor = await resolveActor()
+  if (actor.actorType === 'camp_access') {
+    if (!actorCanAccessCamp(actor, d.campoId)) return { error: 'Sem permissão para este campo.' }
+    const { error } = await actor.supabase.rpc('camp_access_delete_despesa', {
+      p_link_id: actor.linkId,
+      p_despesa_id: d.despesaId,
+    })
+    if (error) return { error: error.message }
+    revalidatePath(`/campo/${d.campoId}/adjuntos`)
+    return {}
+  }
+
   const supabase = await createSessionServerClient()
 
   const { error } = await supabase.from('despesas').delete().eq('id', d.despesaId)
