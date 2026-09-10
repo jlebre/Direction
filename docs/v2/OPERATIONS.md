@@ -4,7 +4,7 @@ Status: **PROPOSED.** Objetivo explícito: uma pessoa diferente do programador o
 
 ## Backups
 - **Base:** `npm run backup` (Fase 0.5) já existe, corre localmente, produz um ZIP validado com checksum. Recomendado: correr antes de qualquer migration e semanalmente durante a época de campos.
-- **Confirmado em produção (fecho da Fase 2):** corrido imediatamente antes da migration 043 (Danger Zone) e de novo no fecho da Fase 2 — `overall_validation: PASS` nas duas vezes, contagens de BD e Storage idênticas entre corridas (nenhum dado real alterado pelo trabalho da Fase 2).
+- **Confirmado em produção (fecho da Fase 2, incl. 2.8):** corrido imediatamente antes da migration 043 (Danger Zone), antes da 044 (isolamento de Storage — mais sensível, altera policies de escrita/leitura do bucket) e de novo no fecho final — `overall_validation: PASS` em todas as corridas, 387/387 objectos e as mesmas contagens de despesas/devoluções sempre (nenhum dado real alterado ou perdido pelo trabalho da Fase 2).
 - **Evolução natural (não implementar agora):** agendar via GitHub Actions/cron gerido, a escrever para um destino fora do portátil de quem o corre (ex. bucket privado dedicado, não o `faturas`) — o backup de hoje já resolve "existe uma cópia", falta "a cópia não depende de um portátil específico".
 - Reter pelo menos: o backup de fim de cada campo, e um backup mensal durante a época.
 
