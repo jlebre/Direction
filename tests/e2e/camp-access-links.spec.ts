@@ -10,8 +10,11 @@
  * campos [TEST] E2E Camp A/B de outras specs, para o link gerado aqui não
  * poder ser confundido com sessões de outro teste.
  */
+import path from 'node:path'
 import { createHash, randomBytes } from 'node:crypto'
 import { test, expect } from '@playwright/test'
+
+const SAMPLE_IMAGE = path.join(__dirname, 'fixtures', 'sample-invoice.png')
 import { createFixtures, teardownFixtures, type CreatedFixtures } from '../security/fixtures'
 import { PRODUCTION_URL, PRODUCTION_ANON_KEY } from '../security/env'
 import { assertAuthorizedProject } from './lib/guardrails'
@@ -111,11 +114,22 @@ test.describe('Camp Access Links — bootstrap real', () => {
 
     await page.goto(`/campo/${fixtures.camps.campA}/adjuntos/nova-despesa`)
     await expect(page.getByRole('heading', { name: 'Nova Despesa' })).toBeVisible()
-    await page.locator('input[type=date]').fill('2026-07-05')
+
+    // Passo 1 — foto (obrigatória para avançar nesta wizard). Galeria = 2º input[type=file].
+    await page.locator('input[type=file]').nth(1).setInputFiles(SAMPLE_IMAGE)
+    await page.getByRole('button', { name: /Seguinte →|Ignorar OCR e continuar →/ }).click()
+
+    // Passo 2 — valor/descrição/data.
     await page.getByPlaceholder('0,00').fill('9,90')
     await page.getByPlaceholder('Ex: Compras Lidl para jantar de sábado').fill('[TEST] via camp access link')
+    await page.getByRole('button', { name: 'Seguinte →' }).click()
+
+    // Passo 3 — categoria.
     await page.getByText('Alimentação', { exact: true }).click()
     await page.getByText('Compras Gerais', { exact: true }).click()
+    await page.getByRole('button', { name: 'Seguinte →' }).click()
+
+    // Passo 4 — confirmação.
     await page.getByRole('button', { name: 'Registar Despesa' }).click()
     await page.waitForURL(new RegExp(`/campo/${fixtures.camps.campA}/adjuntos$`), { timeout: 15_000 })
     await expect(page.getByText('[TEST] via camp access link')).toBeVisible()

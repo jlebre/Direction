@@ -154,7 +154,7 @@ describe.skipIf(!cfg)('Camp Access Links (RPCs)', () => {
       const { linkId } = await createLinkFor(campA)
       const { data: created, error: createErr } = await anon.rpc('camp_access_create_despesa', {
         p_link_id: linkId,
-        p_payload: { data: '2026-07-01', valor: 12.5, descricao: '[TEST] via link', codigo: '3.1.1', codigo_descricao: 'Alimentação | Compras Gerais', nifConfirmado: false, fotoPath: null, ocrStatus: 'nenhum', ocrTexto: null, ocrFornecedor: null, ocrTotal: null, ocrData: null, origemDados: 'manual', nifVisivel: false, qrRaw: null, qrTotal: null, qrData: null, qrNifEmitente: null, qrNifAdquirente: null, qrNumeroDocumento: null, qrAtcud: null, qrTipoDocumento: null },
+        p_payload: { data: '2026-07-01', valor: 12.5, descricao: '[TEST] via link', codigo: '3.1.1', codigoDescricao: 'Alimentação | Compras Gerais', nifConfirmado: false, fotoPath: null, ocrStatus: 'nenhum', ocrTexto: null, ocrFornecedor: null, ocrTotal: null, ocrData: null, origemDados: 'manual', nifVisivel: false, qrRaw: null, qrTotal: null, qrData: null, qrNifEmitente: null, qrNifAdquirente: null, qrNumeroDocumento: null, qrAtcud: null, qrTipoDocumento: null },
       })
       expect(createErr).toBeFalsy()
       const despesaId = (created as { despesa_id: string }[])[0].despesa_id
@@ -165,7 +165,7 @@ describe.skipIf(!cfg)('Camp Access Links (RPCs)', () => {
       const { error: updateErr } = await anon.rpc('camp_access_update_despesa', {
         p_link_id: linkId,
         p_despesa_id: despesaId,
-        p_payload: { valor: 20, descricao: '[TEST] editado', data: '2026-07-01', codigo: '3.1.1', codigo_descricao: 'Alimentação | Compras Gerais', nifConfirmado: false, fotoPath: null },
+        p_payload: { valor: 20, descricao: '[TEST] editado', data: '2026-07-01', codigo: '3.1.1', codigoDescricao: 'Alimentação | Compras Gerais', nifConfirmado: false, fotoPath: null },
       })
       expect(updateErr).toBeFalsy()
       const { data: afterUpdate } = await fixtures!.clients.admin.from('despesas').select('valor').eq('id', despesaId).single()
@@ -181,7 +181,7 @@ describe.skipIf(!cfg)('Camp Access Links (RPCs)', () => {
       const { linkId: linkA } = await createLinkFor(campA)
       const { data: despesaB, error: seedErr } = await fixtures!.clients.admin.rpc('camp_access_create_despesa', {
         p_link_id: (await createLinkFor(campB)).linkId,
-        p_payload: { data: '2026-07-01', valor: 5, descricao: '[TEST] Camp B', codigo: '3.1.1', codigo_descricao: 'x', nifConfirmado: false, fotoPath: null, ocrStatus: 'nenhum', ocrTexto: null, ocrFornecedor: null, ocrTotal: null, ocrData: null, origemDados: 'manual', nifVisivel: false, qrRaw: null, qrTotal: null, qrData: null, qrNifEmitente: null, qrNifAdquirente: null, qrNumeroDocumento: null, qrAtcud: null, qrTipoDocumento: null },
+        p_payload: { data: '2026-07-01', valor: 5, descricao: '[TEST] Camp B', codigo: '3.1.1', codigoDescricao: 'x', nifConfirmado: false, fotoPath: null, ocrStatus: 'nenhum', ocrTexto: null, ocrFornecedor: null, ocrTotal: null, ocrData: null, origemDados: 'manual', nifVisivel: false, qrRaw: null, qrTotal: null, qrData: null, qrNifEmitente: null, qrNifAdquirente: null, qrNumeroDocumento: null, qrAtcud: null, qrTipoDocumento: null },
       })
       expect(seedErr).toBeFalsy()
       const despesaBId = (despesaB as { despesa_id: string }[])[0].despesa_id
@@ -192,7 +192,7 @@ describe.skipIf(!cfg)('Camp Access Links (RPCs)', () => {
       const { error: updateErr } = await anon.rpc('camp_access_update_despesa', {
         p_link_id: linkA,
         p_despesa_id: despesaBId,
-        p_payload: { valor: 999, descricao: '[TEST] spoof', data: '2026-07-01', codigo: 'x', codigo_descricao: 'x', nifConfirmado: false, fotoPath: null },
+        p_payload: { valor: 999, descricao: '[TEST] spoof', data: '2026-07-01', codigo: 'x', codigoDescricao: 'x', nifConfirmado: false, fotoPath: null },
       })
       expect(updateErr).toBeTruthy()
 
@@ -207,7 +207,7 @@ describe.skipIf(!cfg)('Camp Access Links (RPCs)', () => {
       const fakeLinkId = '00000000-0000-0000-0000-000000000000'
       const { error } = await anon.rpc('camp_access_create_despesa', {
         p_link_id: fakeLinkId,
-        p_payload: { data: '2026-07-01', valor: 1, descricao: null, codigo: 'x', codigo_descricao: 'x', nifConfirmado: false, fotoPath: null, ocrStatus: 'nenhum', ocrTexto: null, ocrFornecedor: null, ocrTotal: null, ocrData: null, origemDados: 'manual', nifVisivel: false, qrRaw: null, qrTotal: null, qrData: null, qrNifEmitente: null, qrNifAdquirente: null, qrNumeroDocumento: null, qrAtcud: null, qrTipoDocumento: null },
+        p_payload: { data: '2026-07-01', valor: 1, descricao: null, codigo: 'x', codigoDescricao: 'x', nifConfirmado: false, fotoPath: null, ocrStatus: 'nenhum', ocrTexto: null, ocrFornecedor: null, ocrTotal: null, ocrData: null, origemDados: 'manual', nifVisivel: false, qrRaw: null, qrTotal: null, qrData: null, qrNifEmitente: null, qrNifAdquirente: null, qrNumeroDocumento: null, qrAtcud: null, qrTipoDocumento: null },
       })
       expect(error).toBeTruthy()
     })
