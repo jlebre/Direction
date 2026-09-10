@@ -1,22 +1,17 @@
 /**
- * FASE 2 (fecho) — matriz comportamental de Storage (bucket `faturas`),
- * pedida explicitamente antes de considerar a Fase 2 concluída: "A
- * segurança deve vir da Storage RLS, não da UI."
+ * FASE 2.8 (fecho — isolamento de Storage) — matriz comportamental do bucket
+ * `faturas`, agora testando o comportamento REAL depois da migration 044:
+ * bucket privado, `storage_slug` por campo, policies SELECT/INSERT/UPDATE/
+ * DELETE camp-scoped (ver supabase/migrations/044_storage_isolation.sql).
  *
- * Resultado real medido aqui (introspecção confirmada em `pg_policies`):
- * as policies do bucket `faturas` são `bucket_id = 'faturas'` para
- * `{public}` em SELECT/INSERT/DELETE — SEM qualquer segmentação por
- * caminho/campo. Isto é a consequência direta e já documentada da decisão
- * "Opção A — manter público" da subfase 2.5 (ver docs/v2/MIGRATION_STRATEGY.md):
- * o bucket serve URLs públicas sem passar pela RLS, e por isso não há
- * meio-termo por campo enquanto isso for verdade — nem para leitura, nem
- * (achado desta suite) para escrita.
+ * Substitui a versão anterior desta suite, que documentava (via
+ * `it.fails(...)`) que o bucket não isolava nada — essa suite passava por
+ * confirmar o gap; esta passa por confirmar que o gap foi fechado.
  *
- * Os casos que a matriz pedida pelo utilizador espera como DENY mas que
- * hoje são ALLOW usam `it.fails(...)`, exactamente como
- * `anon-read-baseline.test.ts` já faz — sinaliza "conhecido, não é uma
- * regressão desta suite, aguarda a privatização do bucket (signed URLs)",
- * sem maquilhar o resultado real.
+ * As fixtures `campA`/`campB` de `tests/security/fixtures.ts` NÃO têm
+ * `legacy_anon_access` (default `false`) — por isso testam o limite real e
+ * definitivo (camp_membership), não a exceção legacy que os 11 campos reais
+ * ainda usam hoje.
  */
 import { afterAll, beforeAll, describe, expect, it } from 'vitest'
 import { anonClient, createFixtures, findOrphanedTestFixtures, teardownFixtures, type CreatedFixtures } from './fixtures'
@@ -26,16 +21,6 @@ import type { SupabaseClient } from '@supabase/supabase-js'
 const hasProdConfig = Boolean(PRODUCTION_URL && PRODUCTION_ANON_KEY)
 const dedicatedTestEnv = getTestSupabaseConfig()
 const cfg = dedicatedTestEnv ?? (hasProdConfig ? { url: PRODUCTION_URL!, anonKey: PRODUCTION_ANON_KEY!, serviceRoleKey: undefined } : null)
-
-function slugOf(nome: string): string {
-  // Réplica de getCampoSlug() (src/lib/adjuntos/supabase-storage.ts).
-  return nome
-    .toLowerCase()
-    .normalize('NFD')
-    .replace(/[̀-ͯ]/g, '')
-    .replace(/\s+/g, '-')
-    .replace(/[^a-z0-9-]/g, '')
-}
 
 afterAll(() => {
   if (!cfg) return
@@ -47,38 +32,35 @@ afterAll(() => {
   }
 })
 
-describe.skipIf(!cfg)('Role matrix — Storage (bucket faturas)', () => {
+describe.skipIf(!cfg)('Role matrix — Storage (bucket faturas, privado desde a migration 044)', () => {
   let fixtures: CreatedFixtures | undefined
   let anon: SupabaseClient
   let slugA: string
   let slugB: string
-  const uploaded: string[] = [] // todos os paths criados por esta suite — limpos no afterAll, sempre
 
   beforeAll(async () => {
     anon = anonClient(cfg!)
     fixtures = await createFixtures(cfg!)
 
-    // fixtures.ts não devolve o nome do campo (só o id) — lê-lo para
-    // calcular o slug real (inclui o runId gerado por createFixtures).
+    // storage_slug é preenchido automaticamente pela trigger da migration
+    // 044 — lê-lo em vez de recalcular, para o teste depender exactamente
+    // do mesmo valor que as policies usam.
     const { runSql } = await import('./sql')
-    const rowsA = runSql(`select nome from campos where id = '${fixtures.camps.campA}';`)
-    const rowsB = runSql(`select nome from campos where id = '${fixtures.camps.campB}';`)
-    slugA = slugOf(rowsA[0].nome as string)
-    slugB = slugOf(rowsB[0].nome as string)
+    const rowsA = runSql(`select storage_slug from campos where id = '${fixtures.camps.campA}';`)
+    const rowsB = runSql(`select storage_slug from campos where id = '${fixtures.camps.campB}';`)
+    slugA = rowsA[0].storage_slug as string
+    slugB = rowsB[0].storage_slug as string
+    expect(slugA).toBeTruthy()
+    expect(slugB).toBeTruthy()
 
     // Baseline: um ficheiro em cada campo, feito por admin (ground truth).
     const body = new Blob(['[TEST] fixture'], { type: 'text/plain' })
-    const pathA = `${slugA}/baseline.txt`
-    const pathB = `${slugB}/baseline.txt`
-    await fixtures.clients.admin.storage.from('faturas').upload(pathA, body, { upsert: true })
-    await fixtures.clients.admin.storage.from('faturas').upload(pathB, body, { upsert: true })
-    uploaded.push(pathA, pathB)
+    await fixtures.clients.admin.storage.from('faturas').upload(`${slugA}/baseline.txt`, body, { upsert: true })
+    await fixtures.clients.admin.storage.from('faturas').upload(`${slugB}/baseline.txt`, body, { upsert: true })
   }, 30000)
 
   afterAll(async () => {
-    // Limpeza de Storage SEMPRE primeiro (não é cascata da BD) — remove
-    // TUDO o que esta suite possa ter criado nas duas pastas, mesmo o que
-    // "não devia" ter sido possível (é precisamente isso que a suite mede).
+    // Limpeza de Storage SEMPRE primeiro (não é cascata da BD).
     if (fixtures) {
       const admin = fixtures.clients.admin
       for (const slug of [slugA, slugB]) {
@@ -91,25 +73,33 @@ describe.skipIf(!cfg)('Role matrix — Storage (bucket faturas)', () => {
     }
   }, 30000)
 
-  function track(path: string) {
-    uploaded.push(path)
-    return path
-  }
-
-  // ── O que É esperado e É verdade hoje (sem it.fails) ──────────────────
-  describe('Comportamento esperado e confirmado', () => {
-    it('adjunto_A lê (list) a pasta do seu próprio campo', async () => {
+  describe('Próprio campo — ALLOW conforme o papel', () => {
+    it('adjunto_A lê (list) e faz upload na pasta do seu próprio campo', async () => {
       const { data, error } = await fixtures!.clients.adjunto_A.storage.from('faturas').list(slugA)
       expect(error).toBeFalsy()
       expect((data ?? []).length).toBeGreaterThan(0)
+
+      const up = await fixtures!.clients.adjunto_A.storage
+        .from('faturas')
+        .upload(`${slugA}/adjunto-a-upload.txt`, new Blob(['x']), { upsert: true })
+      expect(up.error).toBeFalsy()
     })
 
-    it('adjunto_A faz upload no seu próprio campo', async () => {
-      const path = track(`${slugA}/adjunto-a-upload.txt`)
-      const { error } = await fixtures!.clients.adjunto_A.storage
-        .from('faturas')
-        .upload(path, new Blob(['x']), { upsert: true })
+    it('adjunto_A NÃO consegue apagar mesmo no seu próprio campo (mesma regra de despesas_delete)', async () => {
+      const path = `${slugA}/adjunto-a-delete-target.txt`
+      await fixtures!.clients.admin.storage.from('faturas').upload(path, new Blob(['x']), { upsert: true })
+      const { error } = await fixtures!.clients.adjunto_A.storage.from('faturas').remove([path])
+      // RLS de DELETE filtra silenciosamente (sem erro) — confirmar por
+      // admin que o ficheiro continua lá, nunca só pelo `error`.
+      void error
+      const { data: after } = await fixtures!.clients.admin.storage.from('faturas').list(slugA, { search: 'adjunto-a-delete-target.txt' })
+      expect((after ?? []).some((f) => f.name === 'adjunto-a-delete-target.txt')).toBe(true)
+    })
+
+    it('field_viewer_A lê o seu campo, mas não escreve', async () => {
+      const { data, error } = await fixtures!.clients.field_viewer_A.storage.from('faturas').list(slugA)
       expect(error).toBeFalsy()
+      expect((data ?? []).length).toBeGreaterThan(0)
     })
 
     it('treasurer lê e escreve em ambos os campos, sem membership em nenhum', async () => {
@@ -118,15 +108,21 @@ describe.skipIf(!cfg)('Role matrix — Storage (bucket faturas)', () => {
       const listB = await t.storage.from('faturas').list(slugB)
       expect(listA.error).toBeFalsy()
       expect(listB.error).toBeFalsy()
-      const path = track(`${slugB}/treasurer-upload.txt`)
-      const up = await t.storage.from('faturas').upload(path, new Blob(['x']), { upsert: true })
+      const up = await t.storage.from('faturas').upload(`${slugB}/treasurer-upload.txt`, new Blob(['x']), { upsert: true })
       expect(up.error).toBeFalsy()
     })
 
+    it('treasurer consegue apagar (mesma regra de despesas_delete — admin/treasurer podem)', async () => {
+      const path = `${slugB}/treasurer-delete-target.txt`
+      await fixtures!.clients.admin.storage.from('faturas').upload(path, new Blob(['x']), { upsert: true })
+      const { error } = await fixtures!.clients.treasurer.storage.from('faturas').remove([path])
+      expect(error).toBeFalsy()
+      const { data: after } = await fixtures!.clients.admin.storage.from('faturas').list(slugB, { search: 'treasurer-delete-target.txt' })
+      expect((after ?? []).some((f) => f.name === 'treasurer-delete-target.txt')).toBe(false)
+    })
+
     it('admin lê e escreve em ambos os campos', async () => {
-      const a = fixtures!.clients.admin
-      const path = track(`${slugA}/admin-upload.txt`)
-      const up = await a.storage.from('faturas').upload(path, new Blob(['x']), { upsert: true })
+      const up = await fixtures!.clients.admin.storage.from('faturas').upload(`${slugA}/admin-upload.txt`, new Blob(['x']), { upsert: true })
       expect(up.error).toBeFalsy()
     })
 
@@ -137,73 +133,73 @@ describe.skipIf(!cfg)('Role matrix — Storage (bucket faturas)', () => {
       expect(listA.error).toBeFalsy()
       expect(listB.error).toBeFalsy()
     })
-
-    it('field_viewer_A lê o seu campo', async () => {
-      const { data, error } = await fixtures!.clients.field_viewer_A.storage.from('faturas').list(slugA)
-      expect(error).toBeFalsy()
-      expect((data ?? []).length).toBeGreaterThan(0)
-    })
   })
 
-  // ── O que a matriz pedida espera (DENY) mas a decisão "Opção A" — bucket
-  // público, sem segmentação por caminho — ainda não permite garantir ─────
-  describe('EXPECTED FAIL — Storage ainda não segmenta por campo (decisão "Opção A", subfase 2.5)', () => {
-    it.fails('adjunto_A NÃO deveria listar a pasta do Camp B', async () => {
+  // ── O limite que a migration 044 fecha: campo do OUTRO, sem legacy ─────
+  describe('Cross-camp — DENY (fechado pela migration 044)', () => {
+    it('adjunto_A NÃO lista a pasta do Camp B', async () => {
       const { error, data } = await fixtures!.clients.adjunto_A.storage.from('faturas').list(slugB)
       expect(Boolean(error) || (data ?? []).length === 0).toBe(true)
     })
 
-    it.fails('adjunto_A NÃO deveria conseguir upload na pasta do Camp B', async () => {
-      const path = track(`${slugB}/adjunto-a-cross-upload.txt`)
+    it('adjunto_A NÃO consegue upload na pasta do Camp B (path spoofing)', async () => {
       const { error } = await fixtures!.clients.adjunto_A.storage
         .from('faturas')
-        .upload(path, new Blob(['x']), { upsert: true })
+        .upload(`${slugB}/adjunto-a-cross-upload.txt`, new Blob(['x']), { upsert: true })
       expect(Boolean(error)).toBe(true)
+      const { data: after } = await fixtures!.clients.admin.storage.from('faturas').list(slugB, { search: 'adjunto-a-cross-upload.txt' })
+      expect(after ?? []).toHaveLength(0)
     })
 
-    it.fails('adjunto_A NÃO deveria conseguir apagar um ficheiro do Camp B', async () => {
+    it('adjunto_A NÃO consegue apagar um ficheiro do Camp B', async () => {
       const { error } = await fixtures!.clients.adjunto_A.storage.from('faturas').remove([`${slugB}/baseline.txt`])
-      expect(Boolean(error)).toBe(true)
-      // Reposto no afterAll global (upload de novo por admin) — mas para
-      // não depender disso, confirma-se já aqui que a remoção é revertida:
-      await fixtures!.clients.admin.storage
-        .from('faturas')
-        .upload(`${slugB}/baseline.txt`, new Blob(['[TEST] fixture']), { upsert: true })
+      void error
+      const { data: after } = await fixtures!.clients.admin.storage.from('faturas').list(slugB, { search: 'baseline.txt' })
+      expect((after ?? []).some((f) => f.name === 'baseline.txt')).toBe(true)
     })
 
-    it.fails('field_viewer_A (read-only) NÃO deveria conseguir upload mesmo no seu próprio campo', async () => {
-      const path = track(`${slugA}/field-viewer-upload.txt`)
+    it('field_viewer_A NÃO lê a pasta do Camp B', async () => {
+      const { error, data } = await fixtures!.clients.field_viewer_A.storage.from('faturas').list(slugB)
+      expect(Boolean(error) || (data ?? []).length === 0).toBe(true)
+    })
+
+    it('field_viewer_A (read-only) NÃO consegue upload mesmo no seu próprio campo', async () => {
       const { error } = await fixtures!.clients.field_viewer_A.storage
         .from('faturas')
-        .upload(path, new Blob(['x']), { upsert: true })
+        .upload(`${slugA}/field-viewer-upload.txt`, new Blob(['x']), { upsert: true })
       expect(Boolean(error)).toBe(true)
     })
 
-    it.fails('viewer (read-only) NÃO deveria conseguir upload em nenhum campo', async () => {
-      const path = track(`${slugA}/viewer-upload.txt`)
+    it('viewer (read-only) NÃO consegue upload em nenhum campo', async () => {
       const { error } = await fixtures!.clients.viewer.storage
         .from('faturas')
-        .upload(path, new Blob(['x']), { upsert: true })
+        .upload(`${slugA}/viewer-upload.txt`, new Blob(['x']), { upsert: true })
       expect(Boolean(error)).toBe(true)
     })
   })
 
-  describe('anon (sem sessão)', () => {
-    it.fails('anon NÃO deveria listar a pasta de nenhum campo de teste', async () => {
+  describe('anon (sem sessão, campo sem legacy_anon_access)', () => {
+    it('anon NÃO lista a pasta de nenhum campo de teste', async () => {
       const { error, data } = await anon.storage.from('faturas').list(slugA)
       expect(Boolean(error) || (data ?? []).length === 0).toBe(true)
     })
 
-    it.fails('anon NÃO deveria conseguir upload em nenhum campo', async () => {
-      const path = track(`${slugA}/anon-upload.txt`)
-      const { error } = await anon.storage.from('faturas').upload(path, new Blob(['x']), { upsert: true })
+    it('anon NÃO consegue upload em nenhum campo', async () => {
+      const { error } = await anon.storage.from('faturas').upload(`${slugA}/anon-upload.txt`, new Blob(['x']), { upsert: true })
       expect(Boolean(error)).toBe(true)
     })
 
-    it.fails('anon NÃO deveria conseguir apagar ficheiros', async () => {
-      const path = track(`${slugA}/anon-delete-target.txt`)
+    it('anon NÃO consegue apagar ficheiros', async () => {
+      const path = `${slugA}/anon-delete-target.txt`
       await fixtures!.clients.admin.storage.from('faturas').upload(path, new Blob(['x']), { upsert: true })
       const { error } = await anon.storage.from('faturas').remove([path])
+      void error
+      const { data: after } = await fixtures!.clients.admin.storage.from('faturas').list(slugA, { search: 'anon-delete-target.txt' })
+      expect((after ?? []).some((f) => f.name === 'anon-delete-target.txt')).toBe(true)
+    })
+
+    it('anon NÃO consegue gerar uma signed URL válida para um campo sem acesso', async () => {
+      const { error } = await anon.storage.from('faturas').createSignedUrl(`${slugA}/baseline.txt`, 60)
       expect(Boolean(error)).toBe(true)
     })
   })

@@ -77,7 +77,7 @@ export default function ExportButton({ campo }: { campo: Campo }) {
     setLoading('zip')
     try {
       const { despesas, regularizacoes, linhas, devolucoes } = await fetchData()
-      await generateZip(campo, despesas, regularizacoes, linhas, devolucoes)
+      await generateZip(supabase, campo, despesas, regularizacoes, linhas, devolucoes)
     } catch {
       toast.error('Erro ao gerar ZIP. Tenta de novo.')
     } finally {

@@ -1,4 +1,4 @@
-import { createClient } from '@/lib/supabase/server'
+import { createSessionServerClient } from '@/lib/supabase/session-server'
 import { notFound } from 'next/navigation'
 import type { CampoPublico } from '@/types/shared'
 import StorageClient from './StorageClient'
@@ -24,7 +24,7 @@ export default async function StoragePage({
   params: Promise<{ id: string }>
 }) {
   const { id } = await params
-  const supabase = createClient()
+  const supabase = await createSessionServerClient()
   const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL!
 
   const [{ data: campo }, { data: despesasRaw }, { data: devolucoesRaw }] = await Promise.all([

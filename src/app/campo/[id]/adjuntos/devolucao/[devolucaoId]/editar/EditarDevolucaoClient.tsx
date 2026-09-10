@@ -12,7 +12,6 @@ import { Button } from '@/components/ui/button'
 import CodeSelector from '@/components/adjuntos/CodeSelector'
 import { compressImage } from '@/lib/adjuntos/image-utils'
 import { getCampoSlug } from '@/lib/adjuntos/supabase-storage'
-import { getPhotoUrl } from '@/lib/adjuntos/supabase-storage'
 import type { CampoPublico } from '@/types/shared'
 import { validatePin } from '@/actions/validatePin'
 import { updateDevolucao } from '@/actions/devolucoes'
@@ -30,9 +29,11 @@ interface Props {
   hasPin: boolean
   devolucao: Devolucao
   faturas: Despesa[]
+  /** Signed URL calculada no servidor (page.tsx) — bucket privado desde a Fase 2.8. */
+  existingPhotoUrl: string | null
 }
 
-export default function EditarDevolucaoClient({ campo, hasPin, devolucao, faturas }: Props) {
+export default function EditarDevolucaoClient({ campo, hasPin, devolucao, faturas, existingPhotoUrl }: Props) {
   const router = useRouter()
   const supabase = createClient()
   const cameraRef = useRef<HTMLInputElement>(null)
@@ -42,7 +43,7 @@ export default function EditarDevolucaoClient({ campo, hasPin, devolucao, fatura
   const [pinError, setPinError] = useState(false)
   const [pinUnlocked, setPinUnlocked] = useState(!hasPin)
 
-  const existingUrl = devolucao.foto_path ? getPhotoUrl(devolucao.foto_path) : null
+  const existingUrl = devolucao.foto_path ? existingPhotoUrl : null
 
   const [data, setData] = useState(devolucao.data)
   const [valor, setValor] = useState(Number(devolucao.valor).toFixed(2))

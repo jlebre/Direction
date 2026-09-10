@@ -1,10 +1,10 @@
-import { createClient } from '@/lib/supabase/server'
+import { createSessionServerClient } from '@/lib/supabase/session-server'
 import { notFound } from 'next/navigation'
 import Link from 'next/link'
 import type { CampoPublico } from '@/types/shared'
 import type { Devolucao, Despesa } from '@/types/adjuntos'
 import { getCodeColor } from '@/lib/adjuntos/codes'
-import { getPhotoUrl } from '@/lib/adjuntos/supabase-storage'
+import { getSignedPhotoUrl } from '@/lib/adjuntos/supabase-storage'
 import DevolucaoActions from './DevolucaoActions'
 
 export const dynamic = 'force-dynamic'
@@ -15,7 +15,7 @@ export default async function DevolucaoDetailPage({
   params: Promise<{ id: string; devolucaoId: string }>
 }) {
   const { id, devolucaoId } = await params
-  const supabase = createClient()
+  const supabase = await createSessionServerClient()
 
   const [{ data: campo }, { data: devolucao }] = await Promise.all([
     supabase.from('campos').select('*').eq('id', id).single(),
@@ -33,7 +33,7 @@ export default async function DevolucaoDetailPage({
   const c = campoPublico as CampoPublico
   const d = devolucao as Devolucao
   const codeColor = d.codigo ? getCodeColor(d.codigo) : '#6b7280'
-  const photoUrl = d.foto_path ? getPhotoUrl(d.foto_path) : null
+  const photoUrl = d.foto_path ? await getSignedPhotoUrl(supabase, d.foto_path) : null
 
   return (
     <main className="min-h-screen pb-8">

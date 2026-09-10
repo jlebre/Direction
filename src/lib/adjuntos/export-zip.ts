@@ -1,7 +1,7 @@
 import JSZip from 'jszip'
+import type { SupabaseClient } from '@supabase/supabase-js'
 import type { Campo } from '@/types/shared'
 import type { Despesa, RegularizacaoNif, DespesaLinha, Devolucao } from '@/types/adjuntos'
-import { getPhotoUrl } from './supabase-storage'
 import { generateExcelBuffer } from './export-excel'
 
 function getFilenameFromPath(path: string): string {
@@ -31,6 +31,7 @@ function imageFilenameForDespesa(d: Despesa): string {
 // sempre: chama `buildZip` com outputType 'blob' e depois partilha/descarrega
 // o resultado, tal como fazia antes desta extração.
 export async function buildZip(
+  supabase: SupabaseClient,
   campo: Campo,
   despesas: Despesa[],
   regularizacoes: RegularizacaoNif[] = [],
@@ -52,16 +53,22 @@ export async function buildZip(
   const imgFolder = zip.folder('imagens')!
   const despesasComFoto = despesas.filter((d) => d.foto_path && d.tipo === 'despesa')
 
+  // Fase 2.8 (Storage isolation) — bucket privado agora: já não se pode ir
+  // buscar bytes por URL pública (`getPhotoUrl` + `fetch`), isso deixou de
+  // funcionar. `.storage.download()` passa pela Storage API autenticada,
+  // respeita a RLS por campo tal como qualquer outra leitura — mesmo
+  // comportamento de sempre para quem já tinha acesso (incl. anon num campo
+  // com `legacy_anon_access`), sem alterar a UI nem introduzir signed URLs
+  // onde a API autenticada já resolve.
   await Promise.allSettled(
     despesasComFoto.map(async (d) => {
       try {
-        const url = getPhotoUrl(d.foto_path!)
-        const response = await fetch(url)
-        if (!response.ok) return
+        const { data, error } = await supabase.storage.from('faturas').download(d.foto_path!)
+        if (error || !data) return
         // ArrayBuffer em vez de Blob: mesmos bytes no ZIP final, mas suportado
         // pelo JSZip tanto no browser como em Node (usado pelo script de
         // backup — Node não tem sempre um Blob que o JSZip reconheça).
-        const imgBuf = await response.arrayBuffer()
+        const imgBuf = await data.arrayBuffer()
         imgFolder.file(imageFilenameForDespesa(d), imgBuf)
       } catch {
         // Falha silenciosa por imagem — o ZIP é gerado mesmo sem ela
@@ -78,6 +85,7 @@ export async function buildZip(
 }
 
 export async function generateZip(
+  supabase: SupabaseClient,
   campo: Campo,
   despesas: Despesa[],
   regularizacoes: RegularizacaoNif[] = [],
@@ -87,7 +95,7 @@ export async function generateZip(
   const safeName = sanitizeFilename(campo.nome)
   const dateStr = new Date().toISOString().split('T')[0]
 
-  const zipBlob = (await buildZip(campo, despesas, regularizacoes, despesaLinhas, devolucoes, 'blob')) as Blob
+  const zipBlob = (await buildZip(supabase, campo, despesas, regularizacoes, despesaLinhas, devolucoes, 'blob')) as Blob
 
   const { exportOrShareFile } = await import('@/lib/export-share')
   await exportOrShareFile(zipBlob, `relatorio-contas-${safeName}-${dateStr}.zip`)

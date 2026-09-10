@@ -220,6 +220,7 @@ async function main() {
     writeFileSync(path.join(dir, 'financeiro.xlsx'), excelBuf)
 
     const zipBuf = (await buildZip(
+      supabase,
       campo as Campo,
       despesasDoCampo,
       regularizacoesDoCampo,

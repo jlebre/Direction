@@ -1,10 +1,10 @@
-import { createClient } from '@/lib/supabase/server'
+import { createSessionServerClient } from '@/lib/supabase/session-server'
 import { notFound } from 'next/navigation'
 import Link from 'next/link'
 import type { CampoPublico } from '@/types/shared'
 import type { Despesa, DespesaLinha } from '@/types/adjuntos'
 import { getCodeColor } from '@/lib/adjuntos/codes'
-import { getPhotoUrl } from '@/lib/adjuntos/supabase-storage'
+import { getSignedPhotoUrl } from '@/lib/adjuntos/supabase-storage'
 import DespesaActions from './DespesaActions'
 import { DespesaLinhasClient } from '@/components/adjuntos/DespesaLinhasClient'
 
@@ -16,7 +16,7 @@ export default async function DespesaDetailPage({
   params: Promise<{ id: string; despesaId: string }>
 }) {
   const { id, despesaId } = await params
-  const supabase = createClient()
+  const supabase = await createSessionServerClient()
 
   const [{ data: campo }, { data: despesa }, { data: linhas }] = await Promise.all([
     supabase.from('campos').select('*').eq('id', id).single(),
@@ -36,7 +36,7 @@ export default async function DespesaDetailPage({
   const d = despesa as Despesa
   const dl = (linhas ?? []) as DespesaLinha[]
   const codeColor = getCodeColor(d.codigo)
-  const photoUrl = d.foto_path ? getPhotoUrl(d.foto_path) : null
+  const photoUrl = d.foto_path ? await getSignedPhotoUrl(supabase, d.foto_path) : null
 
   return (
     <main className="min-h-screen pb-8">

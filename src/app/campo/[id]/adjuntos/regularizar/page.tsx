@@ -1,4 +1,4 @@
-import { createClient } from '@/lib/supabase/server'
+import { createSessionServerClient } from '@/lib/supabase/session-server'
 import { notFound } from 'next/navigation'
 import type { CampoPublico } from '@/types/shared'
 import type { Despesa, RegularizacaoNif } from '@/types/adjuntos'
@@ -12,7 +12,7 @@ export default async function RegularizarPage({
   params: Promise<{ id: string }>
 }) {
   const { id } = await params
-  const supabase = createClient()
+  const supabase = await createSessionServerClient()
 
   const [{ data: campo }, { data: despesas }, { data: regularizacoes }] = await Promise.all([
     supabase.from('campos').select('*').eq('id', id).single(),

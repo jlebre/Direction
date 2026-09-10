@@ -1,7 +1,8 @@
-import { createClient } from '@/lib/supabase/server'
+import { createSessionServerClient } from '@/lib/supabase/session-server'
 import { notFound } from 'next/navigation'
 import type { CampoPublico } from '@/types/shared'
 import type { Devolucao, Despesa } from '@/types/adjuntos'
+import { getSignedPhotoUrl } from '@/lib/adjuntos/supabase-storage'
 import EditarDevolucaoClient from './EditarDevolucaoClient'
 
 export const dynamic = 'force-dynamic'
@@ -12,7 +13,7 @@ export default async function EditarDevolucaoPage({
   params: Promise<{ id: string; devolucaoId: string }>
 }) {
   const { id, devolucaoId } = await params
-  const supabase = createClient()
+  const supabase = await createSessionServerClient()
 
   const [{ data: campo }, { data: devolucao }, { data: faturas }] = await Promise.all([
     supabase.from('campos').select('*').eq('id', id).single(),
@@ -29,13 +30,16 @@ export default async function EditarDevolucaoPage({
   if (!campo || !devolucao) notFound()
 
   const { pin, ...campoPublico } = campo
+  const d = devolucao as Devolucao
+  const existingPhotoUrl = d.foto_path ? await getSignedPhotoUrl(supabase, d.foto_path) : null
 
   return (
     <EditarDevolucaoClient
       campo={campoPublico as CampoPublico}
       hasPin={!!pin}
-      devolucao={devolucao as Devolucao}
+      devolucao={d}
       faturas={(faturas ?? []) as Despesa[]}
+      existingPhotoUrl={existingPhotoUrl}
     />
   )
 }
